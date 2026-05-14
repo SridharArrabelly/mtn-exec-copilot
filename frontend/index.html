@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voice Live Avatar</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div class="app-container">
+        <!-- Left sidebar: Settings -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-scroll">
+
+
+                <!-- Instructions -->
+                <details class="settings-group">
+                    <summary>Instructions</summary>
+                    <div class="settings-content">
+                        <div class="instructions-box">
+                            <p><strong>Quick Start</strong></p>
+                            <ol>
+                                <li>Optionally enable <strong>Noise Suppression</strong> and <strong>Echo Cancellation</strong>.</li>
+                                <li>Choose a <strong>Turn Detection</strong> mode.</li>
+                                <li>Configure <strong>Voice</strong> and <strong>Avatar</strong> settings.</li>
+                                <li>Click <strong>Connect</strong> to start.</li>
+                            </ol>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- Conversation Settings -->
+                <details class="settings-group">
+                    <summary>Conversation Settings</summary>
+                    <div class="settings-content">
+                        <!-- SR Model (cascaded only) -->
+                        <div id="srModelField">
+                            <label>Speech Recognition Model
+                                <select id="srModel">
+                                    <option value="azure-speech" selected>Azure Speech</option>
+                                    <option value="mai-ears-1">MAI Ears 1</option>
+                                </select>
+                            </label>
+                        </div>
+                        <!-- Recognition Language (cascaded only, not mai-ears-1) -->
+                        <div id="recognitionLanguageField" style="display:none">
+                            <label>Recognition Language
+                                <select id="recognitionLanguage">
+                                    <option value="auto" selected>Auto Detect</option>
+                                    <option value="en-US">English (United States)</option>
+                                    <option value="zh-CN">Chinese (China)</option>
+                                    <option value="de-DE">German (Germany)</option>
+                                    <option value="en-GB">English (United Kingdom)</option>
+                                    <option value="en-IN">English (India)</option>
+                                    <option value="es-ES">Spanish (Spain)</option>
+                                    <option value="es-MX">Spanish (Mexico)</option>
+                                    <option value="fr-FR">French (France)</option>
+                                    <option value="hi-IN">Hindi (India)</option>
+                                    <option value="it-IT">Italian (Italy)</option>
+                                    <option value="ja-JP">Japanese (Japan)</option>
+                                    <option value="ko-KR">Korean (South Korea)</option>
+                                    <option value="pt-BR">Portuguese (Brazil)</option>
+                                </select>
+                            </label>
+                        </div>
+
+                        <label class="toggle-label">
+                            <span>Noise suppression</span>
+                            <input type="checkbox" id="useNS" />
+                        </label>
+                        <label class="toggle-label">
+                            <span>Echo cancellation</span>
+                            <input type="checkbox" id="useEC" />
+                        </label>
+
+                        <label>Turn detection
+                            <select id="turnDetectionType">
+                                <option value="server_vad" selected>Server VAD</option>
+                                <option value="azure_semantic_vad">Azure Semantic VAD</option>
+                            </select>
+                        </label>
+                        <div id="fillerWordsField" style="display:none">
+                            <label class="toggle-label">
+                                <span>Remove filler words</span>
+                                <input type="checkbox" id="removeFillerWords" />
+                            </label>
+                        </div>
+
+                        <!-- EOU Detection (cascaded only) -->
+                        <div id="eouDetectionField" style="display:none">
+                            <label>EOU detection
+                                <select id="eouDetectionType">
+                                    <option value="none" selected>Disabled</option>
+                                    <option value="semantic_detection_v1">Semantic Detection</option>
+                                </select>
+                            </label>
+                        </div>
+
+                        <label class="toggle-label">
+                            <span>Enable proactive responses</span>
+                            <input type="checkbox" id="enableProactive" />
+                        </label>
+
+                        <!-- Voice Configuration -->
+                        <div class="config-section">
+                            <div class="section-title">Voice Configuration</div>
+                            <label>Voice Type
+                                <select id="voiceType">
+                                    <option value="standard" selected>Standard Voices</option>
+                                    <option value="custom">Custom Voice</option>
+                                    <option value="personal">Personal Voice</option>
+                                </select>
+                            </label>
+
+                            <!-- Custom Voice -->
+                            <div id="customVoiceFields" class="voice-variant custom-border" style="display:none">
+                                <label>Voice Deployment ID
+                                    <input type="text" id="voiceDeploymentId" placeholder="Voice Deployment ID" />
+                                </label>
+                                <label>Voice
+                                    <input type="text" id="customVoiceName" placeholder="Voice" />
+                                </label>
+                            </div>
+
+                            <!-- Personal Voice -->
+                            <div id="personalVoiceFields" class="voice-variant personal-border" style="display:none">
+                                <label>Personal Voice Name
+                                    <input type="text" id="personalVoiceName" placeholder="Personal Voice Name" />
+                                </label>
+                                <label>Personal Voice Model
+                                    <select id="personalVoiceModel">
+                                        <option value="DragonLatestNeural">DragonLatestNeural</option>
+                                        <option value="DragonHDOmniLatestNeural">DragonHDOmniLatestNeural</option>
+                                    </select>
+                                </label>
+                            </div>
+
+                            <!-- Standard Voice -->
+                            <div id="standardVoiceField" class="voice-variant standard-border">
+                                <label>Voice
+                                    <select id="voiceName">
+                                            <option value="en-us-ava:DragonHDLatestNeural">DragonHDLatestNeural, Ava (HD)</option>
+                                            <option value="en-us-steffan:DragonHDLatestNeural">DragonHDLatestNeural, Steffan (HD)</option>
+                                            <option value="en-us-andrew:DragonHDLatestNeural">DragonHDLatestNeural, Andrew (HD)</option>
+                                            <option value="zh-cn-xiaochen:DragonHDLatestNeural">DragonHDLatestNeural, Xiaochen (HD)</option>
+                                            <option value="en-us-emma:DragonHDLatestNeural">DragonHDLatestNeural, Emma (HD)</option>
+                                            <option value="en-us-emma2:DragonHDLatestNeural">DragonHDLatestNeural, Emma (HD 2)</option>
+                                            <option value="en-us-andrew2:DragonHDLatestNeural">DragonHDLatestNeural, Andrew (HD 2)</option>
+                                            <option value="de-de-seraphina:DragonHDLatestNeural">DragonHDLatestNeural, Seraphina (HD)</option>
+                                            <option value="en-us-aria:DragonHDLatestNeural">DragonHDLatestNeural, Aria (HD)</option>
+                                            <option value="en-us-davis:DragonHDLatestNeural">DragonHDLatestNeural, Davis (HD)</option>
+                                            <option value="en-us-jenny:DragonHDLatestNeural">DragonHDLatestNeural, Jenny (HD)</option>
+                                            <option value="ja-jp-masaru:DragonHDLatestNeural">DragonHDLatestNeural, Masaru (HD)</option>
+                                            <option value="en-US-AvaMultilingualNeural" selected>Ava Multilingual</option>
+                                            <option value="en-US-AlloyTurboMultilingualNeural">Alloy Turbo Multilingual</option>
+                                            <option value="en-US-AndrewMultilingualNeural">Andrew Multilingual</option>
+                                            <option value="en-US-BrianMultilingualNeural">Brian Multilingual</option>
+                                            <option value="en-US-EmmaMultilingualNeural">Emma Multilingual</option>
+                                            <option value="en-US-NovaTurboMultilingualNeural">Nova Turbo Multilingual</option>
+                                            <option value="zh-CN-XiaoxiaoMultilingualNeural">Xiaoxiao Multilingual</option>
+                                            <option value="en-US-AvaNeural">Ava</option>
+                                            <option value="en-US-AndrewNeural">Andrew</option>
+                                            <option value="en-US-JennyNeural">Jenny</option>
+                                            <option value="zh-HK-HiuMaanNeural">HiuMaan (Cantonese)</option>
+                                            <option value="mt-MT-JosephNeural">Joseph (Maltese)</option>
+                                            <option value="zh-CN-Xiaoxiao2:DragonHDFlashLatestNeural">Xiaoxiao2 HDFlash</option>
+                                            <option value="zh-CN-Yunyi:DragonHDFlashLatestNeural">Yunyi HDFlash</option>
+                                            <option value="alloy">Alloy (OpenAI)</option>
+                                            <option value="ash">Ash (OpenAI)</option>
+                                            <option value="ballad">Ballad (OpenAI)</option>
+                                            <option value="coral">Coral (OpenAI)</option>
+                                            <option value="echo">Echo (OpenAI)</option>
+                                            <option value="sage">Sage (OpenAI)</option>
+                                            <option value="shimmer">Shimmer (OpenAI)</option>
+                                            <option value="verse">Verse (OpenAI)</option>
+                                    </select>
+                                </label>
+                            </div>
+
+                            <!-- Voice Temperature (DragonHD / personal) -->
+                            <div id="voiceTempField" style="display:none">
+                                <label>Voice Temperature
+                                    <input type="range" id="voiceTemperature" min="0" max="1" step="0.1" value="0.9" />
+                                    <span id="voiceTempValue">0.9</span>
+                                </label>
+                            </div>
+
+                            <!-- Voice Speed -->
+                            <div id="voiceSpeedField">
+                                <label>Voice Speed
+                                    <input type="range" id="voiceSpeed" min="50" max="150" step="5" value="100" />
+                                    <span id="voiceSpeedValue">100%</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Avatar Settings -->
+                        <div class="config-section">
+                            <div class="section-title">Avatar Configuration</div>
+                            <label class="toggle-label">
+                                <span>Enable Avatar</span>
+                                <input type="checkbox" id="avatarEnabled" checked />
+                            </label>
+                            <div id="avatarSettings">
+                                <div id="avatarOutputModeField">
+                                    <label>Avatar Output Mode
+                                        <select id="avatarOutputMode">
+                                            <option value="webrtc" selected>WebRTC</option>
+                                            <option value="websocket">WebSocket</option>
+                                        </select>
+                                    </label>
+                                </div>
+
+                                <label class="toggle-label">
+                                    <span>Use Photo Avatar</span>
+                                    <input type="checkbox" id="isPhotoAvatar" />
+                                </label>
+
+                                <label class="toggle-label">
+                                    <span>Use Custom Avatar</span>
+                                    <input type="checkbox" id="isCustomAvatar" />
+                                </label>
+
+                                <!-- Standard Avatar -->
+                                <div id="standardAvatarField">
+                                    <label>Avatar Character
+                                        <select id="avatarName">
+                                            <option value="Harry-business">Harry-business</option>
+                                            <option value="Harry-casual">Harry-casual</option>
+                                            <option value="Harry-youthful">Harry-youthful</option>
+                                            <option value="Jeff-business">Jeff-business</option>
+                                            <option value="Jeff-formal">Jeff-formal</option>
+                                            <option value="Lisa-casual-sitting" selected>Lisa-casual-sitting</option>
+                                            <option value="Lori-casual">Lori-casual</option>
+                                            <option value="Lori-formal">Lori-formal</option>
+                                            <option value="Lori-graceful">Lori-graceful</option>
+                                            <option value="Max-business">Max-business</option>
+                                            <option value="Max-casual">Max-casual</option>
+                                            <option value="Max-formal">Max-formal</option>
+                                            <option value="Meg-business">Meg-business</option>
+                                            <option value="Meg-casual">Meg-casual</option>
+                                            <option value="Meg-formal">Meg-formal</option>
+                                        </select>
+                                    </label>
+                                </div>
+
+                                <!-- Photo Avatar -->
+                                <div id="photoAvatarField" style="display:none">
+                                    <label>Photo Avatar Character
+                                        <select id="photoAvatarName">
+                                            <option value="Adrian">Adrian</option>
+                                            <option value="Amara">Amara</option>
+                                            <option value="Amira">Amira</option>
+                                            <option value="Anika" selected>Anika</option>
+                                            <option value="Bianca">Bianca</option>
+                                            <option value="Camila">Camila</option>
+                                            <option value="Carlos">Carlos</option>
+                                            <option value="Clara">Clara</option>
+                                            <option value="Darius">Darius</option>
+                                            <option value="Diego">Diego</option>
+                                            <option value="Elise">Elise</option>
+                                            <option value="Farhan">Farhan</option>
+                                            <option value="Faris">Faris</option>
+                                            <option value="Gabrielle">Gabrielle</option>
+                                            <option value="Hyejin">Hyejin</option>
+                                            <option value="Imran">Imran</option>
+                                            <option value="Isabella">Isabella</option>
+                                            <option value="Layla">Layla</option>
+                                            <option value="Ling">Ling</option>
+                                            <option value="Liwei">Liwei</option>
+                                            <option value="Marcus">Marcus</option>
+                                            <option value="Matteo">Matteo</option>
+                                            <option value="Rahul">Rahul</option>
+                                            <option value="Rana">Rana</option>
+                                            <option value="Ren">Ren</option>
+                                            <option value="Riya">Riya</option>
+                                            <option value="Sakura">Sakura</option>
+                                            <option value="Simone">Simone</option>
+                                            <option value="Zayd">Zayd</option>
+                                            <option value="Zoe">Zoe</option>
+                                        </select>
+                                    </label>
+                                </div>
+
+                                <!-- Custom Avatar Name -->
+                                <div id="customAvatarField" style="display:none">
+                                    <label>Custom Avatar Name
+                                        <input type="text" id="customAvatarName" placeholder="Character" />
+                                    </label>
+                                </div>
+
+                                <label>Avatar Background Image URL
+                                    <input type="text" id="avatarBackgroundImageUrl" placeholder="Enter avatar background image URL" />
+                                </label>
+
+                                <!-- Photo Avatar Scene Settings -->
+                                <div id="photoAvatarSceneSettings" style="display:none">
+                                    <div class="subsection-title" id="sceneSettingsTitle">Scene Settings</div>
+                                    <div class="scene-slider">
+                                        <span class="scene-label" id="sceneZoomLabel">Zoom: 100%</span>
+                                        <input type="range" id="sceneZoom" min="70" max="100" step="1" value="100" />
+                                    </div>
+                                    <div class="scene-slider">
+                                        <span class="scene-label" id="scenePositionXLabel">Position X: 0%</span>
+                                        <input type="range" id="scenePositionX" min="-50" max="50" step="1" value="0" />
+                                    </div>
+                                    <div class="scene-slider">
+                                        <span class="scene-label" id="scenePositionYLabel">Position Y: 0%</span>
+                                        <input type="range" id="scenePositionY" min="-50" max="50" step="1" value="0" />
+                                    </div>
+                                    <div class="scene-slider">
+                                        <span class="scene-label" id="sceneRotationXLabel">Rotation X: 0 deg</span>
+                                        <input type="range" id="sceneRotationX" min="-30" max="30" step="1" value="0" />
+                                    </div>
+                                    <div class="scene-slider">
+                                        <span class="scene-label" id="sceneRotationYLabel">Rotation Y: 0 deg</span>
+                                        <input type="range" id="sceneRotationY" min="-30" max="30" step="1" value="0" />
+                                    </div>
+                                    <div class="scene-slider">
+                                        <span class="scene-label" id="sceneRotationZLabel">Rotation Z: 0 deg</span>
+                                        <input type="range" id="sceneRotationZ" min="-30" max="30" step="1" value="0" />
+                                    </div>
+                                    <div class="scene-slider">
+                                        <span class="scene-label" id="sceneAmplitudeLabel">Amplitude: 100%</span>
+                                        <input type="range" id="sceneAmplitude" min="10" max="100" step="1" value="100" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+            </div>
+
+            <!-- Connect / Disconnect Button -->
+            <div class="sidebar-footer">
+                <button id="connectBtn" class="btn btn-connect" onclick="toggleConnection()">
+                    <svg id="connectIcon" class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+                    <span id="connectBtnText">Connect</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <div class="header-bar">
+                <button class="btn btn-icon mobile-menu" onclick="toggleSidebar()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+                <div class="header-right">
+                    <label class="toggle-label compact">
+                        <span>Developer mode</span>
+                        <input type="checkbox" id="developerMode" />
+                    </label>
+                    <div style="flex:1"></div>
+                    <button id="clearChatBtn" class="btn btn-text" onclick="clearChat()" style="opacity:0.5" disabled>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M17.9099 2.18209C18.1052 2.37735 18.1052 2.69394 17.9099 2.8892L12.5872 8.21193C14.0023 9.97877 13.8909 12.5651 12.2531 14.2029L11.5895 14.8665L9.49982 18.3493C9.4206 18.4813 9.28498 18.5695 9.13216 18.5883C8.97935 18.6071 8.82639 18.5544 8.71752 18.4456L1.64645 11.3745C1.53758 11.2656 1.48494 11.1127 1.50375 10.9599C1.52256 10.807 1.61073 10.6714 1.74276 10.5922L5.2255 8.50256L5.88909 7.83896C7.52695 6.20111 10.1132 6.08973 11.8801 7.50482L17.2028 2.18209C17.3981 1.98683 17.7146 1.98683 17.9099 2.18209ZM6.24265 8.89962L11.1924 13.8494L11.5459 13.4958C12.9128 12.129 12.9128 9.9129 11.5459 8.54607C10.1791 7.17923 7.96303 7.17923 6.5962 8.54607L6.24265 8.89962ZM5.45803 9.52923L2.80638 11.1202L8.9718 17.2856L10.5628 14.634L5.45803 9.52923Z" fill="#424242"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Content area -->
+            <div class="content-area" id="contentArea">
+                <!-- Avatar video (WebRTC) -->
+                <div id="avatarVideoContainer" class="avatar-container" style="display:none">
+                    <div id="avatarVideo" class="avatar-video"></div>
+                </div>
+
+                <!-- Volume animation (no avatar) -->
+                <div id="volumeAnimation" class="volume-animation" style="display:none">
+                    <div class="volume-circle" id="volumeCircle"></div>
+                    <div class="robot-svg"><svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" fill="none"><path d="M160 80C160 124.183 124.183 160 80 160C35.8172 160 0 124.183 0 80C0 35.8172 35.8172 0 80 0C124.183 0 160 35.8172 160 80Z" fill="url(#paint0_linear_767_32475)"/><path d="M160 80C160 124.183 124.183 160 80 160C35.8172 160 0 124.183 0 80C0 35.8172 35.8172 0 80 0C124.183 0 160 35.8172 160 80Z" fill="url(#paint1_linear_767_32475)"/><path d="M160 80C160 124.183 124.183 160 80 160C35.8172 160 0 124.183 0 80C0 35.8172 35.8172 0 80 0C124.183 0 160 35.8172 160 80Z" fill="url(#paint2_linear_767_32475)"/><path opacity="0.05" fill-rule="evenodd" clip-rule="evenodd" d="M159.992 78.8887C159.398 122.559 123.812 157.778 80 157.778C36.1882 157.778 0.602043 122.559 0.0075586 78.8887C0.00252495 79.2584 0 79.6288 0 79.9998C0 124.183 35.8172 160 80 160C124.183 160 160 124.183 160 79.9998C160 79.6288 159.997 79.2584 159.992 78.8887Z" fill="black"/><path fill-rule="evenodd" clip-rule="evenodd" d="M50.5839 50.0753C50.5839 43.9716 55.5319 39.0235 61.6356 39.0235H73.7887C74.1638 36.1673 76.6192 33.8779 79.6452 33.8779C81.1273 33.8779 82.6216 34.3978 83.7668 35.4918C84.7528 36.4335 85.3453 37.6734 85.5065 39.0235H97.6548C103.759 39.0235 108.707 43.9716 108.707 50.0753V70.6577C108.707 76.7614 103.759 81.7094 97.6548 81.7094H61.6356C55.5319 81.7094 50.5839 76.7614 50.5839 70.6577V50.0753ZM69.5614 82.7665H90.4388H104.171C107.049 82.7665 109.796 83.974 111.741 86.095C113.48 87.9901 114.445 90.4684 114.445 93.0401V100.356C114.445 105.413 112.548 110.287 109.129 114.013L108.522 114.675C103.749 119.878 97.4837 123.478 90.5848 124.982C83.6102 126.502 76.39 126.502 69.4154 124.982C62.5166 123.478 56.2514 119.878 51.4781 114.675L50.8713 114.013C47.4524 110.287 45.5557 105.413 45.5557 100.356V93.0401C45.5557 90.4684 46.5202 87.9901 48.2588 86.095C50.2046 83.974 52.9509 82.7665 55.8293 82.7665H69.5614Z" fill="url(#paint3_linear_767_32475)"/><path d="M104.171 86.1001H55.8292C53.8847 86.1001 52.0295 86.9158 50.715 88.3486C49.5405 89.6288 48.8889 91.303 48.8889 93.0404V102.813C48.8889 105.456 49.8801 108.002 51.6666 109.95L56.0323 114.708C58.9757 117.917 62.839 120.137 67.0932 121.064L73.2542 122.407C77.6992 123.376 82.3009 123.376 86.7459 122.407L92.9069 121.064C97.161 120.137 101.024 117.917 103.968 114.708L108.333 109.95C110.12 108.002 111.111 105.456 111.111 102.813V93.0404C111.111 91.303 110.46 89.6288 109.285 88.3486C107.971 86.9158 106.115 86.1001 104.171 86.1001Z" fill="#F4F3F5"/><path opacity="0.05" fill-rule="evenodd" clip-rule="evenodd" d="M48.8882 100.59V102.813C48.8882 105.455 49.8793 108.002 51.6658 109.949L56.0315 114.708C58.9749 117.916 62.8383 120.136 67.0924 121.064L73.2534 122.407C77.6985 123.376 82.3001 123.376 86.7452 122.407L92.9062 121.064C97.1603 120.136 101.024 117.916 103.967 114.708L108.333 109.949C110.119 108.002 111.11 105.455 111.11 102.813L111.11 100.59C111.11 103.233 110.119 105.78 108.333 107.727L103.967 112.486C101.024 115.694 97.1603 117.914 92.9062 118.841L86.7452 120.185C82.3001 121.154 77.6985 121.154 73.2534 120.185L67.0924 118.841C62.8383 117.914 58.9749 115.694 56.0315 112.486L51.6658 107.727C49.8793 105.78 48.8882 103.233 48.8882 100.59Z" fill="black"/><path d="M61.6359 42.357C57.3731 42.357 53.9175 45.8127 53.9175 50.0754V70.6578C53.9175 74.9206 57.3731 78.3762 61.6359 78.3762H97.6551C101.918 78.3762 105.374 74.9206 105.374 70.6578V50.0754C105.374 45.8127 101.918 42.357 97.6551 42.357H82.2183C82.2183 42.357 82.2183 41.3721 82.2183 39.7842C82.2183 38.1963 81.0664 37.2114 79.6455 37.2114C78.2246 37.2114 77.0727 38.3973 77.0727 39.7842C77.0727 41.1711 77.0727 42.357 77.0727 42.357H61.6359ZM64.2087 60.3666C64.2087 57.5248 66.5125 55.221 69.3543 55.221C72.1961 55.221 74.4999 57.5248 74.4999 60.3666C74.4999 63.2085 72.1961 65.5122 69.3543 65.5122C66.5125 65.5122 64.2087 63.2085 64.2087 60.3666ZM84.7911 60.3666C84.7911 57.5248 87.0949 55.221 89.9367 55.221C92.7785 55.221 95.0823 57.5248 95.0823 60.3666C95.0823 63.2085 92.7785 65.5122 89.9367 65.5122C87.0949 65.5122 84.7911 63.2085 84.7911 60.3666Z" fill="#F4F3F5"/><path fill-rule="evenodd" clip-rule="evenodd" d="M53.9175 50.0754C53.9175 45.8127 57.3731 42.357 61.6359 42.357H77.0728V44.5793H61.6359C57.3731 44.5793 53.9175 48.0349 53.9175 52.2977V50.0754ZM105.374 52.2977V50.0754C105.374 45.8127 101.918 42.357 97.6552 42.357H82.2184V44.5793H97.6552C101.918 44.5793 105.374 48.0349 105.374 52.2977ZM82.2184 42.0064V39.7842C82.2184 38.1963 81.0665 37.2114 79.6456 37.2114C78.2246 37.2114 77.0728 38.3973 77.0728 39.7842V42.0064C77.0728 40.6195 78.2246 39.4336 79.6456 39.4336C81.0665 39.4336 82.2184 40.4185 82.2184 42.0064ZM69.3543 52.9988C66.5125 52.9988 64.2087 55.3026 64.2087 58.1444C64.2087 58.5259 64.2502 58.8977 64.329 59.2555H74.3797C74.4584 58.8977 74.4999 58.5259 74.4999 58.1444C74.4999 55.3026 72.1962 52.9988 69.3543 52.9988ZM74.3797 59.2555C73.8717 56.9478 71.8147 55.221 69.3543 55.221C66.894 55.221 64.8369 56.9478 64.329 59.2555H74.3797ZM89.9368 52.9988C87.0949 52.9988 84.7912 55.3026 84.7912 58.1444C84.7912 58.5259 84.8327 58.8977 84.9115 59.2555L94.9621 59.2555C95.0409 58.8977 95.0824 58.5259 95.0824 58.1444C95.0824 55.3026 92.7786 52.9988 89.9368 52.9988ZM94.9621 59.2555C94.4542 56.9478 92.3971 55.221 89.9368 55.221C87.4764 55.221 85.4194 56.9478 84.9115 59.2555L94.9621 59.2555Z" fill="#F9F9FA"/><defs><linearGradient id="paint0_linear_767_32475" x1="170.864" y1="2.83583e-06" x2="41.7107" y2="173.432" gradientUnits="userSpaceOnUse"><stop offset="0.0773235" stop-color="#49C5B1"/><stop offset="0.682091" stop-color="#0078D4"/></linearGradient><linearGradient id="paint1_linear_767_32475" x1="-10.8642" y1="179.487" x2="130.947" y2="33.0325" gradientUnits="userSpaceOnUse"><stop offset="0.0001" stop-color="#C03BC4"/><stop offset="1" stop-color="#C03BC4" stop-opacity="0"/></linearGradient><linearGradient id="paint2_linear_767_32475" x1="7.5" y1="200.625" x2="18.917" y2="38.8712" gradientUnits="userSpaceOnUse"><stop offset="0.0001" stop-color="#FFB900"/><stop offset="0.602266" stop-color="#FFB900" stop-opacity="0"/></linearGradient><linearGradient id="paint3_linear_767_32475" x1="79.2251" y1="38.9643" x2="79.2251" y2="119.444" gradientUnits="userSpaceOnUse"><stop offset="0.27116" stop-opacity="0"/><stop offset="1" stop-opacity="0.2"/></linearGradient></defs></svg></div>
+                </div>
+
+                <!-- Chat messages -->
+                <div id="chatArea" class="chat-area">
+                    <div id="messages" class="messages"></div>
+                </div>
+            </div>
+
+            <!-- Input area (developer mode) -->
+            <div id="inputArea" class="input-area" style="display:none">
+                <div class="input-row">
+                    <input type="text" id="textInput" placeholder="Type your message..."
+                           onkeydown="if(event.key==='Enter')sendTextMessage()" />
+                    <button id="micBtn" class="btn btn-icon mic-btn" onclick="toggleMicrophone()" title="Toggle microphone">
+                        <!-- Off icon: mic with slash (default state) -->
+                        <svg class="mic-off-icon" viewBox="0 0 20 20" width="20" height="20" fill="#242424">
+                            <path d="M10 13a3 3 0 003-3V5a3 3 0 00-6 0v5a3 3 0 003 3z"/>
+                            <path d="M15 10a5 5 0 01-10 0H3a7 7 0 006 6.92V20h2v-3.08A7 7 0 0017 10h-2z"/>
+                            <line x1="3" y1="3" x2="17" y2="17" stroke="#242424" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                        <!-- Recording icon: red circle (active state) -->
+                        <svg class="mic-on-icon" viewBox="0 0 20 20" width="20" height="20" style="display:none">
+                            <circle cx="10" cy="10" r="6" fill="#A80000"/>
+                        </svg>
+                    </button>
+                    <button class="btn btn-primary send-btn" onclick="sendTextMessage()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Footer (non-developer mode) -->
+            <div id="footerArea" class="footer-area">
+                <div class="record-container" id="recordContainer" style="display:none">
+                    <div class="recording-border">
+                        <div class="sound-wave" id="soundWaveLeft"></div>
+                        <button id="recordBtn" class="record-btn" onclick="toggleMicrophone()" title="Turn on/off microphone">
+                            <!-- Off icon: mic with slash -->
+                            <svg class="mic-off-icon" viewBox="0 0 20 20" width="20" height="20" fill="#242424">
+                                <path d="M10 13a3 3 0 003-3V5a3 3 0 00-6 0v5a3 3 0 003 3z"/>
+                                <path d="M15 10a5 5 0 01-10 0H3a7 7 0 006 6.92V20h2v-3.08A7 7 0 0017 10h-2z"/>
+                                <line x1="3" y1="3" x2="17" y2="17" stroke="#242424" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                            <!-- Recording icon: red circle -->
+                            <svg class="mic-on-icon" viewBox="0 0 20 20" width="20" height="20" style="display:none">
+                                <circle cx="10" cy="10" r="6" fill="#A80000"/>
+                            </svg>
+                            <span class="microphone-label">Turn on microphone</span>
+                        </button>
+                        <div class="sound-wave" id="soundWaveRight"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
