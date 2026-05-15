@@ -139,7 +139,9 @@ def load_settings() -> dict:
 def build_tools(search_connection_id: str, search_index_name: str) -> list:
     """Build the tool list for the agent."""
     return [
-        WebSearchTool(user_location=WEB_SEARCH_LOCATION),
+        WebSearchTool(user_location=WEB_SEARCH_LOCATION,
+                      search_context_size='medium',
+                      ),
         AzureAISearchTool(
             azure_ai_search=AzureAISearchToolResource(
                 indexes=[
