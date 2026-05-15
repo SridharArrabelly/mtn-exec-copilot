@@ -1,6 +1,6 @@
 """Create (or update) the Azure AI Search index used by the MTN Foundry agent.
 
-Reads .docx files from ``data/``, chunks them, embeds each chunk with the
+Reads .docx, .pdf, .md, .txt files from ``data/`` (recursively), chunks them, embeds each chunk with the
 embedding model deployed on the Foundry project (``text-embedding-3-large`` by
 default), and uploads the chunks to an Azure AI Search index configured for
 **hybrid search** (BM25 + vector) with a **semantic configuration** for
@@ -66,6 +66,7 @@ from azure.search.documents.indexes.models import (
     VectorSearchProfile,
 )
 from docx import Document
+from pypdf import PdfReader
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -217,6 +218,25 @@ def read_docx(path: Path) -> str:
     return "\n".join(parts)
 
 
+def read_pdf(path: Path) -> str:
+    reader = PdfReader(str(path))
+    return "\n".join((page.extract_text() or "").strip() for page in reader.pages)
+
+
+def read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+# Map file extension -> reader. Extend here to support more formats.
+READERS = {
+    ".docx": read_docx,
+    ".pdf": read_pdf,
+    ".md": read_text,
+    ".markdown": read_text,
+    ".txt": read_text,
+}
+
+
 def chunk_text(text: str, size: int, overlap: int) -> list[str]:
     text = re.sub(r"[ \t]+", " ", text).strip()
     if not text:
@@ -246,15 +266,24 @@ def embed_batch(client, deployment: str, texts: list[str]) -> list[list[float]]:
 
 
 def iter_documents(s: dict, aoai) -> Iterable[dict]:
-    files = sorted(s["data_dir"].glob("*.docx"))
+    files = sorted(
+        f for f in s["data_dir"].rglob("*")
+        if f.is_file() and f.suffix.lower() in READERS
+    )
     if not files:
-        log.warning("No .docx files found in %s", s["data_dir"])
+        log.warning("No supported files (%s) found in %s",
+                    ", ".join(sorted(READERS)), s["data_dir"])
         return
 
     for path in files:
         title = path.stem
+        reader = READERS[path.suffix.lower()]
         log.info("Reading %s", path.name)
-        raw = read_docx(path)
+        try:
+            raw = reader(path)
+        except Exception as e:
+            log.warning("  failed to read %s: %s", path.name, e)
+            continue
         chunks = chunk_text(raw, s["chunk_size"], s["chunk_overlap"])
         if not chunks:
             log.warning("  no text extracted from %s", path.name)

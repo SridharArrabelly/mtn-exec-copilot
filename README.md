@@ -61,6 +61,17 @@ The avatar feature is currently available in the following service regions: Sout
    - `SEARCH_CONNECTION_NAME` - **Required.** Name of the Azure AI Search connection in the Foundry project
    - `SEARCH_INDEX_NAME` - **Required.** Azure AI Search index to expose to the agent
 
+   Search index build/test (only needed when running [`scripts/setup_aisearch_index.py`](scripts/setup_aisearch_index.py) or [`scripts/test_aisearch_query.py`](scripts/test_aisearch_query.py)):
+   - `AZURE_SEARCH_ENDPOINT` - **Required.** `https://<service>.search.windows.net`
+   - `SEARCH_INDEX_NAME` - **Required.** Index name to create/update (e.g. `mtn-meetings`)
+   - `PROJECT_ENDPOINT` - **Required.** Same Foundry project endpoint as above; embeddings are called through it
+   - `EMBEDDING_DEPLOYMENT` - Foundry-deployed embedding model (default: `text-embedding-3-large`)
+   - `AZURE_OPENAI_API_VERSION` - default: `2024-10-21`
+   - `AZURE_SEARCH_API_KEY` - optional; if unset, uses `DefaultAzureCredential`
+   - `DATA_DIR` - default: `./data`
+   - `CHUNK_SIZE` / `CHUNK_OVERLAP` - default: `1200` / `200`
+   - `RECREATE_INDEX` - `true` to drop and recreate the index, default: `false`
+
    Authentication uses Entra ID via `DefaultAzureCredential` — run `az login` once before starting the server. The Voice Live agent path does not support API-key auth.
 
 3. **Run the server:**
@@ -118,6 +129,37 @@ Then open your web browser and navigate to [http://localhost:3000](http://localh
 
 * Step 4: On top of the page, you can toggle the `Developer mode` switch to enable developer mode, which will show chat history in text and additional logs useful for debugging.
 
+### Build the Azure AI Search index
+
+The agent answers from your own documents via an Azure AI Search index. Use [`scripts/setup_aisearch_index.py`](scripts/setup_aisearch_index.py) to (re)create the index and ingest content from `data/`.
+
+Supported file types (auto-detected by extension, recursive): **`.docx`, `.pdf`, `.md`, `.markdown`, `.txt`**. To add a new format, register a reader in the `READERS` dict at the top of the script.
+
+The script:
+- Creates/updates the index with **hybrid search** (BM25 + 3072-dim vector via HNSW/cosine) and a **semantic configuration** (`mtn-semantic`) for L2 re-ranking.
+- Reads each file, chunks it (`CHUNK_SIZE` / `CHUNK_OVERLAP`), embeds chunks through the Foundry resource's Azure OpenAI route (`text-embedding-3-large` by default), and uploads them.
+
+Required roles for the signed-in user (`az login`):
+- **Search Index Data Contributor** + **Search Service Contributor** on the AI Search service
+- **Azure AI User** (or equivalent) on the Foundry project, plus access to the embedding deployment
+
+Run it:
+
+```bash
+uv run python scripts/setup_aisearch_index.py
+```
+
+To wipe and rebuild the index from scratch, set `RECREATE_INDEX=true` for that run.
+
+#### Test a query against the index
+
+Use [`scripts/test_aisearch_query.py`](scripts/test_aisearch_query.py) to issue a hybrid + semantic query and inspect the top results (BM25/vector score and reranker score):
+
+```bash
+uv run python scripts/test_aisearch_query.py "what was discussed about dividends"
+uv run python scripts/test_aisearch_query.py -k 3 "board chair election"
+```
+
 ### Deployment
 
 This sample can be deployed to cloud for global access. The recommended hosting platform is [Azure Container Apps](https://learn.microsoft.com/azure/container-apps/overview). Here are the steps to deploy this sample to `Azure Container Apps`:
@@ -158,7 +200,9 @@ mtn-exec-copilot/
 │   └── app.js                     # Audio capture/playback, WebRTC, WebSocket, UI logic
 │
 ├── scripts/                       # Utility / one-off scripts (not part of the server)
-│   └── setup_foundry_agent.py # Creates a Foundry agent with AI Search + Web Search tools
+│   ├── setup_foundry_agent.py     # Creates a Foundry agent with AI Search + Web Search tools
+│   ├── setup_aisearch_index.py    # Creates/updates the AI Search index and ingests data/ (docx/pdf/md/txt)
+│   └── test_aisearch_query.py     # Smoke-tests the index with a hybrid + semantic query
 │
 ├── pyproject.toml                 # Project metadata, dependencies, [project.scripts] entry point
 ├── uv.lock                        # Locked dependency versions
