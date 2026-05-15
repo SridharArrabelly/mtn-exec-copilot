@@ -10,6 +10,8 @@ from azure.ai.voicelive.models import (
     AzureCustomVoice,
     AzurePersonalVoice,
     AzureSemanticDetection,
+    AzureSemanticDetectionEn,
+    AzureSemanticDetectionMultilingual,
     AzureSemanticVad,
     AzureStandardVoice,
     Background,
@@ -149,8 +151,13 @@ def build_turn_detection(config: dict):
 
     if td_type == "azure_semantic_vad":
         eou_detection = None
-        if eou_type == "semantic_detection_v1":
-            eou_detection = AzureSemanticDetection(
+        if eou_type == "semantic_detection_v1_multilingual":
+            eou_detection = AzureSemanticDetectionMultilingual(
+                threshold_level="default",
+                timeout_ms=1000,
+            )
+        elif eou_type == "semantic_detection_v1":
+            eou_detection = AzureSemanticDetectionEn(
                 threshold_level="default",
                 timeout_ms=1000,
             )
