@@ -66,17 +66,17 @@
 
                         <label class="toggle-label">
                             <span>Noise suppression</span>
-                            <input type="checkbox" id="useNS" />
+                            <input type="checkbox" id="useNS" checked/>
                         </label>
                         <label class="toggle-label">
                             <span>Echo cancellation</span>
-                            <input type="checkbox" id="useEC" />
+                            <input type="checkbox" id="useEC" checked/>
                         </label>
 
                         <label>Turn detection
                             <select id="turnDetectionType">
-                                <option value="server_vad" selected>Server VAD</option>
-                                <option value="azure_semantic_vad">Azure Semantic VAD</option>
+                                <option value="server_vad">Server VAD</option>
+                                <option value="azure_semantic_vad" selected>Azure Semantic VAD</option>
                             </select>
                         </label>
                         <div class="hidden" id="fillerWordsField">
