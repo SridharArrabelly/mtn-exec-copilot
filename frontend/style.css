@@ -88,6 +88,7 @@ body {
     font-weight: 600;
     font-size: 16px;
     color: var(--text-primary);
+    -webkit-user-select: none;
     user-select: none;
     list-style: none;
     display: flex;
@@ -505,10 +506,6 @@ input[type="range"]::-webkit-slider-thumb {
     border-radius: 50%;
     opacity: 0;
     animation: ripple 2s linear 1s infinite;
-}
-
-.volume-circle.active {
-    /* active class no longer used; volume is JS-driven */
 }
 
 @keyframes ripple {
