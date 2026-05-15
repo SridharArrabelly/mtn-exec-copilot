@@ -1,3 +1,5 @@
+import os
+
 from azure.identity import DefaultAzureCredential
 from azure.ai.projects import AIProjectClient
 from azure.ai.projects.models import (
@@ -9,11 +11,19 @@ from azure.ai.projects.models import (
     WebSearchTool,
     WebSearchApproximateLocation
 )
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Format: "https://resource_name.ai.azure.com/api/projects/project_name"
-PROJECT_ENDPOINT = "https://foundry-resource-eastus2-01.services.ai.azure.com/api/projects/mtn-execu-bot"
-SEARCH_CONNECTION_NAME = "ai-search-core"
-SEARCH_INDEX_NAME = "my-index"
+PROJECT_ENDPOINT = os.getenv("PROJECT_ENDPOINT")
+SEARCH_CONNECTION_NAME = os.getenv("SEARCH_CONNECTION_NAME")
+SEARCH_INDEX_NAME = os.getenv("SEARCH_INDEX_NAME")
+
+if not PROJECT_ENDPOINT or not SEARCH_CONNECTION_NAME or not SEARCH_INDEX_NAME:
+    raise EnvironmentError(
+        "PROJECT_ENDPOINT, SEARCH_CONNECTION_NAME, and SEARCH_INDEX_NAME must be set in the environment (.env)."
+    )
 
 # Create clients to call Foundry API
 project = AIProjectClient(

@@ -50,10 +50,16 @@ The avatar feature is currently available in the following service regions: Sout
 
 2. **Configure environment (`.env` in project root):**
 
+   Runtime (backend):
    - `AZURE_VOICELIVE_ENDPOINT` - **Required.** Your Microsoft Foundry / AI Services endpoint
    - `AGENT_NAME` - **Required.** Name of the Foundry agent to bind the session to (created via [`scripts/agent_create_with_tools.py`](scripts/agent_create_with_tools.py))
    - `AGENT_PROJECT_NAME` - **Required.** Foundry project that owns the agent
    - `VOICELIVE_VOICE` - Voice name (default: `en-US-AvaMultilingualNeural`)
+
+   Agent provisioning (only needed when running [`scripts/agent_create_with_tools.py`](scripts/agent_create_with_tools.py)):
+   - `PROJECT_ENDPOINT` - **Required.** Foundry project endpoint, e.g. `https://<resource>.services.ai.azure.com/api/projects/<project-name>`
+   - `SEARCH_CONNECTION_NAME` - **Required.** Name of the Azure AI Search connection in the Foundry project
+   - `SEARCH_INDEX_NAME` - **Required.** Azure AI Search index to expose to the agent
 
    Authentication uses Entra ID via `DefaultAzureCredential` — run `az login` once before starting the server. The Voice Live agent path does not support API-key auth.
 
