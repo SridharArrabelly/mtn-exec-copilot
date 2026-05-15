@@ -1136,7 +1136,10 @@ function preparePeerConnection(iceServers) {
         credential: s.credential || undefined,
     }));
 
-    const pc = new RTCPeerConnection({ iceServers: iceConfig });
+    // iceCandidatePoolSize pre-allocates ICE candidates against each STUN/TURN server
+    // at PC construction time, so by the time we createOffer() the candidates are
+    // mostly gathered. Cuts cold-start gathering latency.
+    const pc = new RTCPeerConnection({ iceServers: iceConfig, iceCandidatePoolSize: 4 });
     let iceGatheringDone = false;
 
     // Handle incoming tracks (video and audio)
@@ -1145,10 +1148,11 @@ function preparePeerConnection(iceServers) {
         const mediaPlayer = document.createElement(event.track.kind);
         mediaPlayer.id = event.track.kind;
         mediaPlayer.srcObject = event.streams[0];
-        mediaPlayer.autoplay = false;
-        mediaPlayer.addEventListener('loadeddata', () => {
-            mediaPlayer.play();
-        });
+        // autoplay=true starts the stream as soon as the first frame decodes (no
+        // loadeddata round-trip). playsInline keeps it inline on iOS Safari instead
+        // of forcing fullscreen.
+        mediaPlayer.autoplay = true;
+        mediaPlayer.playsInline = true;
         if (container) container.appendChild(mediaPlayer);
         if (event.track.kind === 'video') {
             avatarVideoElement = mediaPlayer;
@@ -1201,7 +1205,7 @@ function preparePeerConnection(iceServers) {
     pc.createOffer().then(offer => {
         return pc.setLocalDescription(offer);
     }).then(() => {
-        // Timeout fallback: if ICE gathering hasn't completed after 10 seconds, push anyway
+        // Timeout fallback: if ICE gathering hasn't completed after 2.5 seconds, push anyway
         setTimeout(() => {
             if (!iceGatheringDone) {
                 iceGatheringDone = true;
@@ -1212,7 +1216,7 @@ function preparePeerConnection(iceServers) {
                     try { old.close(); } catch (e) {}
                 }
             }
-        }, 10000);
+        }, 2500);
     }).catch(err => {
         console.error('preparePeerConnection offer error', err);
     });
@@ -1252,17 +1256,19 @@ function setupWebRTC(iceServers) {
         credential: s.credential || undefined,
     }));
 
-    peerConnection = new RTCPeerConnection({ iceServers: iceConfig });
+    // See preparePeerConnection() for why iceCandidatePoolSize is set.
+    peerConnection = new RTCPeerConnection({ iceServers: iceConfig, iceCandidatePoolSize: 4 });
 
     // Handle incoming tracks (video and audio)
     peerConnection.ontrack = (event) => {
         const mediaPlayer = document.createElement(event.track.kind);
         mediaPlayer.id = event.track.kind;
         mediaPlayer.srcObject = event.streams[0];
-        mediaPlayer.autoplay = false;
-        mediaPlayer.addEventListener('loadeddata', () => {
-            mediaPlayer.play();
-        });
+        // autoplay=true starts the stream as soon as the first frame decodes (no
+        // loadeddata round-trip). playsInline keeps it inline on iOS Safari instead
+        // of forcing fullscreen.
+        mediaPlayer.autoplay = true;
+        mediaPlayer.playsInline = true;
         if (container) container.appendChild(mediaPlayer);
         if (event.track.kind === 'video') {
             avatarVideoElement = mediaPlayer;
@@ -1315,7 +1321,7 @@ function setupWebRTC(iceServers) {
     peerConnection.createOffer().then(offer => {
         return peerConnection.setLocalDescription(offer);
     }).then(() => {
-        // Timeout fallback: send SDP after 10 seconds if ICE gathering hasn't completed
+        // Timeout fallback: send SDP after 2.5 seconds if ICE gathering hasn't completed
         setTimeout(() => {
             if (!iceGatheringDone) {
                 iceGatheringDone = true;
@@ -1325,7 +1331,7 @@ function setupWebRTC(iceServers) {
                 ws.send(JSON.stringify({ type: 'avatar_sdp_offer', clientSdp: sdpBase64 }));
                 console.log('[WebRTC] SDP offer sent after timeout (base64)');
             }
-        }, 10000);
+        }, 2500);
     }).catch(err => {
         console.error('WebRTC offer error', err);
         addMessage('system', 'WebRTC setup failed');
@@ -1428,4 +1434,26 @@ function base64ToArrayBuffer(base64) {
         bytes[i] = binary.charCodeAt(i);
     }
     return bytes.buffer;
+}
+
+// Pre-warm a peer connection with public STUN servers as soon as the page loads,
+// so the first Connect click can reuse a cached PC with already-gathered ICE
+// candidates instead of paying the cold-start gathering cost (~5-10s).
+const FALLBACK_STUN_SERVERS = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+];
+function preWarmPeerConnection() {
+    try {
+        if (peerConnectionQueue.length === 0) {
+            preparePeerConnection(FALLBACK_STUN_SERVERS);
+        }
+    } catch (e) {
+        console.warn('preWarmPeerConnection failed', e);
+    }
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', preWarmPeerConnection);
+} else {
+    preWarmPeerConnection();
 }
