@@ -215,7 +215,7 @@ function updateConditionalFields() {
 
 function show(id, visible) {
     const el = document.getElementById(id);
-    if (el) el.style.display = visible ? '' : 'none';
+    if (el) el.classList.toggle('hidden', !visible);
 }
 
 // ===== Sidebar Toggle (mobile) =====
@@ -552,7 +552,7 @@ async function onSessionStarted(msg) {
     }
 
     // Show record button for non-dev mode
-    document.getElementById('recordContainer').style.display = '';
+    document.getElementById('recordContainer').classList.remove('hidden');
 
     // Start audio capture but leave mic off by default
     await startAudioCapture();
@@ -655,51 +655,53 @@ function updateDeveloperModeLayout() {
     const inputArea = document.getElementById('inputArea');
     const footerArea = document.getElementById('footerArea');
 
+    const hide = (el, h) => el.classList.toggle('hidden', h);
+
     if (isDeveloperMode) {
         // Developer mode: show input area, hide footer
-        inputArea.style.display = '';
-        footerArea.style.display = 'none';
+        hide(inputArea, false);
+        hide(footerArea, true);
 
         if (isConnected && avatarEnabled) {
             // Avatar + developer: side-by-side layout (avatar + chat)
             contentArea.classList.add('developer-layout');
-            avatarVideoContainer.style.display = '';
-            chatArea.style.display = '';
-            volumeAnimation.style.display = 'none';
+            hide(avatarVideoContainer, false);
+            hide(chatArea, false);
+            hide(volumeAnimation, true);
         } else if (isConnected) {
             // No avatar + developer: side-by-side layout (robot + chat)
             contentArea.classList.add('developer-layout');
-            avatarVideoContainer.style.display = 'none';
-            chatArea.style.display = '';
-            volumeAnimation.style.display = '';
+            hide(avatarVideoContainer, true);
+            hide(chatArea, false);
+            hide(volumeAnimation, false);
         } else {
             // Not connected: just show chat
             contentArea.classList.remove('developer-layout');
-            avatarVideoContainer.style.display = 'none';
-            chatArea.style.display = '';
-            volumeAnimation.style.display = 'none';
+            hide(avatarVideoContainer, true);
+            hide(chatArea, false);
+            hide(volumeAnimation, true);
         }
     } else {
         // Normal mode: show footer, hide input area
-        inputArea.style.display = 'none';
-        footerArea.style.display = '';
+        hide(inputArea, true);
+        hide(footerArea, false);
         contentArea.classList.remove('developer-layout');
 
         if (isConnected && avatarEnabled) {
             // Avatar + normal: only avatar video, no chat
-            avatarVideoContainer.style.display = '';
-            chatArea.style.display = 'none';
-            volumeAnimation.style.display = 'none';
+            hide(avatarVideoContainer, false);
+            hide(chatArea, true);
+            hide(volumeAnimation, true);
         } else if (isConnected) {
             // No avatar + normal: only robot, no chat
-            avatarVideoContainer.style.display = 'none';
-            chatArea.style.display = 'none';
-            volumeAnimation.style.display = '';
+            hide(avatarVideoContainer, true);
+            hide(chatArea, true);
+            hide(volumeAnimation, false);
         } else {
             // Not connected: show chat history
-            avatarVideoContainer.style.display = 'none';
-            chatArea.style.display = '';
-            volumeAnimation.style.display = 'none';
+            hide(avatarVideoContainer, true);
+            hide(chatArea, false);
+            hide(volumeAnimation, true);
         }
     }
 }
@@ -765,10 +767,10 @@ function updateMicUI() {
 
     // Toggle icon visibility: show off-icon when not recording, on-icon when recording
     document.querySelectorAll('.mic-off-icon').forEach(el => {
-        el.style.display = isRecording ? 'none' : '';
+        el.classList.toggle('hidden', isRecording);
     });
     document.querySelectorAll('.mic-on-icon').forEach(el => {
-        el.style.display = isRecording ? '' : 'none';
+        el.classList.toggle('hidden', !isRecording);
     });
 
     // Update label text

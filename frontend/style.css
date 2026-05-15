@@ -728,3 +728,9 @@ input[type="range"]::-webkit-slider-thumb {
     .sidebar.open { left: 0; }
     .mobile-menu { display: flex; }
 }
+
+/* Utility classes (no inline styles) */
+.hidden { display: none !important; }
+.flex-spacer { flex: 1; }
+.btn-faded { opacity: 0.5; }
+
