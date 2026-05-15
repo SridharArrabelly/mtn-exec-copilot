@@ -16,7 +16,7 @@ This sample demonstrates the usage of Azure Voice Live API with avatar, implemen
 └─────────────────────────┘         └─────────────────────────┘
 ```
 
-**Key design:** The Python backend acts as a bridge between the browser and Azure Voice Live service. Voice Live binds the session to an existing **Microsoft Foundry agent** via `agent_config = { agent_name, project_name }`. The agent (created once with [`scripts/agent_create_with_tools.py`](scripts/agent_create_with_tools.py)) owns the system prompt, model selection, and tool wiring (Azure AI Search index + Web Search). Voice Live handles speech-in/speech-out and routes turns through the agent so tool calls resolve server-side in Foundry.
+**Key design:** The Python backend acts as a bridge between the browser and Azure Voice Live service. Voice Live binds the session to an existing **Microsoft Foundry agent** via `agent_config = { agent_name, project_name }`. The agent (created once with [`scripts/setup_foundry_agent.py`](scripts/setup_foundry_agent.py)) owns the system prompt, model selection, and tool wiring (Azure AI Search index + Web Search). Voice Live handles speech-in/speech-out and routes turns through the agent so tool calls resolve server-side in Foundry.
 
 All SDK operations (session creation, configuration, audio forwarding, event processing) happen in Python. The browser only handles:
 - Microphone capture → sends PCM16 audio via WebSocket
@@ -52,11 +52,11 @@ The avatar feature is currently available in the following service regions: Sout
 
    Runtime (backend):
    - `AZURE_VOICELIVE_ENDPOINT` - **Required.** Your Microsoft Foundry / AI Services endpoint
-   - `AGENT_NAME` - **Required.** Name of the Foundry agent to bind the session to (created via [`scripts/agent_create_with_tools.py`](scripts/agent_create_with_tools.py))
+   - `AGENT_NAME` - **Required.** Name of the Foundry agent to bind the session to (created via [`scripts/setup_foundry_agent.py`](scripts/setup_foundry_agent.py))
    - `AGENT_PROJECT_NAME` - **Required.** Foundry project that owns the agent
    - `VOICELIVE_VOICE` - Voice name (default: `en-US-AvaMultilingualNeural`)
 
-   Agent provisioning (only needed when running [`scripts/agent_create_with_tools.py`](scripts/agent_create_with_tools.py)):
+   Agent provisioning (only needed when running [`scripts/setup_foundry_agent.py`](scripts/setup_foundry_agent.py)):
    - `PROJECT_ENDPOINT` - **Required.** Foundry project endpoint, e.g. `https://<resource>.services.ai.azure.com/api/projects/<project-name>`
    - `SEARCH_CONNECTION_NAME` - **Required.** Name of the Azure AI Search connection in the Foundry project
    - `SEARCH_INDEX_NAME` - **Required.** Azure AI Search index to expose to the agent
@@ -158,7 +158,7 @@ mtn-exec-copilot/
 │   └── app.js                     # Audio capture/playback, WebRTC, WebSocket, UI logic
 │
 ├── scripts/                       # Utility / one-off scripts (not part of the server)
-│   └── agent_create_with_tools.py # Creates a Foundry agent with AI Search + Web Search tools
+│   └── setup_foundry_agent.py # Creates a Foundry agent with AI Search + Web Search tools
 │
 ├── pyproject.toml                 # Project metadata, dependencies, [project.scripts] entry point
 ├── uv.lock                        # Locked dependency versions
