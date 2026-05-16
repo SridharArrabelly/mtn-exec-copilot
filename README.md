@@ -25,11 +25,15 @@ All SDK operations (session creation, configuration, audio forwarding, event pro
 - Avatar video rendering via direct WebRTC peer connection to Azure
 - WebSocket video mode: receives fMP4 video chunks via WebSocket for MediaSource Extensions playback
 
+## Getting Started
+
 ### Prerequisites
 
 - Python 3.10+
 - An active Azure account. If you don't have an Azure account, you can create an account [here](https://azure.microsoft.com/free/ai-services).
 - A Microsoft Foundry resource created in one of the supported regions. For more information about region availability, see the [voice live overview documentation](https://learn.microsoft.com/azure/ai-services/speech-service/voice-live).
+- A base chat model deployed in the Foundry resource (e.g., `gpt-4.1` or `gpt-5`+). The Foundry agent is bound to this deployment; without it the agent cannot answer.
+- An [Azure AI Search](https://learn.microsoft.com/azure/search/search-create-service-portal) service, added as a [connected resource](https://learn.microsoft.com/azure/ai-foundry/how-to/connections-add) in the Foundry project (the connection name goes into `SEARCH_CONNECTION_NAME`). Used as the agent's knowledge store; the index is built by [`scripts/setup_aisearch_index.py`](scripts/setup_aisearch_index.py).
 
 ### Avatar available locations
 
@@ -49,6 +53,8 @@ The avatar feature is currently available in the following service regions: Sout
    `uv` will create a `.venv` and install dependencies automatically the first time you run the app.
 
 2. **Configure environment (`.env` in project root):**
+
+   Copy `.env.example` to `.env` and fill in the values below.
 
    Runtime (backend):
    - `AZURE_VOICELIVE_ENDPOINT` - **Required.** Your Microsoft Foundry / AI Services endpoint
@@ -114,20 +120,21 @@ Then open your web browser and navigate to [http://localhost:3000](http://localh
 
 ### Configure and play the sample
 
-* Step 1: Make sure your `.env` has `AZURE_VOICELIVE_ENDPOINT`, `AGENT_NAME`, and `AGENT_PROJECT_NAME` set, and that you have run `az login`. The endpoint and Foundry agent are no longer entered in the UI.
+1. Make sure your `.env` has `AZURE_VOICELIVE_ENDPOINT`, `AGENT_NAME`, and `AGENT_PROJECT_NAME` set, and that you have run `az login`. Endpoint and agent are read from `.env`, not entered in the UI.
 
-* Step 2: Under `Conversation Settings` section, configure the avatar:
+2. Under `Conversation Settings`, configure the avatar:
   - **Enable Avatar**: Toggle the `Avatar` switch to enable the avatar feature.
   - **Avatar Type**: By default, a prebuilt avatar is used. Select a character from the `Avatar Character` dropdown list.
     - To use a **photo avatar**, toggle the `Use Photo Avatar` switch and select a prebuilt photo avatar character from the dropdown list.
-    - To use a **custom avatar**, toggle the `Use Custom Avatar` switch and enter the character name in the `Character` field.
+    - To use a **custom (video) avatar**, toggle the `Use Custom Avatar` switch and enter the character name in the `Character` field.
+    - To use a **custom photo avatar** (a photo avatar you trained in your own Speech / AI Services resource), toggle **both** `Use Photo Avatar` and `Use Custom Avatar`, then enter the trained character name in the `Custom Avatar Name` field. The backend automatically sets `customized=true` and preserves the exact name (no style). Make sure the `AZURE_VOICELIVE_ENDPOINT` you configured points to the same resource where the custom photo avatar was trained.
   - **Avatar Output Mode**: Choose between `WebRTC` (default, real-time streaming) and `WebSocket` (streams video data over the WebSocket connection).
   - **Avatar Background Image URL** *(optional)*: Enter a URL to set a custom background image for the avatar.
   - **Scene Settings** *(photo avatar only)*: When using a photo avatar, adjust scene parameters such as `Zoom`, `Position X/Y`, `Rotation X/Y/Z`, and `Amplitude`. These settings can also be adjusted live after connecting.
 
-* Step 3: Click `Connect` button to start the conversation. Once connected, you should see the avatar appearing on the page, and you can click `Turn on microphone` and start talking with the avatar with speech.
+3. Click `Connect` to start the conversation. Once connected, you should see the avatar appear on the page; click `Turn on microphone` and start talking.
 
-* Step 4: On top of the page, you can toggle the `Developer mode` switch to enable developer mode, which will show chat history in text and additional logs useful for debugging.
+4. At the top of the page, toggle `Developer mode` to show chat history in text and additional logs useful for debugging.
 
 ### Build the Azure AI Search index
 
@@ -135,9 +142,15 @@ The agent answers from your own documents via an Azure AI Search index. Use [`sc
 
 Supported file types (auto-detected by extension, recursive): **`.docx`, `.pdf`, `.md`, `.markdown`, `.txt`**. To add a new format, register a reader in the `READERS` dict at the top of the script.
 
-The script:
-- Creates/updates the index with **hybrid search** (BM25 + 3072-dim vector via HNSW/cosine) and a **semantic configuration** (`mtn-semantic`) for L2 re-ranking.
-- Reads each file, chunks it (`CHUNK_SIZE` / `CHUNK_OVERLAP`), embeds chunks through the Foundry resource's Azure OpenAI route (`text-embedding-3-large` by default), and uploads them.
+**Indexing pipeline** (what the script does on each run):
+
+1. **Discover** — walks `data/` recursively and picks up files whose extension is registered in `READERS`.
+2. **Read** — extracts plain text per file type (`python-docx` for `.docx`, `pypdf` for `.pdf`, raw read for `.md`/`.txt`).
+3. **Chunk** — splits each document into overlapping windows of `CHUNK_SIZE` chars with `CHUNK_OVERLAP` chars of overlap.
+4. **Embed** — sends chunks to the Foundry resource's Azure OpenAI route (`text-embedding-3-large` by default, 3072 dims).
+5. **Upload** — pushes the chunks + vectors into the index, which is configured for **hybrid search** (BM25 + HNSW/cosine) with a **semantic configuration** (`mtn-semantic`) for L2 re-ranking.
+
+This is a one-off bootstrap step — the running app never re-ingests; it only queries the index at request time.
 
 Required roles for the signed-in user (`az login`):
 - **Search Index Data Contributor** + **Search Service Contributor** on the AI Search service
@@ -162,17 +175,18 @@ uv run python scripts/test_aisearch_query.py -k 3 "board chair election"
 
 ### Deployment
 
-This sample can be deployed to cloud for global access. The recommended hosting platform is [Azure Container Apps](https://learn.microsoft.com/azure/container-apps/overview). Here are the steps to deploy this sample to `Azure Container Apps`:
+This sample can be deployed to cloud for global access. The recommended hosting platform is [Azure Container Apps](https://learn.microsoft.com/azure/container-apps/overview). To deploy to Azure Container Apps:
 
-* Step 1: Push the Docker image to a container registry, such as [Azure Container Registry](https://learn.microsoft.com/azure/container-registry/). You can use the following command to push the image to Azure Container Registry:
-  ```bash
-  docker tag mtn-exec-copilot <your-registry-name>.azurecr.io/mtn-exec-copilot:latest
-  docker push <your-registry-name>.azurecr.io/mtn-exec-copilot:latest
-  ```
+1. Push the Docker image to a container registry, such as [Azure Container Registry](https://learn.microsoft.com/azure/container-registry/):
 
-* Step 2: Create an `Azure Container App` and deploy the Docker image built from above steps, following [Deploy from an existing container image](https://learn.microsoft.com/azure/container-apps/quickstart-portal).
+   ```bash
+   docker tag mtn-exec-copilot <your-registry-name>.azurecr.io/mtn-exec-copilot:latest
+   docker push <your-registry-name>.azurecr.io/mtn-exec-copilot:latest
+   ```
 
-* Step 3: Once the `Azure Container App` is created, you can access the sample by navigating to the URL of the `Azure Container App` in your browser.
+2. Create an `Azure Container App` and deploy the image, following [Deploy from an existing container image](https://learn.microsoft.com/azure/container-apps/quickstart-portal).
+
+3. Once the `Azure Container App` is created, access the sample by navigating to its URL in your browser.
 
 ## Project Structure
 
@@ -204,14 +218,22 @@ mtn-exec-copilot/
 │   ├── setup_aisearch_index.py    # Creates/updates the AI Search index and ingests data/ (docx/pdf/md/txt)
 │   └── test_aisearch_query.py     # Smoke-tests the index with a hybrid + semantic query
 │
+├── assets/                        # Non-code, non-corpus assets (not consumed at runtime)
+│   └── avatar/                    # Source photo(s) used to train custom photo avatars in Speech Studio
+│       └── README.md              # Which character / resource / date the photo was trained for
+│
+├── data/                          # Source corpus ingested into the AI Search index (.docx/.pdf/.md/.txt)
+│   └── README.md                  # What goes here, supported file types, how to rebuild
+│
 ├── pyproject.toml                 # Project metadata, dependencies, [project.scripts] entry point
 ├── uv.lock                        # Locked dependency versions
 ├── Dockerfile                     # Container build (python:3.12-slim + uv)
-├── .env                           # Local environment variables (not committed)
+├── .env.example                   # Template for .env (committed) — copy and fill in
+├── .env                           # Local environment variables (gitignored)
 └── README.md                      # This file
 ```
 
-### Authentication
+## Authentication
 
 Voice Live agent sessions (`agent_config = { agent_name, project_name }`) require Entra ID; API-key auth is rejected by the agent path. The backend always uses [`DefaultAzureCredential`](https://learn.microsoft.com/python/api/azure-identity/azure.identity.defaultazurecredential) (token scope `https://cognitiveservices.azure.com/.default`). Run `az login` locally; in Azure, attach a managed identity. The identity needs the **Cognitive Services User** role on the AI Services resource and access to the Foundry project.
 

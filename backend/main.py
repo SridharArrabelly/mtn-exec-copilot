@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Startup/shutdown hook: closes outstanding voice sessions on shutdown."""
     logger.info("MTN Exec Copilot server starting...")
     yield
     await ws.shutdown_all()
@@ -62,10 +63,12 @@ if os.path.isdir(_frontend):
 else:
     @app.get("/")
     async def root():
+        """Fallback when frontend/ is missing."""
         return {"message": "MTN Exec Copilot — frontend/ directory not found."}
 
 
 def run() -> None:
+    """Console-script entry point (see pyproject [project.scripts])."""
     uvicorn.run("backend.main:app", host=HOST, port=PORT, reload=True, log_level="info")
 
 
