@@ -113,8 +113,10 @@ docker build -t mtn-exec-copilot .
 Start the container:
 
 ```bash
-docker run --rm -p 3000:3000 mtn-exec-copilot
+docker run --rm -p 3000:3000 --env-file .env mtn-exec-copilot
 ```
+
+> The container needs the variables from `.env` (Azure endpoint, agent name, etc.). `DefaultAzureCredential` inside the container won't see your host `az login` — set `AZURE_VOICELIVE_API_KEY` in `.env`, or provide a service principal via `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_CLIENT_SECRET`.
 
 Then open your web browser and navigate to [http://localhost:3000](http://localhost:3000).
 
