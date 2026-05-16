@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: mtn-exec-copilot
+metadata:
+  template: mtn-exec-copilot@1.0.0
+
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+services:
+  web:
+    project: .
+    language: python
+    host: containerapp
+    docker:
+      path: Dockerfile
+      context: .
+      remoteBuild: true
+
+hooks:
+  postprovision:
+    windows:
+      shell: pwsh
+      run: |
+        Write-Host "Provision complete. App URL: $env:SERVICE_APP_URI"
+        Write-Host "Foundry endpoint: $env:AZURE_VOICELIVE_ENDPOINT"
+        Write-Host ""
+        Write-Host "Next steps before the app is functional:" -ForegroundColor Yellow
+        Write-Host "  1. Populate the Foundry agent: uv run python scripts/setup_foundry_agent.py"
+        Write-Host "  2. Populate the AI Search index: uv run python scripts/setup_aisearch_index.py"
+    posix:
+      shell: sh
+      run: |
+        echo "Provision complete. App URL: $SERVICE_APP_URI"
+        echo "Foundry endpoint: $AZURE_VOICELIVE_ENDPOINT"
+        echo ""
+        echo "Next steps before the app is functional:"
+        echo "  1. Populate the Foundry agent: uv run python scripts/setup_foundry_agent.py"
+        echo "  2. Populate the AI Search index: uv run python scripts/setup_aisearch_index.py"

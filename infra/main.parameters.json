@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "value": "${AZURE_ENV_NAME}" },
+    "location":        { "value": "${AZURE_LOCATION}" },
+    "resourceGroupName": { "value": "${AZURE_RESOURCE_GROUP_NAME}" },
+    "principalId":     { "value": "${AZURE_PRINCIPAL_ID=}" },
+
+    "existingFoundryAccountName":     { "value": "${EXISTING_FOUNDRY_ACCOUNT_NAME=}" },
+    "existingFoundryResourceGroup":   { "value": "${EXISTING_FOUNDRY_RESOURCE_GROUP=}" },
+    "existingFoundryProjectEndpoint": { "value": "${EXISTING_FOUNDRY_PROJECT_ENDPOINT=}" },
+
+    "existingSearchServiceName":   { "value": "${EXISTING_SEARCH_SERVICE_NAME=}" },
+    "existingSearchResourceGroup": { "value": "${EXISTING_SEARCH_RESOURCE_GROUP=}" },
+    "existingSearchIndexName":     { "value": "${EXISTING_SEARCH_INDEX_NAME=}" },
+
+    "agentName":           { "value": "${AGENT_NAME=MtnAvatarAgent}" },
+    "agentProjectName":    { "value": "${AGENT_PROJECT_NAME=mtn-execu-bot}" },
+    "searchConnectionName":{ "value": "${SEARCH_CONNECTION_NAME=aisearch-mtn}" },
+    "searchIndexName":     { "value": "${SEARCH_INDEX_NAME=mtn-board-index}" },
+    "voiceLiveVoice":      { "value": "${VOICELIVE_VOICE=en-US-AvaMultilingualNeural}" },
+
+    "modelName":           { "value": "${MODEL_NAME=gpt-4.1-mini}" },
+    "modelVersion":        { "value": "${MODEL_VERSION=2025-04-14}" },
+    "modelDeploymentName": { "value": "${MODEL_DEPLOYMENT_NAME=gpt-4.1-mini}" },
+    "modelSkuName":        { "value": "${MODEL_SKU_NAME=GlobalStandard}" },
+    "modelCapacity":       { "value": ${MODEL_CAPACITY=50} }
+  }
+}

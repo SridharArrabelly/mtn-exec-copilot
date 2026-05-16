@@ -1,0 +1,67 @@
+name: Deploy to Azure (azd)
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # OIDC federated login
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AZURE_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_ENV_NAME:        ${{ vars.AZURE_ENV_NAME }}
+      AZURE_LOCATION:        ${{ vars.AZURE_LOCATION }}
+      AZURE_RESOURCE_GROUP_NAME: ${{ vars.AZURE_RESOURCE_GROUP_NAME }}
+
+      # ── BYO Foundry / Search overrides (optional GitHub Variables) ──
+      EXISTING_FOUNDRY_ACCOUNT_NAME:     ${{ vars.EXISTING_FOUNDRY_ACCOUNT_NAME }}
+      EXISTING_FOUNDRY_RESOURCE_GROUP:   ${{ vars.EXISTING_FOUNDRY_RESOURCE_GROUP }}
+      EXISTING_FOUNDRY_PROJECT_ENDPOINT: ${{ vars.EXISTING_FOUNDRY_PROJECT_ENDPOINT }}
+      EXISTING_SEARCH_SERVICE_NAME:      ${{ vars.EXISTING_SEARCH_SERVICE_NAME }}
+      EXISTING_SEARCH_RESOURCE_GROUP:    ${{ vars.EXISTING_SEARCH_RESOURCE_GROUP }}
+      EXISTING_SEARCH_INDEX_NAME:        ${{ vars.EXISTING_SEARCH_INDEX_NAME }}
+
+      # ── App config (optional GitHub Variables) ──
+      AGENT_NAME:            ${{ vars.AGENT_NAME }}
+      AGENT_PROJECT_NAME:    ${{ vars.AGENT_PROJECT_NAME }}
+      SEARCH_CONNECTION_NAME:${{ vars.SEARCH_CONNECTION_NAME }}
+      SEARCH_INDEX_NAME:     ${{ vars.SEARCH_INDEX_NAME }}
+      VOICELIVE_VOICE:       ${{ vars.VOICELIVE_VOICE }}
+
+      # ── Model deployment overrides (optional GitHub Variables) ──
+      MODEL_NAME:            ${{ vars.MODEL_NAME }}
+      MODEL_VERSION:         ${{ vars.MODEL_VERSION }}
+      MODEL_DEPLOYMENT_NAME: ${{ vars.MODEL_DEPLOYMENT_NAME }}
+      MODEL_SKU_NAME:        ${{ vars.MODEL_SKU_NAME }}
+      MODEL_CAPACITY:        ${{ vars.MODEL_CAPACITY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Azure Developer CLI
+        uses: Azure/setup-azd@v2
+
+      - name: Log in to Azure (OIDC)
+        run: |
+          azd auth login \
+            --client-id "$AZURE_CLIENT_ID" \
+            --federated-credential-provider github \
+            --tenant-id "$AZURE_TENANT_ID"
+
+      - name: Provision infrastructure
+        run: azd provision --no-prompt
+
+      - name: Deploy application
+        run: azd deploy --no-prompt

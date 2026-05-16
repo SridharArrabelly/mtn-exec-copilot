@@ -175,21 +175,199 @@ uv run python scripts/test_aisearch_query.py "what was discussed about dividends
 uv run python scripts/test_aisearch_query.py -k 3 "board chair election"
 ```
 
-### Deployment
+### Deployment to Azure with `azd`
 
-This sample can be deployed to cloud for global access. The recommended hosting platform is [Azure Container Apps](https://learn.microsoft.com/azure/container-apps/overview). To deploy to Azure Container Apps:
+The repository ships a complete [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/overview) template that provisions and deploys everything in one command. Target topology:
 
-1. Push the Docker image to a container registry, such as [Azure Container Registry](https://learn.microsoft.com/azure/container-registry/):
+- **Azure Container Apps** (WebSockets-enabled, ingress port 3000, 1–3 replicas) — runs this app
+- **Azure Container Registry** (Standard, admin disabled) — image registry
+- **User-Assigned Managed Identity** — used by the container app for ACR pull, Foundry, and Search access (no secrets in env)
+- **Log Analytics + Application Insights** — observability
+- **Azure AI Foundry** (account + project + model deployment) — created or BYO
+- **Azure AI Search** (Basic, AAD auth) — created or BYO
 
-   ```bash
-   docker tag mtn-exec-copilot <your-registry-name>.azurecr.io/mtn-exec-copilot:latest
-   docker push <your-registry-name>.azurecr.io/mtn-exec-copilot:latest
-   ```
+#### Prerequisites
 
-2. Create an `Azure Container App` and deploy the image, following [Deploy from an existing container image](https://learn.microsoft.com/azure/container-apps/quickstart-portal).
+- [Azure Developer CLI](https://aka.ms/azd-install) (`azd`)
+- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (for `az login`)
+- An Azure subscription with **Owner** (or Contributor + User Access Administrator) on the target subscription — the template grants RBAC roles
+- Docker (only required if you want to run `azd deploy` locally; remote build via ACR is also supported)
 
-3. Once the `Azure Container App` is created, access the sample by navigating to its URL in your browser.
+#### Deploy
 
+```bash
+# 1. Authenticate
+az login
+azd auth login
+
+# 2. Initialise an azd environment
+azd init
+
+# 3. Provision infra + build + deploy app
+#    azd will interactively prompt for:
+#      - Azure Subscription
+#      - Azure Location (region)
+#      - Environment name (azd env name, e.g. "mtn-dev")
+#      - Resource Group name (the RG that will be created, e.g. "rg-mtn-dev")
+azd up
+```
+
+After `azd up` completes, the URL of the running container app is printed (and stored as `SERVICE_APP_URI` in the azd env).
+
+#### Bring-your-own Foundry / Search
+
+The two big-ticket resources — **Azure AI Foundry** and **Azure AI Search** — can be created fresh by the template (default) or reused from an existing deployment. Each is controlled by its own independent switch:
+
+```bicep
+// infra/main.bicep
+var createFoundry = empty(existingFoundryAccountName) || empty(existingFoundryResourceGroup) || empty(existingFoundryProjectEndpoint)
+var createSearch  = empty(existingSearchServiceName)  || empty(existingSearchResourceGroup)  || empty(existingSearchIndexName)
+```
+
+A resource is treated as BYO **only when all three of its `EXISTING_*` env vars are set** — otherwise the template provisions a new one. The two switches are independent: you can BYO Foundry while letting the template create Search, or vice versa.
+
+##### Full BYO walkthrough (existing Foundry + existing AI Search)
+
+```bash
+# 1. Authenticate
+az login
+azd auth login
+
+# 2. Initialise the azd environment
+azd init     # prompts for env name (e.g. mtn-dev) and picks template files
+
+# 3. Tell azd which subscription / region / RG to use
+azd env set AZURE_SUBSCRIPTION_ID     <sub-guid>
+azd env set AZURE_LOCATION            eastus2
+azd env set AZURE_RESOURCE_GROUP_NAME rg-mtn-dev
+
+# 4. Point at the EXISTING Foundry account + project
+azd env set EXISTING_FOUNDRY_ACCOUNT_NAME     mtn-foundry-prod
+azd env set EXISTING_FOUNDRY_RESOURCE_GROUP   rg-shared-ai
+azd env set EXISTING_FOUNDRY_PROJECT_ENDPOINT https://mtn-foundry-prod.services.ai.azure.com/api/projects/mtn-execu-bot
+
+# 5. Point at the EXISTING AI Search service + index
+azd env set EXISTING_SEARCH_SERVICE_NAME   mtn-search-prod
+azd env set EXISTING_SEARCH_RESOURCE_GROUP rg-shared-ai
+azd env set EXISTING_SEARCH_INDEX_NAME     mtn-board-index
+
+# 6. Provision + deploy
+azd up
+```
+
+##### What actually gets created vs. skipped
+
+| Resource | Created? | Notes |
+|---|---|---|
+| Resource Group (`rg-mtn-dev`) | ✅ Created | From your `AZURE_RESOURCE_GROUP_NAME` |
+| User-Assigned Managed Identity | ✅ Created | App-scoped identity |
+| Log Analytics + App Insights | ✅ Created | Per-app observability |
+| Azure Container Registry | ✅ Created | App's own ACR for image push |
+| Container Apps Environment | ✅ Created | Hosts the app |
+| Container App | ✅ Created | The web app itself |
+| **Foundry account + project + model deployment** | ❌ **SKIPPED** | Reuses the BYO Foundry |
+| **AI Search service + index** | ❌ **SKIPPED** | Reuses the BYO Search |
+
+So you still get a self-contained RG with the app, logs, ACR, and identity — but **no duplicate Foundry/Search**.
+
+##### Cross-RG RBAC (the bit that's easy to miss)
+
+Because the BYO Foundry/Search live in a *different* resource group, the template needs to grant the new User-Assigned Managed Identity access to those foreign resources. Two purpose-built modules handle this:
+
+- [infra/modules/roleAssignmentsForeignFoundry.bicep](infra/modules/roleAssignmentsForeignFoundry.bicep) — scoped to `existingFoundryResourceGroup`, grants the UAMI:
+  - **Cognitive Services User** — call Voice Live + OpenAI data plane
+  - **Azure AI Developer** (account scope, covers all child projects) — create/read threads, runs, agents
+- [infra/modules/roleAssignmentsForeignSearch.bicep](infra/modules/roleAssignmentsForeignSearch.bicep) — scoped to `existingSearchResourceGroup`, grants the UAMI:
+  - **Search Index Data Reader** — query the index
+  - **Search Service Contributor** — required for some Foundry-on-Search flows
+
+> **Permissions required:** The principal running `azd up` needs **User Access Administrator** (or **Owner**) on the foreign resource group(s) to stamp these role assignments. This is the only extra permission requirement vs. the all-new-resources path.
+
+##### How the app finds the BYO resources at runtime
+
+[infra/resources.bicep](infra/resources.bicep) picks the right values for the env vars injected into the container app:
+
+```bicep
+var foundryEndpointEffective        = createFoundry ? foundry!.outputs.accountEndpoint : 'https://${existingFoundryAccountName}.services.ai.azure.com/'
+var foundryProjectEndpointEffective = createFoundry ? foundry!.outputs.projectEndpoint : existingFoundryProjectEndpoint
+var searchIndexNameEffective        = createSearch  ? searchIndexName                  : existingSearchIndexName
+```
+
+These flow into the container app as `AZURE_VOICELIVE_ENDPOINT`, `PROJECT_ENDPOINT`, and `SEARCH_INDEX_NAME` — the same env vars your local `.env` uses, so `backend/config.py` and the voice handler don't notice any difference between BYO and freshly-created resources.
+
+##### What you *don't* need to re-run for BYO
+
+Because the existing Foundry already has the agent registered and the existing Search already has the populated index, **skip both post-deploy scripts**:
+
+- ❌ `setup_foundry_agent.py` — agent already exists in the BYO Foundry project
+- ❌ `setup_aisearch_index.py` — index already populated
+
+Just make sure your `AGENT_NAME` / `AGENT_PROJECT_NAME` / `SEARCH_CONNECTION_NAME` / `SEARCH_INDEX_NAME` env vars (or their defaults — see the table below) match what's actually in the BYO resources. Override any of them with `azd env set` before `azd provision` if needed.
+
+##### Mixed mode (BYO one, create the other)
+
+Same flow, just only set one of the two `EXISTING_*` triplets. Example — BYO Foundry, fresh Search:
+
+```bash
+azd env set EXISTING_FOUNDRY_ACCOUNT_NAME     mtn-foundry-prod
+azd env set EXISTING_FOUNDRY_RESOURCE_GROUP   rg-shared-ai
+azd env set EXISTING_FOUNDRY_PROJECT_ENDPOINT https://mtn-foundry-prod.services.ai.azure.com/api/projects/mtn-execu-bot
+# (no EXISTING_SEARCH_* — template creates a fresh Search service)
+azd up
+# Then populate the new index:
+uv run python scripts/setup_aisearch_index.py
+```
+
+##### BYO with GitHub Actions
+
+Same idea, but configure the values as GitHub **Variables** instead of `azd env set`. The workflow at [.github/workflows/azure-dev.yml](.github/workflows/azure-dev.yml) already passes them through:
+
+```
+EXISTING_FOUNDRY_ACCOUNT_NAME
+EXISTING_FOUNDRY_RESOURCE_GROUP
+EXISTING_FOUNDRY_PROJECT_ENDPOINT
+EXISTING_SEARCH_SERVICE_NAME
+EXISTING_SEARCH_RESOURCE_GROUP
+EXISTING_SEARCH_INDEX_NAME
+```
+
+Set them under **Settings → Secrets and variables → Actions → Variables**, push to `main`, and the deploy reuses the existing resources.
+#### Tune the runtime config / model deployment
+
+The Bicep template accepts overrides via azd environment variables — set any of them before `azd provision`:
+
+| Variable                  | Default                          | Purpose                                  |
+|---------------------------|----------------------------------|------------------------------------------|
+| `AGENT_NAME`              | `MtnAvatarAgent`                 | Foundry agent name the app calls         |
+| `AGENT_PROJECT_NAME`      | `mtn-execu-bot`                  | Foundry project name                     |
+| `SEARCH_CONNECTION_NAME`  | `aisearch-mtn`                   | Foundry AI Search connection name        |
+| `SEARCH_INDEX_NAME`       | `mtn-board-index`                | AI Search index name                     |
+| `VOICELIVE_VOICE`         | `en-US-AvaMultilingualNeural`    | Default avatar voice                     |
+| `MODEL_NAME`              | `gpt-4.1-mini`                   | OpenAI model to deploy in Foundry        |
+| `MODEL_VERSION`           | `2025-04-14`                     | Model version                            |
+| `MODEL_DEPLOYMENT_NAME`   | `gpt-4.1-mini`                   | Deployment name (used by the agent)      |
+| `MODEL_SKU_NAME`          | `GlobalStandard`                 | Deployment SKU                           |
+| `MODEL_CAPACITY`          | `50`                             | TPM (thousands) capacity                 |
+
+#### Post-deploy steps
+
+The infra creates an empty Foundry agent and empty Search index. To make the app functional, run these one-off scripts (point your local `.env` at the new endpoints, e.g. via `azd env get-values`):
+
+```bash
+uv run python scripts/setup_aisearch_index.py     # builds the index
+uv run python scripts/setup_foundry_agent.py      # registers the agent + tools
+```
+
+#### CI/CD with GitHub Actions
+
+A ready-to-use OIDC-based workflow lives at [.github/workflows/azure-dev.yml](.github/workflows/azure-dev.yml). To wire it up:
+
+1. Create a Microsoft Entra application + service principal and configure a [federated credential](https://learn.microsoft.com/azure/active-directory/workload-identities/workload-identity-federation) for the repository / environment.
+2. Assign that SP **Owner** (or Contributor + User Access Administrator) on the target subscription.
+3. In **GitHub → Settings → Secrets and variables → Actions**, add:
+   - **Secrets:** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
+   - **Variables:** `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP_NAME` (required); optionally `EXISTING_FOUNDRY_*` / `EXISTING_SEARCH_*` / `AGENT_*` / `MODEL_*` overrides
+4. Push to `main` (or run the workflow manually) — it will `azd provision` then `azd deploy`.
 ## Project Structure
 
 ```

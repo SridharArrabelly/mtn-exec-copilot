@@ -1,0 +1,11 @@
+{
+  "containerRegistry": "cr",
+  "containerApp": "ca",
+  "containerAppsEnvironment": "cae",
+  "logAnalytics": "log",
+  "applicationInsights": "appi",
+  "managedIdentity": "id",
+  "cognitiveServices": "cog",
+  "searchService": "srch",
+  "resourceGroup": "rg"
+}
