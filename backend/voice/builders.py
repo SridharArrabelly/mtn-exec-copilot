@@ -72,7 +72,12 @@ def build_avatar_config(config: dict) -> Optional[AvatarConfig]:
     background_url = config.get("avatarBackgroundImageUrl", "")
 
     # Parse character and style from avatar name
-    if is_custom:
+    if is_photo and is_custom:
+        # Custom photo avatar trained in the customer resource: preserve case,
+        # no style, customized=True is set further down.
+        character = avatar_name
+        style = None
+    elif is_custom:
         character = avatar_name
         style = None
     elif is_photo:
@@ -108,7 +113,8 @@ def build_avatar_config(config: dict) -> Optional[AvatarConfig]:
         "video": video,
     }
 
-    # Only set customized=True when actually custom (omit when False)
+    # Only set customized=True when actually custom (omit when False).
+    # Applies to both custom video avatars and custom photo avatars.
     if is_custom:
         avatar_kwargs["customized"] = True
 
