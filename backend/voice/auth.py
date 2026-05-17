@@ -11,7 +11,12 @@ def create_credential(api_key: str):
     """Return an SDK credential.
 
     If `api_key` is provided, returns AzureKeyCredential. Otherwise returns
-    DefaultAzureCredential (uses az login / managed identity / env vars).
+    DefaultAzureCredential (az login / managed identity / SP env vars).
+
+    NOTE: Voice Live agent-v2 sessions do not accept API key auth, so the
+    WebSocket path in backend/api/websocket.py always calls this with an
+    empty key and goes through DefaultAzureCredential. The api_key branch
+    here is retained for raw realtime sessions and AI Search reuse.
     """
     if api_key:
         logger.info("Auth: using API key")

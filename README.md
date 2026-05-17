@@ -96,47 +96,9 @@ The avatar feature is currently available in the following service regions: Sout
 
    Navigate to [http://localhost:3000](http://localhost:3000)
 
-### Build and run with Docker
+### Docker
 
-To run the sample using Docker, navigate to the folder containing this README.md:
-
-```bash
-cd ./mtn-exec-copilot/
-```
-
-Build the Docker image:
-
-```bash
-docker build -t mtn-exec-copilot .
-```
-
-Start the container:
-
-```bash
-docker run --rm -p 3000:3000 --env-file .env mtn-exec-copilot
-```
-
-> The container needs the variables from `.env` (Azure endpoint, agent name, etc.). `DefaultAzureCredential` inside the container won't see your host `az login` — set `AZURE_VOICELIVE_API_KEY` in `.env`, or provide a service principal via `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_CLIENT_SECRET`.
-
-Then open your web browser and navigate to [http://localhost:3000](http://localhost:3000).
-
-### Configure and play the sample
-
-1. Make sure your `.env` has `AZURE_VOICELIVE_ENDPOINT`, `AGENT_NAME`, and `AGENT_PROJECT_NAME` set, and that you have run `az login`. Endpoint and agent are read from `.env`, not entered in the UI.
-
-2. Under `Conversation Settings`, configure the avatar:
-  - **Enable Avatar**: Toggle the `Avatar` switch to enable the avatar feature.
-  - **Avatar Type**: By default, a prebuilt avatar is used. Select a character from the `Avatar Character` dropdown list.
-    - To use a **photo avatar**, toggle the `Use Photo Avatar` switch and select a prebuilt photo avatar character from the dropdown list.
-    - To use a **custom (video) avatar**, toggle the `Use Custom Avatar` switch and enter the character name in the `Character` field.
-    - To use a **custom photo avatar** (a photo avatar you trained in your own Speech / AI Services resource), toggle **both** `Use Photo Avatar` and `Use Custom Avatar`, then enter the trained character name in the `Custom Avatar Name` field. The backend automatically sets `customized=true` and preserves the exact name (no style). Make sure the `AZURE_VOICELIVE_ENDPOINT` you configured points to the same resource where the custom photo avatar was trained.
-  - **Avatar Output Mode**: Choose between `WebRTC` (default, real-time streaming) and `WebSocket` (streams video data over the WebSocket connection).
-  - **Avatar Background Image URL** *(optional)*: Enter a URL to set a custom background image for the avatar.
-  - **Scene Settings** *(photo avatar only)*: When using a photo avatar, adjust scene parameters such as `Zoom`, `Position X/Y`, `Rotation X/Y/Z`, and `Amplitude`. These settings can also be adjusted live after connecting.
-
-3. Click `Connect` to start the conversation. Once connected, you should see the avatar appear on the page; click `Turn on microphone` and start talking.
-
-4. At the top of the page, toggle `Developer mode` to show chat history in text and additional logs useful for debugging.
+You do **not** need Docker to run this app locally — use the host instructions above (`uv run uvicorn ...` with `az login`). The `Dockerfile` exists only so [`azd`](#deploy-to-azure-with-azd) can build the image during `azd up` / `azd deploy` and push it to the ACR provisioned by the infra; the Azure Container App then pulls it and authenticates via the user-assigned managed identity. Make sure Docker Desktop is **running** when you invoke `azd up`, but you don't need to call `docker build` or `docker run` yourself.
 
 ### Build the Azure AI Search index
 
