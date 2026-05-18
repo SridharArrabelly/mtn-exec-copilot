@@ -86,7 +86,9 @@ resource app 'Microsoft.App/containerApps@2024-10-02-preview' = {
         rules: [
           {
             name: 'http-scaler'
-            http: { metadata: { concurrentRequests: '50' } }
+            // Long-lived WebSocket = 1 "request" for the entire voice session.
+            // Threshold of 10 triggers scale-out before voice latency degrades.
+            http: { metadata: { concurrentRequests: '10' } }
           }
         ]
       }

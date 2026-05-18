@@ -22,14 +22,29 @@ active_tasks: Dict[str, asyncio.Task] = {}
 
 @router.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
-    """Main WebSocket endpoint for voice session communication."""
+    """Main WebSocket endpoint for voice session communication.
+
+    Accepts both text frames (JSON control messages) and binary frames
+    (raw PCM16 audio chunks from the browser). Routing binary audio
+    avoids per-chunk JSON + base64 overhead on the hot path.
+    """
     await websocket.accept()
     logger.info(f"Client {client_id} connected")
 
     try:
         while True:
-            data = await websocket.receive_text()
-            message = json.loads(data)
+            data = await websocket.receive()
+            if data.get("type") == "websocket.disconnect":
+                break
+            if "bytes" in data and data["bytes"] is not None:
+                handler = active_sessions.get(client_id)
+                if handler:
+                    await handler.send_audio_bytes(data["bytes"])
+                continue
+            text = data.get("text")
+            if text is None:
+                continue
+            message = json.loads(text)
             await _handle_message(client_id, message, websocket)
     except WebSocketDisconnect:
         logger.info(f"Client {client_id} disconnected")
@@ -52,6 +67,7 @@ async def _handle_message(client_id: str, message: dict, websocket: WebSocket):
     if msg_type == "stop_session":
         await cleanup_client(client_id)
     elif msg_type == "audio_chunk" and handler:
+        # Legacy text/base64 audio path retained for backward compat.
         await handler.send_audio(message.get("data", ""))
     elif msg_type == "send_text" and handler:
         await handler.send_text_message(message.get("text", ""))
@@ -100,11 +116,18 @@ async def _start_session(client_id: str, config: dict, websocket: WebSocket):
         except Exception as e:
             logger.error(f"Error sending to {client_id}: {e}")
 
+    async def send_binary(data: bytes):
+        try:
+            await websocket.send_bytes(data)
+        except Exception as e:
+            logger.error(f"Error sending binary to {client_id}: {e}")
+
     handler = VoiceSessionHandler(
         client_id=client_id,
         endpoint=endpoint,
         credential=credential,
         send_message=send_message,
+        send_binary=send_binary,
         config=config,
     )
     active_sessions[client_id] = handler
