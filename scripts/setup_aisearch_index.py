@@ -6,6 +6,13 @@ default), and uploads the chunks to an Azure AI Search index configured for
 **hybrid search** (BM25 + vector) with a **semantic configuration** for
 re-ranking.
 
+Each chunk is enriched with date metadata extracted from the document filename
+(pattern: ``Board Meeting – DD Month YYYY``). A ``meeting_date`` field enables
+OData date-range filtering, and ``year``/``month`` fields support faceting. The
+document title and date are prepended to every chunk so that embeddings always
+carry temporal context — fixing issues where relative-date queries (e.g.
+"February last year") retrieved the wrong meeting.
+
 Embeddings are generated against the Foundry resource's Azure OpenAI route
 (``/openai/deployments/<dep>/embeddings``), authenticated with
 ``DefaultAzureCredential`` — no separate ``AZURE_OPENAI_ENDPOINT`` required.
@@ -40,8 +47,9 @@ import os
 import re
 import sys
 import uuid
+from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 from urllib.parse import urlparse
 
 from openai import AzureOpenAI
@@ -50,6 +58,8 @@ from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from azure.search.documents import SearchClient
 from azure.search.documents.indexes import SearchIndexClient
 from azure.search.documents.indexes.models import (
+    AzureOpenAIVectorizer,
+    AzureOpenAIVectorizerParameters,
     HnswAlgorithmConfiguration,
     HnswParameters,
     SearchableField,
@@ -77,6 +87,7 @@ EMBED_DIM = 3072  # text-embedding-3-large
 VECTOR_PROFILE = "mtn-vector-profile"
 HNSW_ALGO = "mtn-hnsw"
 SEMANTIC_CONFIG = "mtn-semantic"
+VECTORIZER_NAME = "mtn-vectorizer"
 
 
 # ---------- settings ----------
@@ -102,6 +113,37 @@ def load_settings() -> dict:
         "chunk_overlap": int(os.getenv("CHUNK_OVERLAP", "200")),
         "recreate": os.getenv("RECREATE_INDEX", "false").lower() == "true",
     }
+
+
+# ---------- date extraction ----------
+
+# Matches patterns like "Board Meeting – 15 February 2026" or "Board Meeting - 5 March 2019"
+_DATE_RE = re.compile(
+    r"(\d{1,2})\s+"
+    r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+"
+    r"(\d{4})",
+    re.IGNORECASE,
+)
+
+
+def parse_meeting_date(filename: str) -> Optional[datetime]:
+    """Extract meeting date from filename. Returns None if no date found."""
+    m = _DATE_RE.search(filename)
+    if not m:
+        return None
+    day, month_name, year = int(m.group(1)), m.group(2), int(m.group(3))
+    try:
+        return datetime(year, _month_number(month_name), day)
+    except ValueError:
+        return None
+
+
+def _month_number(name: str) -> int:
+    months = [
+        "january", "february", "march", "april", "may", "june",
+        "july", "august", "september", "october", "november", "december",
+    ]
+    return months.index(name.lower()) + 1
 
 
 # ---------- clients ----------
@@ -139,11 +181,17 @@ def make_embeddings_client(s: dict):
 
 # ---------- index ----------
 
-def build_index(name: str) -> SearchIndex:
+def build_index(name: str, s: dict) -> SearchIndex:
     fields = [
         SimpleField(name="id", type=SearchFieldDataType.String, key=True, filterable=True),
         SearchableField(name="title", type=SearchFieldDataType.String, filterable=True, sortable=True),
         SimpleField(name="source", type=SearchFieldDataType.String, filterable=True, facetable=True),
+        SimpleField(name="meeting_date", type=SearchFieldDataType.DateTimeOffset,
+                    filterable=True, sortable=True, facetable=True),
+        SimpleField(name="year", type=SearchFieldDataType.Int32,
+                    filterable=True, sortable=True, facetable=True),
+        SimpleField(name="month", type=SearchFieldDataType.Int32,
+                    filterable=True, sortable=True, facetable=True),
         SimpleField(name="chunk_index", type=SearchFieldDataType.Int32, filterable=True, sortable=True),
         SearchableField(name="content", type=SearchFieldDataType.String, analyzer_name="en.microsoft"),
         SearchField(
@@ -155,6 +203,19 @@ def build_index(name: str) -> SearchIndex:
         ),
     ]
 
+    # Build the Azure OpenAI vectorizer so AI Search can auto-vectorize text queries
+    parsed = urlparse(s["project_endpoint"])
+    azure_endpoint = f"{parsed.scheme}://{parsed.netloc}"
+
+    vectorizer = AzureOpenAIVectorizer(
+        vectorizer_name=VECTORIZER_NAME,
+        parameters=AzureOpenAIVectorizerParameters(
+            resource_url=azure_endpoint,
+            deployment_name=s["embed_deployment"],
+            model_name=s["embed_deployment"],
+        ),
+    )
+
     vector_search = VectorSearch(
         algorithms=[
             HnswAlgorithmConfiguration(
@@ -162,7 +223,14 @@ def build_index(name: str) -> SearchIndex:
                 parameters=HnswParameters(metric=VectorSearchAlgorithmMetric.COSINE),
             )
         ],
-        profiles=[VectorSearchProfile(name=VECTOR_PROFILE, algorithm_configuration_name=HNSW_ALGO)],
+        profiles=[
+            VectorSearchProfile(
+                name=VECTOR_PROFILE,
+                algorithm_configuration_name=HNSW_ALGO,
+                vectorizer_name=VECTORIZER_NAME,
+            )
+        ],
+        vectorizers=[vectorizer],
     )
 
     semantic_search = SemanticSearch(
@@ -195,10 +263,10 @@ def ensure_index(s: dict) -> None:
 
     if s["index_name"] in existing:
         log.info("Updating index '%s'", s["index_name"])
-        client.create_or_update_index(build_index(s["index_name"]))
+        client.create_or_update_index(build_index(s["index_name"], s))
     else:
         log.info("Creating index '%s'", s["index_name"])
-        client.create_index(build_index(s["index_name"]))
+        client.create_index(build_index(s["index_name"], s))
 
 
 # ---------- ingest ----------
@@ -284,19 +352,32 @@ def iter_documents(s: dict, aoai) -> Iterable[dict]:
         except Exception as e:
             log.warning("  failed to read %s: %s", path.name, e)
             continue
+
+        # Extract meeting date from filename
+        meeting_dt = parse_meeting_date(path.stem)
+        if meeting_dt:
+            date_prefix = f"[Document: {title} | Meeting Date: {meeting_dt.strftime('%d %B %Y')}]\n\n"
+            log.info("  meeting date: %s", meeting_dt.strftime("%Y-%m-%d"))
+        else:
+            date_prefix = f"[Document: {title}]\n\n"
+            log.warning("  no date found in filename")
+
         chunks = chunk_text(raw, s["chunk_size"], s["chunk_overlap"])
         if not chunks:
             log.warning("  no text extracted from %s", path.name)
             continue
         log.info("  %d chunks", len(chunks))
 
+        # Prepend date/title context to each chunk for embedding
+        enriched_chunks = [date_prefix + chunk for chunk in chunks]
+
         BATCH = 16
-        for i in range(0, len(chunks), BATCH):
-            batch = chunks[i : i + BATCH]
+        for i in range(0, len(enriched_chunks), BATCH):
+            batch = enriched_chunks[i : i + BATCH]
             vectors = embed_batch(aoai, s["embed_deployment"], batch)
             for j, (text, vec) in enumerate(zip(batch, vectors)):
                 idx = i + j
-                yield {
+                doc = {
                     "id": f"{uuid.uuid5(uuid.NAMESPACE_URL, f'{path.name}:{idx}')}",
                     "title": title,
                     "source": path.name,
@@ -304,6 +385,11 @@ def iter_documents(s: dict, aoai) -> Iterable[dict]:
                     "content": text,
                     "content_vector": vec,
                 }
+                if meeting_dt:
+                    doc["meeting_date"] = meeting_dt.isoformat() + "Z"
+                    doc["year"] = meeting_dt.year
+                    doc["month"] = meeting_dt.month
+                yield doc
 
 
 def upload(s: dict, docs: Iterable[dict]) -> int:
