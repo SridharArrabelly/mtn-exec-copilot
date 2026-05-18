@@ -58,6 +58,8 @@ from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from azure.search.documents import SearchClient
 from azure.search.documents.indexes import SearchIndexClient
 from azure.search.documents.indexes.models import (
+    AzureOpenAIVectorizer,
+    AzureOpenAIVectorizerParameters,
     HnswAlgorithmConfiguration,
     HnswParameters,
     SearchableField,
@@ -85,6 +87,7 @@ EMBED_DIM = 3072  # text-embedding-3-large
 VECTOR_PROFILE = "mtn-vector-profile"
 HNSW_ALGO = "mtn-hnsw"
 SEMANTIC_CONFIG = "mtn-semantic"
+VECTORIZER_NAME = "mtn-vectorizer"
 
 
 # ---------- settings ----------
@@ -178,7 +181,7 @@ def make_embeddings_client(s: dict):
 
 # ---------- index ----------
 
-def build_index(name: str) -> SearchIndex:
+def build_index(name: str, s: dict) -> SearchIndex:
     fields = [
         SimpleField(name="id", type=SearchFieldDataType.String, key=True, filterable=True),
         SearchableField(name="title", type=SearchFieldDataType.String, filterable=True, sortable=True),
@@ -200,6 +203,19 @@ def build_index(name: str) -> SearchIndex:
         ),
     ]
 
+    # Build the Azure OpenAI vectorizer so AI Search can auto-vectorize text queries
+    parsed = urlparse(s["project_endpoint"])
+    azure_endpoint = f"{parsed.scheme}://{parsed.netloc}"
+
+    vectorizer = AzureOpenAIVectorizer(
+        vectorizer_name=VECTORIZER_NAME,
+        parameters=AzureOpenAIVectorizerParameters(
+            resource_url=azure_endpoint,
+            deployment_name=s["embed_deployment"],
+            model_name=s["embed_deployment"],
+        ),
+    )
+
     vector_search = VectorSearch(
         algorithms=[
             HnswAlgorithmConfiguration(
@@ -207,7 +223,14 @@ def build_index(name: str) -> SearchIndex:
                 parameters=HnswParameters(metric=VectorSearchAlgorithmMetric.COSINE),
             )
         ],
-        profiles=[VectorSearchProfile(name=VECTOR_PROFILE, algorithm_configuration_name=HNSW_ALGO)],
+        profiles=[
+            VectorSearchProfile(
+                name=VECTOR_PROFILE,
+                algorithm_configuration_name=HNSW_ALGO,
+                vectorizer_name=VECTORIZER_NAME,
+            )
+        ],
+        vectorizers=[vectorizer],
     )
 
     semantic_search = SemanticSearch(
@@ -240,10 +263,10 @@ def ensure_index(s: dict) -> None:
 
     if s["index_name"] in existing:
         log.info("Updating index '%s'", s["index_name"])
-        client.create_or_update_index(build_index(s["index_name"]))
+        client.create_or_update_index(build_index(s["index_name"], s))
     else:
         log.info("Creating index '%s'", s["index_name"])
-        client.create_index(build_index(s["index_name"]))
+        client.create_index(build_index(s["index_name"], s))
 
 
 # ---------- ingest ----------
