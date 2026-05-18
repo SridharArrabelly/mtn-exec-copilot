@@ -39,11 +39,13 @@ class VoiceSessionHandler:
         credential: Any,
         send_message: Callable,
         config: dict,
+        send_binary: Optional[Callable] = None,
     ):
         self.client_id = client_id
         self.endpoint = endpoint
         self.credential = credential
         self.send_message = send_message
+        self.send_binary = send_binary
         self.config = config
 
         self.connection = None
@@ -257,7 +259,7 @@ class VoiceSessionHandler:
                 # Continue processing — don't let one bad event kill the loop
 
     async def send_audio(self, audio_base64: str):
-        """Send audio data from browser to Voice Live."""
+        """Send base64-encoded audio data from browser to Voice Live (legacy path)."""
         if not self.connection:
             self._audio_chunk_count += 1
             if self._audio_chunk_count == 1 or self._audio_chunk_count % 500 == 0:
@@ -271,6 +273,27 @@ class VoiceSessionHandler:
             await self.connection.input_audio_buffer.append(audio=audio_base64)
         except Exception as e:
             logger.error(f"Error sending audio: {e}")
+
+    async def send_audio_bytes(self, audio_bytes: bytes):
+        """Send raw PCM16 audio bytes from browser to Voice Live.
+
+        Encodes to base64 here (the SDK's append() accepts base64) but avoids
+        the JSON parse + base64 encode-on-client cost on the wire.
+        """
+        if not self.connection:
+            self._audio_chunk_count += 1
+            if self._audio_chunk_count == 1 or self._audio_chunk_count % 500 == 0:
+                logger.warning(f"[AUDIO] No connection — dropping audio chunk #{self._audio_chunk_count} (connection lost)")
+            return
+        if not self.is_running:
+            return
+        try:
+            import base64
+            self._audio_chunk_count += 1
+            audio_base64 = base64.b64encode(audio_bytes).decode("ascii")
+            await self.connection.input_audio_buffer.append(audio=audio_base64)
+        except Exception as e:
+            logger.error(f"Error sending audio bytes: {e}")
 
     async def send_text_message(self, text: str):
         """Send a text message to the conversation."""

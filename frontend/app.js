@@ -348,6 +348,7 @@ async function connectSession() {
         // Open WebSocket to Python backend
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         ws = new WebSocket(`${protocol}//${location.host}/ws/${clientId}`);
+        ws.binaryType = 'arraybuffer';
 
         ws.onopen = () => {
             const config = gatherConfig();
@@ -355,6 +356,11 @@ async function connectSession() {
         };
 
         ws.onmessage = (event) => {
+            // Binary frames = raw PCM16 audio chunks (server→client hot path).
+            if (event.data instanceof ArrayBuffer) {
+                handleAudioBinary(event.data);
+                return;
+            }
             const msg = JSON.parse(event.data);
             handleServerMessage(msg);
         };
@@ -481,6 +487,7 @@ function handleServerMessage(msg) {
             break;
         case 'response_created':
             pendingAssistantText = '';
+            currentAssistantContentEl = null;
             addMessage('assistant', '');
             isSpeaking = true;
             break;
@@ -508,16 +515,22 @@ function handleServerMessage(msg) {
 }
 
 let pendingAssistantText = '';
+let currentAssistantContentEl = null;
 
 function onAssistantDelta(text) {
     pendingAssistantText += text;
-    const messages = document.querySelectorAll('.message.assistant .message-content');
-    if (messages.length > 0) {
-        messages[messages.length - 1].textContent = pendingAssistantText;
+    // Cache the DOM ref instead of running querySelectorAll on every delta token.
+    if (!currentAssistantContentEl || !currentAssistantContentEl.isConnected) {
+        const messages = document.querySelectorAll('.message.assistant .message-content');
+        currentAssistantContentEl = messages.length > 0 ? messages[messages.length - 1] : null;
+    }
+    if (currentAssistantContentEl) {
+        currentAssistantContentEl.textContent = pendingAssistantText;
         scrollChatToBottom();
     } else {
-        // Fallback: create new message if none exists
         addMessage('assistant', pendingAssistantText);
+        const messages = document.querySelectorAll('.message.assistant .message-content');
+        currentAssistantContentEl = messages.length > 0 ? messages[messages.length - 1] : null;
     }
 }
 
@@ -802,7 +815,9 @@ async function startAudioCapture() {
 class PCM16Processor extends AudioWorkletProcessor {
     constructor() {
         super();
-        this.bufferSize = 2400; // 100ms at 24kHz
+        // 40ms at 24kHz = 960 samples. Smaller buffers give tighter
+        // barge-in/interruption latency than the previous 100ms.
+        this.bufferSize = 960;
         this.buffer = new Float32Array(this.bufferSize);
         this.offset = 0;
     }
@@ -844,12 +859,13 @@ registerProcessor('pcm16-processor', PCM16Processor);
 
         workletNode.port.onmessage = (e) => {
             if (!isConnected || !isRecording || !ws || ws.readyState !== WebSocket.OPEN) return;
-            const base64 = arrayBufferToBase64(e.data);
             audioChunksSent++;
             if (audioChunksSent <= 3 || audioChunksSent % 100 === 0) {
-                console.log(`[Audio] Sending chunk #${audioChunksSent}, size=${base64.length}`);
+                console.log(`[Audio] Sending chunk #${audioChunksSent}, bytes=${e.data.byteLength}`);
             }
-            ws.send(JSON.stringify({ type: 'audio_chunk', data: base64 }));
+            // Send raw PCM16 bytes as a binary WebSocket frame — avoids
+            // base64 + JSON wrap overhead (~45%) on every audio chunk.
+            ws.send(e.data);
         };
 
         source.connect(workletNode);
@@ -881,8 +897,18 @@ function stopAudioCapture() {
 }
 
 // ===== Audio Playback (24kHz PCM16) =====
+function handleAudioBinary(arrayBuffer) {
+    // Fast path for raw binary audio frames (no base64 decode needed).
+    _playAudioPCM16(arrayBuffer);
+}
+
 function handleAudioDelta(base64Data) {
+    // Legacy base64-in-JSON path (kept for backward compat).
     if (!base64Data) return;
+    _playAudioPCM16(base64ToArrayBuffer(base64Data));
+}
+
+function _playAudioPCM16(arrayBuffer) {
     if (!playbackContext) {
         playbackContext = new AudioContext({ sampleRate: 24000 });
         // Create analyser for volume visualization
@@ -893,7 +919,6 @@ function handleAudioDelta(base64Data) {
         analyserNode.connect(playbackContext.destination);
         nextPlaybackTime = 0;
     }
-    const arrayBuffer = base64ToArrayBuffer(base64Data);
     const int16 = new Int16Array(arrayBuffer);
     const float32 = new Float32Array(int16.length);
     for (let i = 0; i < int16.length; i++) {

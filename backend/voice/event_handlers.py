@@ -25,16 +25,20 @@ async def handle_event(handler, event, connection):
     try:
         event_type = event.type
 
-        # Audio delta - relay to browser
+        # Audio delta - relay to browser as raw binary frame when supported.
+        # Falls back to base64-in-JSON for older clients (no send_binary callback).
         if event_type == ServerEventType.RESPONSE_AUDIO_DELTA:
             if hasattr(event, "delta") and event.delta:
-                audio_b64 = base64.b64encode(event.delta).decode("utf-8")
-                await handler.send_message({
-                    "type": "audio_data",
-                    "data": audio_b64,
-                    "format": "pcm16",
-                    "sampleRate": 24000,
-                })
+                if getattr(handler, "send_binary", None):
+                    await handler.send_binary(event.delta)
+                else:
+                    audio_b64 = base64.b64encode(event.delta).decode("utf-8")
+                    await handler.send_message({
+                        "type": "audio_data",
+                        "data": audio_b64,
+                        "format": "pcm16",
+                        "sampleRate": 24000,
+                    })
 
         elif event_type == ServerEventType.RESPONSE_AUDIO_DONE:
             await handler.send_message({"type": "audio_done"})
