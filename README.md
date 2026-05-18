@@ -381,13 +381,16 @@ Voice Live agent sessions (`agent_config = { agent_name, project_name }`) requir
 
 ## WebSocket Protocol
 
+Audio uses **binary WebSocket frames** for the hot path in both directions (raw PCM16 bytes — no base64, no JSON wrap). The `audio_chunk` / `audio_data` JSON message types below are retained only as a legacy fallback for older clients.
+
 ### Frontend → Backend
 
 | Message Type | Description |
 |---|---|
+| *(binary frame)* | Microphone audio — raw PCM16 bytes (24kHz, mono). **Primary path.** |
 | `start_session` | Start Voice Live session with configuration |
 | `stop_session` | Stop the active session |
-| `audio_chunk` | Send microphone audio (base64 PCM16) |
+| `audio_chunk` | *Legacy:* microphone audio as base64 PCM16 in JSON (fallback) |
 | `send_text` | Send a text message |
 | `avatar_sdp_offer` | Forward WebRTC SDP offer for avatar |
 | `interrupt` | Cancel current assistant response |
@@ -397,11 +400,12 @@ Voice Live agent sessions (`agent_config = { agent_name, project_name }`) requir
 
 | Message Type | Description |
 |---|---|
+| *(binary frame)* | Assistant audio — raw PCM16 bytes (24kHz, mono). **Primary path.** |
 | `session_started` | Session ready |
 | `session_error` | Error starting/during session |
 | `ice_servers` | ICE server config for avatar WebRTC |
 | `avatar_sdp_answer` | Server's SDP answer for avatar WebRTC |
-| `audio_data` | Assistant audio (base64 PCM16, 24kHz) |
+| `audio_data` | *Legacy:* assistant audio as base64 PCM16 in JSON (fallback) |
 | `video_data` | Avatar video chunk (base64 fMP4, WebSocket mode) |
 | `transcript_delta` | Streaming transcript text |
 | `transcript_done` | Completed transcript |
