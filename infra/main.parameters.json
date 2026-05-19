@@ -21,9 +21,9 @@
     "searchIndexName":     { "value": "${SEARCH_INDEX_NAME=mtn-board-index}" },
     "voiceLiveVoice":      { "value": "${VOICELIVE_VOICE=en-US-AvaMultilingualNeural}" },
 
-    "modelName":           { "value": "${MODEL_NAME=gpt-4.1-mini}" },
-    "modelVersion":        { "value": "${MODEL_VERSION=2025-04-14}" },
-    "modelDeploymentName": { "value": "${MODEL_DEPLOYMENT_NAME=gpt-4.1-mini}" },
+    "modelName":           { "value": "${MODEL_NAME}" },
+    "modelVersion":        { "value": "${MODEL_VERSION}" },
+    "modelDeploymentName": { "value": "${MODEL_DEPLOYMENT_NAME}" },
     "modelSkuName":        { "value": "${MODEL_SKU_NAME=GlobalStandard}" },
     "modelCapacity":       { "value": ${MODEL_CAPACITY=50} }
   }
