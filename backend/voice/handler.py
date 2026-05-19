@@ -52,6 +52,7 @@ class VoiceSessionHandler:
         self.is_running = False
         self._event_task: Optional[asyncio.Task] = None
         self._pending_proactive = False
+        self._stopping = False
         self._audio_chunk_count = 0
         self._video_chunk_count = 0
 
@@ -139,6 +140,7 @@ class VoiceSessionHandler:
             turn_detection=turn_detection,
             input_audio_noise_reduction=noise_reduction,
             input_audio_echo_cancellation=echo_cancellation,
+            tool_choice="auto",
         )
 
         logger.debug("[SEND] session.update")
@@ -238,7 +240,10 @@ class VoiceSessionHandler:
                 raise
             except Exception as e:
                 # Connection closed or fatal error
-                logger.error(f"Connection error in event loop: {e}")
+                if self._stopping:
+                    logger.info(f"Voice Live connection closed for {self.client_id}")
+                else:
+                    logger.error(f"Connection error in event loop: {e}")
                 break
 
             try:
@@ -374,8 +379,15 @@ class VoiceSessionHandler:
 
     async def stop(self):
         """Stop the session."""
+        self._stopping = True
         self.is_running = False
+        conn = self.connection
         self.connection = None
+        if conn is not None:
+            try:
+                await conn.close()
+            except Exception as e:
+                logger.debug(f"Error closing Voice Live connection for {self.client_id}: {e}")
 
     async def _wait_for_event(self, connection, wanted_types: set, timeout_s: float = 15.0):
         """Wait for specific event types."""
