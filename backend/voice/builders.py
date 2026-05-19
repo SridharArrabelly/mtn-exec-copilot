@@ -155,23 +155,26 @@ def build_turn_detection(config: dict):
     eou_type = config.get("eouDetectionType", "none")
     remove_filler = config.get("removeFillerWords", False)
 
+    # Tuned for lower turn-taking latency. Trims ~700ms off every turn vs.
+    # the previous 500ms silence + 1000ms EOU defaults. Raise these back up
+    # if you start seeing premature cutoffs from users who pause mid-sentence.
     if td_type == "azure_semantic_vad":
         eou_detection = None
         if eou_type == "semantic_detection_v1_multilingual":
             eou_detection = AzureSemanticDetectionMultilingual(
                 threshold_level="default",
-                timeout_ms=1000,
+                timeout_ms=500,
             )
         elif eou_type == "semantic_detection_v1":
             eou_detection = AzureSemanticDetectionEn(
                 threshold_level="default",
-                timeout_ms=1000,
+                timeout_ms=500,
             )
         return AzureSemanticVad(
             threshold=0.3,
             prefix_padding_ms=300,
             speech_duration_ms=80,
-            silence_duration_ms=500,
+            silence_duration_ms=300,
             remove_filler_words=remove_filler,
             interrupt_response=True,
             end_of_utterance_detection=eou_detection,
@@ -180,6 +183,6 @@ def build_turn_detection(config: dict):
         return ServerVad(
             threshold=0.3,
             prefix_padding_ms=300,
-            silence_duration_ms=500,
+            silence_duration_ms=300,
         )
 
