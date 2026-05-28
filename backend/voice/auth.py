@@ -38,3 +38,30 @@ def create_credential(api_key: str):
                 logger.info("Auth: creating DefaultAzureCredential singleton")
                 _default_credential = DefaultAzureCredential()
     return _default_credential
+
+
+async def close_credential() -> None:
+    """Close the cached DefaultAzureCredential, if it was created.
+
+    `azure.identity.aio.DefaultAzureCredential` (and its chained inner
+    credentials like ManagedIdentityCredential) holds an internal
+    `aiohttp.ClientSession` for IMDS probes and token requests. If we
+    don't await its `close()` on shutdown, the asyncio loop logs:
+
+        ERROR asyncio Unclosed client session
+        client_session: <aiohttp.client.ClientSession object at 0x...>
+
+    Call this from the FastAPI lifespan shutdown phase, AFTER any code
+    paths that might still use the credential have completed.
+    """
+    global _default_credential
+    if _default_credential is None:
+        return
+    cred = _default_credential
+    _default_credential = None
+    try:
+        await cred.close()
+        logger.info("Auth: DefaultAzureCredential closed")
+    except Exception as e:
+        # Don't let cleanup errors mask the real shutdown reason.
+        logger.warning(f"Auth: error closing DefaultAzureCredential (ignored): {e}")
