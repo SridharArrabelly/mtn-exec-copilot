@@ -26,6 +26,29 @@ def _now_ms() -> float:
     return time.monotonic() * 1000.0
 
 
+def _log_first_text_delta(handler, kind: str) -> None:
+    """Log the agent thinking + tool-call time (response_created -> first token).
+
+    This is a useful proxy for "how long did the Foundry agent take to call
+    tools (AI Search / Web Search) and produce its first text token", separate
+    from the TTS warm-up time that dominates `user_done -> first_audio`. If
+    this number is large, the bottleneck is the agent / tools; if it's small
+    but `first_audio` is still large, the bottleneck is TTS.
+    """
+    if getattr(handler, "_first_text_logged", False):
+        return
+    handler._first_text_logged = True
+    t_resp = getattr(handler, "_t_response_created_ms", None)
+    t_user = getattr(handler, "_t_user_done_ms", None)
+    if t_resp is None:
+        return
+    now = _now_ms()
+    msg = f"[LATENCY] first {kind} delta: response_created->first_token={now - t_resp:.0f}ms"
+    if t_user is not None:
+        msg += f", user_done->first_token={now - t_user:.0f}ms"
+    logger.info(msg)
+
+
 async def handle_event(handler, event, connection):
     """Handle individual events from Voice Live API."""
     try:
@@ -63,6 +86,7 @@ async def handle_event(handler, event, connection):
         # Audio transcript (assistant speaking text)
         elif event_type == ServerEventType.RESPONSE_AUDIO_TRANSCRIPT_DELTA:
             if hasattr(event, "delta") and event.delta:
+                _log_first_text_delta(handler, "audio_transcript")
                 await handler.send_message({
                     "type": "transcript_delta",
                     "role": "assistant",
@@ -80,6 +104,7 @@ async def handle_event(handler, event, connection):
         # Text delta (for text responses)
         elif event_type == ServerEventType.RESPONSE_TEXT_DELTA:
             if hasattr(event, "delta") and event.delta:
+                _log_first_text_delta(handler, "text")
                 await handler.send_message({
                     "type": "text_delta",
                     "delta": event.delta,
@@ -97,6 +122,7 @@ async def handle_event(handler, event, connection):
             handler._t_response_created_ms = _now_ms()
             handler._first_audio_logged = False
             handler._first_video_logged = False
+            handler._first_text_logged = False
             t_user = getattr(handler, "_t_user_done_ms", None)
             if t_user is not None:
                 logger.info(

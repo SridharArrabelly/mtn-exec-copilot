@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -11,15 +12,38 @@ from fastapi.staticfiles import StaticFiles
 
 from .api import routes, websocket as ws
 from .config import HOST, PORT, configure_logging
+from .voice.auth import create_credential
 
 configure_logging()
 logger = logging.getLogger(__name__)
 
 
+async def _prewarm_credential() -> None:
+    """Acquire a token at startup so the first user doesn't pay the cold-cost.
+
+    DefaultAzureCredential's first token acquisition can take 1-3 seconds
+    (resolves AzureCliCredential / managed identity / env-based chains).
+    By doing it at app startup we shift that cost off the user's Connect
+    click. The result is cached on the singleton credential, so the actual
+    Voice Live connect reuses the warm token.
+    """
+    try:
+        credential = create_credential("")
+        # azure-identity.aio.DefaultAzureCredential exposes get_token
+        await credential.get_token("https://cognitiveservices.azure.com/.default")
+        logger.info("Credential pre-warmed at startup")
+    except Exception as e:
+        # Don't fail startup if pre-warm fails — the per-session path will
+        # surface a real error later.
+        logger.warning(f"Credential pre-warm failed (will retry on first session): {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup/shutdown hook: closes outstanding voice sessions on shutdown."""
+    """Startup/shutdown hook: pre-warms credentials, closes outstanding sessions on shutdown."""
     logger.info("MTN Exec Copilot server starting...")
+    # Fire-and-forget pre-warm so startup is not blocked.
+    asyncio.create_task(_prewarm_credential())
     yield
     await ws.shutdown_all()
     logger.info("MTN Exec Copilot server stopped.")
