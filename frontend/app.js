@@ -1461,24 +1461,14 @@ function base64ToArrayBuffer(base64) {
     return bytes.buffer;
 }
 
-// Pre-warm a peer connection with public STUN servers as soon as the page loads,
-// so the first Connect click can reuse a cached PC with already-gathered ICE
-// candidates instead of paying the cold-start gathering cost (~5-10s).
-const FALLBACK_STUN_SERVERS = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-];
-function preWarmPeerConnection() {
-    try {
-        if (peerConnectionQueue.length === 0) {
-            preparePeerConnection(FALLBACK_STUN_SERVERS);
-        }
-    } catch (e) {
-        console.warn('preWarmPeerConnection failed', e);
-    }
-}
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', preWarmPeerConnection);
-} else {
-    preWarmPeerConnection();
-}
+// Note: we used to pre-warm an RTCPeerConnection against Google's public STUN
+// at page-load time, on the theory that having ICE candidates pre-gathered
+// would speed up the first Connect. In practice that hurt as often as it helped:
+// the cached PC's local candidates are gathered against `stun.l.google.com`,
+// but the real ICE servers returned by Voice Live usually include Azure TURN
+// credentials the prewarm PC never saw — on restrictive NATs the cached PC
+// then fails to find a usable path and we fall back to a longer ICE timeout.
+//
+// The reconnect path (cleanupWebRTC -> preparePeerConnection(cachedIceServers))
+// still pre-warms a PC against the REAL Azure ICE servers right after disconnect,
+// which is a real win and is kept.
