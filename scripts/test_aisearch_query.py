@@ -5,10 +5,15 @@ prints the top K results including date metadata fields.
 
 Supports optional OData date filtering via --year and --month flags.
 
+Also supports --list-meetings to print all unique meetings in the index
+(faceted on meeting_date / year / month) — handy for sanity-checking what
+was actually ingested.
+
 Usage:
     uv run python scripts/test_aisearch_query.py "what was discussed about dividends"
     uv run python scripts/test_aisearch_query.py "board chair election" -k 3
     uv run python scripts/test_aisearch_query.py "meeting summary" --year 2025 --month 2
+    uv run python scripts/test_aisearch_query.py --list-meetings
 
 Env: same as scripts/setup_aisearch_index.py (AZURE_SEARCH_ENDPOINT,
 SEARCH_INDEX_NAME, PROJECT_ENDPOINT, EMBEDDING_DEPLOYMENT, optional
@@ -73,6 +78,39 @@ def embed(query: str) -> list[float]:
     return resp.data[0].embedding
 
 
+def list_meetings() -> None:
+    """Facet on meeting_date / year / month and print what's actually in the index."""
+    search = make_search_client()
+    results = search.search(
+        search_text="*",
+        facets=[
+            "meeting_date,count:1000,sort:value",
+            "year,count:50,sort:value",
+            "month,count:12,sort:value",
+        ],
+        top=0,
+        include_total_count=True,
+    )
+    total = results.get_count()
+    facets = results.get_facets() or {}
+    dates = facets.get("meeting_date", []) or []
+    years = facets.get("year", []) or []
+    months = facets.get("month", []) or []
+
+    print(f"\nIndex contents — total chunks: {total}")
+    print("-" * 60)
+    print(f"\nMeetings by date ({len(dates)} unique):")
+    for f in dates:
+        v = f.get("value")
+        c = f.get("count")
+        # meeting_date is DateTimeOffset; show date portion only
+        date_str = v.split("T")[0] if isinstance(v, str) and "T" in v else v
+        print(f"  {date_str}  ({c} chunks)")
+    print(f"\nBy year: {[(f['value'], f['count']) for f in years]}")
+    print(f"By month: {[(f['value'], f['count']) for f in months]}")
+    print()
+
+
 def run(query: str, k: int, year: int | None = None, month: int | None = None) -> None:
     vec = embed(query)
     search = make_search_client()
@@ -114,11 +152,21 @@ def run(query: str, k: int, year: int | None = None, month: int | None = None) -
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Hybrid + semantic search smoke test")
-    ap.add_argument("query", nargs="+", help="Query text")
+    ap.add_argument("query", nargs="*", help="Query text (omit when using --list-meetings)")
     ap.add_argument("-k", type=int, default=5, help="Top K results (default 5)")
     ap.add_argument("--year", type=int, default=None, help="Filter by meeting year (e.g. 2025)")
     ap.add_argument("--month", type=int, default=None, help="Filter by meeting month (1-12)")
+    ap.add_argument(
+        "--list-meetings",
+        action="store_true",
+        help="Print all unique meetings in the index (facets on meeting_date) and exit.",
+    )
     args = ap.parse_args()
+    if args.list_meetings:
+        list_meetings()
+        return
+    if not args.query:
+        ap.error("query is required unless --list-meetings is given")
     run(" ".join(args.query), args.k, year=args.year, month=args.month)
 
 

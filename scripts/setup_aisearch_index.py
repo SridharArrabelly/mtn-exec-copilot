@@ -66,8 +66,13 @@ from azure.search.documents.indexes import SearchIndexClient
 from azure.search.documents.indexes.models import (
     AzureOpenAIVectorizer,
     AzureOpenAIVectorizerParameters,
+    FreshnessScoringFunction,
+    FreshnessScoringParameters,
     HnswAlgorithmConfiguration,
     HnswParameters,
+    ScoringFunctionAggregation,
+    ScoringFunctionInterpolation,
+    ScoringProfile,
     SearchableField,
     SearchField,
     SearchFieldDataType,
@@ -77,6 +82,7 @@ from azure.search.documents.indexes.models import (
     SemanticPrioritizedFields,
     SemanticSearch,
     SimpleField,
+    TextWeights,
     VectorSearch,
     VectorSearchAlgorithmMetric,
     VectorSearchProfile,
@@ -94,6 +100,7 @@ VECTOR_PROFILE = "mtn-vector-profile"
 HNSW_ALGO = "mtn-hnsw"
 SEMANTIC_CONFIG = "mtn-semantic"
 VECTORIZER_NAME = "mtn-vectorizer"
+SCORING_PROFILE = "recency-boost"
 
 
 # ---------- settings ----------
@@ -254,11 +261,49 @@ def build_index(name: str, s: dict) -> SearchIndex:
         ]
     )
 
+    # Recency-boost scoring profile.
+    #
+    # Why: pure semantic / vector relevance has no notion of "newer = better".
+    # A query like "what was discussed in the last meeting" matches every
+    # board-meeting doc about equally on text, so the top hits are whatever
+    # the semantic re-ranker happens to score highest — often docs from
+    # years ago. The freshness function boosts BM25 score for chunks whose
+    # `meeting_date` falls within the boosting_duration window. This
+    # broadens the candidate pool reaching the semantic re-ranker so recent
+    # meetings actually compete for top-K.
+    #
+    # text_weights: titles look like "Board Meeting – 15 February 2026", so
+    # when the user (or the agent) puts a year/month in the query the title
+    # match should weigh more than the body match.
+    #
+    # default_scoring_profile is set on the SearchIndex below — this is the
+    # only way to make the Foundry AzureAISearchTool pick it up, since the
+    # agent's tool call cannot specify a scoring profile per query.
+    scoring_profiles = [
+        ScoringProfile(
+            name=SCORING_PROFILE,
+            text_weights=TextWeights(weights={"title": 3.0, "content": 1.0}),
+            function_aggregation=ScoringFunctionAggregation.SUM,
+            functions=[
+                FreshnessScoringFunction(
+                    field_name="meeting_date",
+                    boost=5.0,
+                    parameters=FreshnessScoringParameters(
+                        boosting_duration="P730D",  # 2 years
+                    ),
+                    interpolation=ScoringFunctionInterpolation.QUADRATIC,
+                )
+            ],
+        )
+    ]
+
     return SearchIndex(
         name=name,
         fields=fields,
         vector_search=vector_search,
         semantic_search=semantic_search,
+        scoring_profiles=scoring_profiles,
+        default_scoring_profile=SCORING_PROFILE,
     )
 
 
