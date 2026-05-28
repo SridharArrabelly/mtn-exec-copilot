@@ -305,9 +305,9 @@ The Bicep template accepts overrides via azd environment variables — set any o
 | `SEARCH_CONNECTION_NAME`  | `aisearch-mtn`                   | Foundry AI Search connection name        |
 | `SEARCH_INDEX_NAME`       | `mtn-board-index`                | AI Search index name                     |
 | `VOICELIVE_VOICE`         | `en-US-AvaMultilingualNeural`    | Default avatar voice                     |
-| `MODEL_NAME`              | `gpt-4.1-mini`                   | OpenAI model to deploy in Foundry        |
+| `MODEL_NAME`              | `gpt-5.4-mini`                   | OpenAI model to deploy in Foundry        |
 | `MODEL_VERSION`           | `2025-04-14`                     | Model version                            |
-| `MODEL_DEPLOYMENT_NAME`   | `gpt-4.1-mini`                   | Deployment name (used by the agent)      |
+| `MODEL_DEPLOYMENT_NAME`   | `gpt-5.4-mini`                   | Deployment name (used by the agent)      |
 | `MODEL_SKU_NAME`          | `GlobalStandard`                 | Deployment SKU                           |
 | `MODEL_CAPACITY`          | `50`                             | TPM (thousands) capacity                 |
 
