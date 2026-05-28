@@ -47,7 +47,27 @@ document.addEventListener('DOMContentLoaded', () => {
     updateConditionalFields();
     updateControlStates();
     fetchServerConfig();
+    warmWebRTCEngine();
 });
+
+// Construct (and immediately close) a throwaway RTCPeerConnection at page load
+// so the browser loads/initializes its WebRTC native code, codec backends, and
+// JS-to-native bridges before the user clicks Connect. Real ICE candidates are
+// NOT pre-gathered here (we don't have the Azure ICE servers yet, and using
+// public STUN as a stand-in proved unreliable — see the note above
+// preparePeerConnection). The only thing this saves is the first-time
+// engine-warm cost, which is small but free.
+function warmWebRTCEngine() {
+    if (typeof RTCPeerConnection === 'undefined') return;
+    try {
+        const warm = new RTCPeerConnection({});
+        // Closing immediately is fine — we just wanted the constructor to run.
+        warm.close();
+        console.log('[WebRTC] engine warmed at page load');
+    } catch (e) {
+        // Ignore — older browsers / restrictive policies. Not fatal.
+    }
+}
 
 // ===== Server Config =====
 async function fetchServerConfig() {
@@ -1230,7 +1250,9 @@ function preparePeerConnection(iceServers) {
     pc.createOffer().then(offer => {
         return pc.setLocalDescription(offer);
     }).then(() => {
-        // Timeout fallback: if ICE gathering hasn't completed after 2.5 seconds, push anyway
+        // Timeout fallback: if ICE gathering hasn't completed after 1.5 seconds,
+        // push anyway. This is the disconnect-time prewarm; same logic as the
+        // first-connect path — see setupWebRTC() for rationale.
         setTimeout(() => {
             if (!iceGatheringDone) {
                 iceGatheringDone = true;
@@ -1241,7 +1263,7 @@ function preparePeerConnection(iceServers) {
                     try { old.close(); } catch (e) {}
                 }
             }
-        }, 2500);
+        }, 1500);
     }).catch(err => {
         console.error('preparePeerConnection offer error', err);
     });
@@ -1346,7 +1368,10 @@ function setupWebRTC(iceServers) {
     peerConnection.createOffer().then(offer => {
         return peerConnection.setLocalDescription(offer);
     }).then(() => {
-        // Timeout fallback: send SDP after 2.5 seconds if ICE gathering hasn't completed
+        // Timeout fallback: send SDP after 1.5s if ICE gathering hasn't completed.
+        // We send whatever candidates we have rather than waiting longer — if 1.5s
+        // wasn't enough to reach any TURN server, 2.5s usually isn't either and we
+        // were just adding visible Connect latency.
         setTimeout(() => {
             if (!iceGatheringDone) {
                 iceGatheringDone = true;
@@ -1356,7 +1381,7 @@ function setupWebRTC(iceServers) {
                 ws.send(JSON.stringify({ type: 'avatar_sdp_offer', clientSdp: sdpBase64 }));
                 console.log('[WebRTC] SDP offer sent after timeout (base64)');
             }
-        }, 2500);
+        }, 1500);
     }).catch(err => {
         console.error('WebRTC offer error', err);
         addMessage('system', 'WebRTC setup failed');
