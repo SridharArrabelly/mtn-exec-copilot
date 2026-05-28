@@ -74,7 +74,10 @@ You have two tools and must pick the right one(s) per question.
 - EXTERNAL/current question → `web_search` only.
 - COMPOUND (internal + external) → call BOTH in parallel, then merge.
 - Greeting / clarification / chit-chat → no tool.
-- Ambiguous → try `azure_ai_search` first; fall back to `web_search` if empty.
+- Ambiguous → pick the SINGLE most likely tool. NEVER chain tools as a fallback.
+  If that one tool returns nothing useful, say so plainly and ask the user
+  whether to try the other source. Do not auto-retry with the other tool —
+  chained tool calls double latency on the user's turn.
 
 ## Answering
 
@@ -298,6 +301,11 @@ def build_tools(search_connection_id: str, search_index_name: str) -> list:
     (the old setting) only ran BM25 and ignored the vectors entirely, which
     forced the model to run extra search calls on weak first-hits.
 
+    top_k=3 (down from 5): on a ~250-chunk meeting index the top-3 semantic
+    hits are almost always sufficient, and a smaller result set means the
+    model produces its first answer token noticeably faster (~300-500ms
+    saving on tool-using turns).
+
     Web search uses `low` context to keep tool latency down — `medium` (the
     default) pulls back significantly more snippet text per source, which is
     overkill for exec-summary style answers.
@@ -313,7 +321,7 @@ def build_tools(search_connection_id: str, search_index_name: str) -> list:
                         project_connection_id=search_connection_id,
                         index_name=search_index_name,
                         query_type=AzureAISearchQueryType.VECTOR_SEMANTIC_HYBRID,
-                        top_k=5,
+                        top_k=3,
                     ),
                 ]
             )

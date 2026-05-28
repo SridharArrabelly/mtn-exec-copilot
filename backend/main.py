@@ -19,19 +19,30 @@ logger = logging.getLogger(__name__)
 
 
 async def _prewarm_credential() -> None:
-    """Acquire a token at startup so the first user doesn't pay the cold-cost.
+    """Acquire tokens at startup so the first user doesn't pay the cold-cost.
 
-    DefaultAzureCredential's first token acquisition can take 1-3 seconds
-    (resolves AzureCliCredential / managed identity / env-based chains).
-    By doing it at app startup we shift that cost off the user's Connect
-    click. The result is cached on the singleton credential, so the actual
-    Voice Live connect reuses the warm token.
+    DefaultAzureCredential's first token acquisition can take 1-6 seconds
+    (resolves AzureCliCredential / managed identity / env-based chains, then
+    shells out to ``az account get-access-token`` for the first scope).
+
+    **Tokens are cached per-scope**, so we must warm the scope Voice Live
+    actually requests (``https://ai.azure.com/.default``). Previously we only
+    warmed ``https://cognitiveservices.azure.com/.default``, which left
+    Voice Live to pay the full ~6s CLI spawn on the first user's Connect.
+
+    Both scopes are warmed in parallel:
+    - ``ai.azure.com`` — Voice Live SDK (primary path)
+    - ``cognitiveservices.azure.com`` — direct AOAI embeddings / AI Search
+      calls if the backend ever makes them (e.g. for diagnostic scripts)
     """
+    scopes = (
+        "https://ai.azure.com/.default",
+        "https://cognitiveservices.azure.com/.default",
+    )
     try:
         credential = create_credential("")
-        # azure-identity.aio.DefaultAzureCredential exposes get_token
-        await credential.get_token("https://cognitiveservices.azure.com/.default")
-        logger.info("Credential pre-warmed at startup")
+        await asyncio.gather(*(credential.get_token(s) for s in scopes))
+        logger.info(f"Credential pre-warmed at startup (scopes: {', '.join(scopes)})")
     except Exception as e:
         # Don't fail startup if pre-warm fails — the per-session path will
         # surface a real error later.
