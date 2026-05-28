@@ -34,7 +34,7 @@ MODIFY — add Azure deployment scaffolding to an existing FastAPI + Docker app.
 | Identity | User-Assigned Managed Identity (UAMI) | Used by ACA pull + runtime auth to Foundry/Search |
 | Observability | Log Analytics + Application Insights | ACA-linked; `APPLICATIONINSIGHTS_CONNECTION_STRING` injected |
 | AI Foundry | Cognitive Services (kind=AIServices) + Project + Model deployment | **Conditional** — see BYO section |
-| Model deployment | `gpt-4.1-mini` v `2025-04-14`, SKU `GlobalStandard`, capacity 50 | Created on the Foundry account |
+| Model deployment | `gpt-5.4-mini` v `2025-04-14`, SKU `GlobalStandard`, capacity 50 | Created on the Foundry account |
 | AI Search | Azure AI Search (Basic tier) | **Conditional** — see BYO section |
 
 ### Networking

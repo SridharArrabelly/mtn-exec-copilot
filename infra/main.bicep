@@ -48,11 +48,11 @@ param voiceLiveVoice string = 'en-US-AvaMultilingualNeural'
 
 // ───────── Model deployment ─────────
 @description('OpenAI model name to deploy on the Foundry account.')
-param modelName string = 'gpt-4.1-mini'
+param modelName string = 'gpt-5.4-mini'
 @description('Model version.')
 param modelVersion string = '2025-04-14'
 @description('Model deployment name (referenced by the agent).')
-param modelDeploymentName string = 'gpt-4.1-mini'
+param modelDeploymentName string = 'gpt-5.4-mini'
 @description('Model deployment SKU.')
 @allowed([ 'GlobalStandard', 'Standard', 'DataZoneStandard' ])
 param modelSkuName string = 'GlobalStandard'
