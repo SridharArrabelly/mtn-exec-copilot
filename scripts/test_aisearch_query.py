@@ -68,7 +68,7 @@ def make_embeddings_client() -> AzureOpenAI:
 
 def embed(query: str) -> list[float]:
     client = make_embeddings_client()
-    deployment = os.getenv("EMBEDDING_DEPLOYMENT", "text-embedding-3-large")
+    deployment = os.getenv("EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
     resp = client.embeddings.create(model=deployment, input=[query])
     return resp.data[0].embedding
 

@@ -51,7 +51,9 @@ WEB_SEARCH_LOCATION = WebSearchApproximateLocation(
     city="Johannesburg", region="Gauteng", country="ZA"
 )
 
-# agent instructions for gpt-4.1-mini - designed to be clear and explicit for a smaller model, with more examples and detailed guidance on tool selection and response formatting.
+# Agent instructions — concise and explicit, sized for smaller models such
+# as gpt-4o-mini or gpt-4.1-mini. Keeps tool-selection rules unambiguous and
+# the response format consistent without burning tokens on long examples.
 AGENT_INSTRUCTIONS = """You are MtnAvatarAgent, an executive assistant for MTN leadership.
 You have two tools and must pick the right one(s) per question.
 

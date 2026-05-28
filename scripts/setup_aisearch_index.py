@@ -1,7 +1,7 @@
 """Create (or update) the Azure AI Search index used by the MTN Foundry agent.
 
 Reads .docx, .pdf, .md, .txt files from ``data/`` (recursively), chunks them, embeds each chunk with the
-embedding model deployed on the Foundry project (``text-embedding-3-large`` by
+embedding model deployed on the Foundry project (``text-embedding-3-small`` by
 default), and uploads the chunks to an Azure AI Search index configured for
 **hybrid search** (BM25 + vector) with a **semantic configuration** for
 re-ranking.
@@ -17,12 +17,18 @@ Embeddings are generated against the Foundry resource's Azure OpenAI route
 (``/openai/deployments/<dep>/embeddings``), authenticated with
 ``DefaultAzureCredential`` — no separate ``AZURE_OPENAI_ENDPOINT`` required.
 
+The vector dimension is **auto-detected** from the deployment at runtime, so
+switching between ``text-embedding-3-small`` (1536) and ``text-embedding-3-large``
+(3072) — or any other embedding model — is a one-env-var change. After switching
+embedding models you MUST also set ``RECREATE_INDEX=true`` for one run, because
+``vector_search_dimensions`` is immutable on an existing index.
+
 Required environment variables (see ``.env.example``):
     AZURE_SEARCH_ENDPOINT      https://<svc>.search.windows.net
     SEARCH_INDEX_NAME          e.g. mtn-meetings
     PROJECT_ENDPOINT           https://<resource>.services.ai.azure.com/api/projects/<project>
     EMBEDDING_DEPLOYMENT       Foundry-deployed embedding model
-                               (default: text-embedding-3-large)
+                               (default: text-embedding-3-small)
 
 Optional:
     AZURE_OPENAI_API_VERSION   default: 2024-10-21
@@ -83,7 +89,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s")
 log = logging.getLogger("setup-aisearch")
 
-EMBED_DIM = 3072  # text-embedding-3-large
+EMBED_DIM_DEFAULT = 1536  # text-embedding-3-small; auto-detected at runtime
 VECTOR_PROFILE = "mtn-vector-profile"
 HNSW_ALGO = "mtn-hnsw"
 SEMANTIC_CONFIG = "mtn-semantic"
@@ -106,12 +112,14 @@ def load_settings() -> dict:
         "index_name": _require("SEARCH_INDEX_NAME"),
         "search_key": os.getenv("AZURE_SEARCH_API_KEY", "").strip(),
         "project_endpoint": _require("PROJECT_ENDPOINT").rstrip("/"),
-        "embed_deployment": os.getenv("EMBEDDING_DEPLOYMENT", "text-embedding-3-large"),
+        "embed_deployment": os.getenv("EMBEDDING_DEPLOYMENT", "text-embedding-3-small"),
         "aoai_api_version": os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21"),
         "data_dir": Path(os.getenv("DATA_DIR", "data")).resolve(),
         "chunk_size": int(os.getenv("CHUNK_SIZE", "1200")),
         "chunk_overlap": int(os.getenv("CHUNK_OVERLAP", "200")),
         "recreate": os.getenv("RECREATE_INDEX", "false").lower() == "true",
+        # Filled in by detect_embed_dim() before ensure_index() runs.
+        "embed_dim": None,
     }
 
 
@@ -182,6 +190,7 @@ def make_embeddings_client(s: dict):
 # ---------- index ----------
 
 def build_index(name: str, s: dict) -> SearchIndex:
+    embed_dim = s.get("embed_dim") or EMBED_DIM_DEFAULT
     fields = [
         SimpleField(name="id", type=SearchFieldDataType.String, key=True, filterable=True),
         SearchableField(name="title", type=SearchFieldDataType.String, filterable=True, sortable=True),
@@ -198,7 +207,7 @@ def build_index(name: str, s: dict) -> SearchIndex:
             name="content_vector",
             type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
             searchable=True,
-            vector_search_dimensions=EMBED_DIM,
+            vector_search_dimensions=embed_dim,
             vector_search_profile_name=VECTOR_PROFILE,
         ),
     ]
@@ -255,13 +264,37 @@ def build_index(name: str, s: dict) -> SearchIndex:
 
 def ensure_index(s: dict) -> None:
     client = make_index_client(s)
-    existing = {i.name for i in client.list_indexes()}
-    if s["index_name"] in existing and s["recreate"]:
+    existing_indexes = {i.name: i for i in client.list_indexes()}
+
+    # Vector dimensions are immutable on an existing index. If the user
+    # switched embedding models without setting RECREATE_INDEX=true, the
+    # downstream create_or_update_index call would fail with a confusing
+    # server-side error — surface the real cause up front.
+    if s["index_name"] in existing_indexes and not s["recreate"]:
+        existing = existing_indexes[s["index_name"]]
+        existing_dim = next(
+            (
+                getattr(f, "vector_search_dimensions", None)
+                for f in existing.fields
+                if f.name == "content_vector"
+            ),
+            None,
+        )
+        if existing_dim and s.get("embed_dim") and existing_dim != s["embed_dim"]:
+            log.error(
+                "Existing index '%s' has vector dim %d but the deployment '%s' produces %d-dim embeddings. "
+                "Vector dimensions are immutable on an existing index — set RECREATE_INDEX=true to drop "
+                "and rebuild from scratch.",
+                s["index_name"], existing_dim, s["embed_deployment"], s["embed_dim"],
+            )
+            sys.exit(2)
+
+    if s["index_name"] in existing_indexes and s["recreate"]:
         log.info("Deleting existing index '%s'", s["index_name"])
         client.delete_index(s["index_name"])
-        existing.discard(s["index_name"])
+        existing_indexes.pop(s["index_name"], None)
 
-    if s["index_name"] in existing:
+    if s["index_name"] in existing_indexes:
         log.info("Updating index '%s'", s["index_name"])
         client.create_or_update_index(build_index(s["index_name"], s))
     else:
@@ -331,6 +364,17 @@ def chunk_text(text: str, size: int, overlap: int) -> list[str]:
 def embed_batch(client, deployment: str, texts: list[str]) -> list[list[float]]:
     resp = client.embeddings.create(model=deployment, input=texts)
     return [d.embedding for d in resp.data]
+
+
+def detect_embed_dim(client, deployment: str) -> int:
+    """Probe the deployment to learn its embedding output dimension.
+
+    Lets the script work with any embedding model (3-small=1536, 3-large=3072,
+    ada-002=1536, etc.) without hardcoding. Costs one tiny embedding call at
+    setup time.
+    """
+    resp = client.embeddings.create(model=deployment, input=["dimension probe"])
+    return len(resp.data[0].embedding)
 
 
 def iter_documents(s: dict, aoai) -> Iterable[dict]:
@@ -419,8 +463,11 @@ def main() -> None:
     log.info("Foundry:   %s  /  embed=%s", s["project_endpoint"], s["embed_deployment"])
     log.info("Data dir:  %s", s["data_dir"])
 
-    ensure_index(s)
     aoai = make_embeddings_client(s)
+    s["embed_dim"] = detect_embed_dim(aoai, s["embed_deployment"])
+    log.info("Embedding dim (detected): %d", s["embed_dim"])
+
+    ensure_index(s)
     n = upload(s, iter_documents(s, aoai))
     log.info("Done. Indexed %d chunks into '%s'.", n, s["index_name"])
 
