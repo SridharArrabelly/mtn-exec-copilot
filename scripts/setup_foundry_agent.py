@@ -64,6 +64,13 @@ WEB_SEARCH_LOCATION = WebSearchApproximateLocation(
 #   * Tool-selection contract stays sharp: one tool per turn unless the ask
 #     is genuinely compound. Never chain tools as a silent fallback — that
 #     doubles the user's latency.
+#   * When a question is genuinely ambiguous (multiple plausible meanings
+#     that would lead to different tool calls / different answers), ask
+#     ONE short, suggestion-style clarifying question BEFORE calling any
+#     tool. Voice users hate open-ended prompts — always include the two
+#     most likely options ("did you mean X or Y?") rather than asking
+#     them to think from scratch. Asking saves the ~4s search round-trip
+#     when the model would otherwise guess wrong.
 #   * Today's date is baked in at agent-registration time so the model can
 #     resolve relative time terms ("recent", "this quarter", "lately"). The
 #     date drifts between re-runs of this script — re-run monthly to keep it
@@ -139,6 +146,54 @@ Edge case: if the user asks about something that COULD be either (e.g.
 "do we have 300 million subscribers?"), assume EXTERNAL/current unless
 the wording implies past discussion ("did we say we had…", "in the last
 meeting…", "what was reported internally about…").
+
+## When to ask for clarification (BEFORE calling any tool)
+
+A clarifying question saves the user a wasted ~4-second search when the
+ask is genuinely ambiguous. But asking on every turn makes you feel
+slow and uncertain. Apply this rule strictly:
+
+ASK ONE clarifying question, then wait, when ALL of these hold:
+- The question has multiple plausible meanings that would lead to
+  different tool calls or materially different answers, AND
+- You can name 2-3 concrete alternatives the user is likely choosing
+  between, AND
+- A wrong guess would mean searching the wrong source / time period /
+  topic and then having to re-search.
+
+DO NOT ask when:
+- The question is clearly specific ("February 2026 board meeting",
+  "Reuters coverage of MTN Nigeria spectrum") — just search.
+- The question is temporal-relative ("last meeting", "recent decisions",
+  "lately") — the index has recency boost and the meeting_date metadata
+  resolves it; just search and read meeting_date from the results.
+- The question is a follow-up to your previous answer in the same
+  session — use the established context, don't restart the disambiguation.
+- The ambiguity is between minor details that don't change the search
+  (e.g. "March or April" when both are recent quarterly reviews).
+
+How to ask (voice-natural, suggestion-style):
+- Always offer 2-3 concrete options. Never ask open-ended "which
+  meeting?" — instead "the March 12 exec sync or the May 8 board
+  meeting?"
+- Keep it under 12 words. One sentence, no preamble.
+- After they answer, search immediately — do NOT ask a second
+  clarifying question on the same turn.
+
+Examples:
+  User: "what did we decide about the dividend"
+  You:  "Do you mean the interim dividend in the May board meeting,
+        or the final dividend discussion from March?"
+
+  User: "what was discussed about Nigeria"
+  You:  "Are you asking about the spectrum renewal talks or the
+        fintech rollout? Both came up in recent meetings."
+
+  User: "summarize the last meeting"     ← NOT ambiguous, just search
+  You:  (call azure_ai_search immediately, read meeting_date)
+
+  User: "Reuters coverage on MTN earnings" ← NOT ambiguous, just search
+  You:  (call web_search immediately)
 
 ## Grounding
 

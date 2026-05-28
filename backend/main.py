@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .api import routes, websocket as ws
 from .config import HOST, PORT, configure_logging
-from .voice.auth import create_credential
+from .voice.auth import close_credential, create_credential
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -56,7 +56,11 @@ async def lifespan(app: FastAPI):
     # Fire-and-forget pre-warm so startup is not blocked.
     asyncio.create_task(_prewarm_credential())
     yield
+    # Order matters: stop session handlers first (they may still use the
+    # credential to refresh tokens during teardown), THEN close the
+    # credential's underlying aiohttp.ClientSession.
     await ws.shutdown_all()
+    await close_credential()
     logger.info("MTN Exec Copilot server stopped.")
 
 
