@@ -40,6 +40,7 @@ from azure.ai.projects.models import (
     AzureAISearchTool,
     AzureAISearchToolResource,
     PromptAgentDefinition,
+    Reasoning,
     WebSearchApproximateLocation,
     WebSearchTool,
 )
@@ -434,10 +435,12 @@ def build_tools(search_connection_id: str, search_index_name: str) -> list:
     (the old setting) only ran BM25 and ignored the vectors entirely, which
     forced the model to run extra search calls on weak first-hits.
 
-    top_k=3 (down from 5): on a ~250-chunk meeting index the top-3 semantic
-    hits are almost always sufficient, and a smaller result set means the
-    model produces its first answer token noticeably faster (~300-500ms
-    saving on tool-using turns).
+    top_k=5: we briefly ran with top_k=3 for first-token latency wins, but
+    that broke summary-style queries — only the single best-matching chunk
+    from the right meeting reached the model, and a one-chunk fragment is
+    not enough content to summarise a meeting from. top_k=5 trades ~200ms
+    of tool latency for a much better content base for synthesis / summary
+    queries.
 
     Web search uses `low` context to keep tool latency down — `medium` (the
     default) pulls back significantly more snippet text per source, which is
@@ -454,7 +457,7 @@ def build_tools(search_connection_id: str, search_index_name: str) -> list:
                         project_connection_id=search_connection_id,
                         index_name=search_index_name,
                         query_type=AzureAISearchQueryType.VECTOR_SEMANTIC_HYBRID,
-                        top_k=3,
+                        top_k=5,
                     ),
                 ]
             )
@@ -463,7 +466,17 @@ def build_tools(search_connection_id: str, search_index_name: str) -> list:
 
 
 def create_agent(project: AIProjectClient, settings: dict):
-    """Create a new version of the Foundry agent."""
+    """Create a new version of the Foundry agent.
+
+    `reasoning=Reasoning(effort="low")`: gpt-5.4-mini defaults to `medium`
+    reasoning, which spent up to ~19s "thinking" before responding on
+    tool-using turns (observed in production logs). This is a voice-first
+    avatar — latency is the dominant UX metric, and the work it does
+    (pick a tool, phrase a query, summarise) does not need deep chain-of-
+    thought. `low` keeps enough judgement for tool selection but cuts the
+    thinking overhead substantially. If `low` still feels too slow, the
+    next steps are `minimal` and then `none` — both supported by the SDK.
+    """
     azs_connection = project.connections.get(settings["search_connection_name"])
     tools = build_tools(azs_connection.id, settings["search_index_name"])
 
@@ -473,6 +486,7 @@ def create_agent(project: AIProjectClient, settings: dict):
             model=settings["agent_model"],
             instructions=AGENT_INSTRUCTIONS,
             tools=tools,
+            reasoning=Reasoning(effort="low"),
         ),
         description=AGENT_DESCRIPTION,
     )
