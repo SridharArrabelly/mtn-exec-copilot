@@ -79,7 +79,8 @@ WEB_SEARCH_LOCATION = WebSearchApproximateLocation(
 #     date drifts between re-runs of this script — re-run monthly to keep it
 #     fresh.
 #   * The backend injects a MEETINGS LIST as a system message at session
-#     start (live fetch from AI Search facets — no rebuild needed when new
+#     start (live fetch from AI Search via chunk_index filter — no rebuild
+#     needed when new
 #     minutes are ingested). The prompt below tells the model to answer
 #     first/last/count/listing questions directly from that list rather
 #     than calling AI Search, and to use the list to phrase precise
@@ -388,10 +389,15 @@ def _fetch_catalog_for_smoke_test() -> str | None:
     credential = AzureKeyCredential(api_key) if api_key else DefaultAzureCredential()
     client = SearchClient(endpoint=endpoint, index_name=index, credential=credential)
     try:
+        # Mirrors backend/voice/catalog.py: filter on chunk_index eq 0 to
+        # return one doc per meeting (~10 rows) instead of every chunk
+        # (~100+ rows). The indexer assigns chunk_index via enumerate(),
+        # so every meeting has a chunk 0.
         results = client.search(
             search_text="*",
+            filter="chunk_index eq 0",
             select=["title", "meeting_date"],
-            top=1000,
+            top=200,
         )
         by_date: dict[str, str] = {}
         for r in results:

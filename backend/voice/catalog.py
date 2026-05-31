@@ -61,18 +61,29 @@ def _make_search_client() -> Optional[SearchClient]:
 
 
 async def _fetch_catalog() -> Optional[str]:
-    """Single round-trip fetch — pulls title + meeting_date for every chunk,
-    deduplicates by date, formats into a model-friendly catalogue."""
+    """Single round-trip fetch — pulls title + meeting_date for one chunk per
+    meeting (using the indexed ``chunk_index`` field as a per-meeting key),
+    formats into a model-friendly catalogue.
+
+    Filtering on ``chunk_index eq 0`` returns exactly one document per
+    meeting (the indexer assigns ``chunk_index`` 0..N-1 per source file
+    via ``enumerate``), so the service scans ~10 docs instead of the full
+    ~100+ chunks. This is dramatically cheaper than ``search_text='*'``
+    with ``top=1000`` followed by client-side dedup.
+    """
     client = _make_search_client()
     if client is None:
         return None
     started = time.monotonic()
     try:
-        # `top=1000` is well above our largest expected index (~100 chunks).
+        # Filter pushes work to the search service; we get one row per meeting.
+        # `top=200` is a safety margin — we expect ~10 rows but a future
+        # bulk-ingest could exceed that. The filter does the real work.
         results = await client.search(
             search_text="*",
+            filter="chunk_index eq 0",
             select=["title", "meeting_date"],
-            top=1000,
+            top=200,
         )
 
         by_date: dict[str, str] = {}
