@@ -430,6 +430,7 @@ function toggleSidebar() {
 // ===== Chat =====
 function addMessage(role, text, isDev = false) {
     if (isDev && !isDeveloperMode) return;
+    if (!isDeveloperMode) return;
     const messagesEl = document.getElementById('messages');
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ${isDev ? 'dev' : role}`;
@@ -669,6 +670,7 @@ function handleServerMessage(msg) {
             break;
         case 'transcript_done':
             if (msg.role === 'user') {
+                if (!isDeveloperMode) break;
                 // Update existing placeholder by itemId, or add new message
                 const itemId = msg.itemId;
                 if (itemId) {
@@ -682,7 +684,7 @@ function handleServerMessage(msg) {
                 addMessage('user', msg.transcript);
             } else if (msg.role === 'assistant') {
                 // Finalize the streaming assistant message (don't create a new one)
-                if (msg.transcript) {
+                if (msg.transcript && isDeveloperMode) {
                     const assistantMsgs = document.querySelectorAll('.message.assistant .message-content');
                     if (assistantMsgs.length > 0) {
                         assistantMsgs[assistantMsgs.length - 1].textContent = msg.transcript;
@@ -741,6 +743,7 @@ let pendingAssistantText = '';
 let currentAssistantContentEl = null;
 
 function onAssistantDelta(text) {
+    if (!isDeveloperMode) return;
     pendingAssistantText += text;
     // Cache the DOM ref instead of running querySelectorAll on every delta token.
     if (!currentAssistantContentEl || !currentAssistantContentEl.isConnected) {
