@@ -19,11 +19,13 @@ from azure.ai.voicelive.models import (
     OutputAudioFormat,
     RequestSession,
     ServerEventType,
+    SystemMessageItem,
     UserMessageItem,
 )
 
 from ..config import AGENT_NAME, AGENT_PROJECT_NAME
 from .builders import build_avatar_config, build_turn_detection, build_voice_config
+from .catalog import get_meeting_catalog
 from .event_handlers import handle_event
 
 logger = logging.getLogger(__name__)
@@ -100,6 +102,11 @@ class VoiceSessionHandler:
         """Configure the Voice Live session with avatar, voice, and other settings."""
         config = self.config
 
+        # Kick off meeting catalogue fetch in parallel with session setup. The
+        # Voice Live handshake itself takes ~1-2s so this fetch (~50-100ms on
+        # cache miss, ~0 on hit) is almost always free.
+        catalog_task = asyncio.create_task(get_meeting_catalog())
+
         # Build voice configuration
         voice_config = build_voice_config(config)
 
@@ -154,6 +161,32 @@ class VoiceSessionHandler:
             raise ValueError("SESSION_UPDATED event not received")
 
         logger.info(f"Session configured for client {self.client_id}")
+
+        # Inject the live meeting catalogue as a SYSTEM message so the
+        # Foundry agent can answer first/last/count/listing questions
+        # without searching, and can phrase precise content searches with
+        # exact meeting dates. Wrapped in try/except so a fetch failure
+        # never breaks the session — the agent prompt has a fallback path.
+        try:
+            catalog = await catalog_task
+            if catalog:
+                catalog_item = SystemMessageItem(
+                    content=[InputTextContentPart(text=catalog)]
+                )
+                await connection.conversation.item.create(item=catalog_item)
+                logger.info(
+                    f"Injected meeting catalogue ({len(catalog)} chars) "
+                    f"for client {self.client_id}"
+                )
+            else:
+                logger.info(
+                    f"No meeting catalogue available; agent will fall back "
+                    f"to direct search for client {self.client_id}"
+                )
+        except Exception as e:
+            logger.warning(
+                f"Failed to inject meeting catalogue for {self.client_id}: {e}"
+            )
 
         avatar_output_mode = config.get("avatarOutputMode", "webrtc")
 

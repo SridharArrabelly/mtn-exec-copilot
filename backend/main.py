@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from .api import routes, websocket as ws
 from .config import HOST, PORT, configure_logging
 from .voice.auth import close_credential, create_credential
+from .voice.catalog import prewarm_catalog
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ async def _prewarm_credential() -> None:
     scopes = (
         "https://ai.azure.com/.default",
         "https://cognitiveservices.azure.com/.default",
+        "https://search.azure.com/.default",
     )
     try:
         credential = create_credential("")
@@ -55,6 +57,9 @@ async def lifespan(app: FastAPI):
     logger.info("MTN Exec Copilot server starting...")
     # Fire-and-forget pre-warm so startup is not blocked.
     asyncio.create_task(_prewarm_credential())
+    # Fire-and-forget catalogue pre-warm so the first session connect doesn't
+    # pay the ~50-100ms fetch cost.
+    asyncio.create_task(prewarm_catalog())
     yield
     # Order matters: stop session handlers first (they may still use the
     # credential to refresh tokens during teardown), THEN close the

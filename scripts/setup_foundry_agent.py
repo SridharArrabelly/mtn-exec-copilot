@@ -76,14 +76,14 @@ WEB_SEARCH_LOCATION = WebSearchApproximateLocation(
 #     resolve relative time terms ("recent", "this quarter", "lately"). The
 #     date drifts between re-runs of this script — re-run monthly to keep it
 #     fresh.
-#   * For temporal queries against AI Search the index has a recency-boost
-#     scoring profile (set as default), so newer meetings already get a
-#     ranking boost server-side. The prompt rule below tells the model how
-#     to phrase queries to take advantage of it, and how to read the
-#     meeting_date metadata from results when the user asks about "the
-#     last meeting".
-#   * A more verbose variant of this prompt is preserved below (commented
-#     out) if the model ever needs more hand-holding.
+#   * The backend injects a MEETINGS LIST as a system message at session
+#     start (live fetch from AI Search facets — no rebuild needed when new
+#     minutes are ingested). The prompt below tells the model to answer
+#     first/last/count/listing questions directly from that list rather
+#     than calling AI Search, and to use the list to phrase precise
+#     content searches by exact meeting date. This decouples temporal
+#     awareness from index ranking — the index itself uses neutral hybrid
+#     scoring (no recency boost) which works for both old and new docs.
 
 
 def _build_agent_instructions() -> str:
@@ -104,24 +104,50 @@ Today is {today}. When the user uses relative time terms ("today", "this
 week", "this quarter", "last year", "lately", "recent"), interpret them
 relative to today.
 
+## Meeting catalogue (read this BEFORE thinking about tools)
+
+At the start of every session you receive a separate system message
+called MEETINGS LIST. It is the complete, authoritative roster of board
+/ executive meetings currently in the index — one line per meeting,
+with the meeting date. Treat it as ground truth.
+
+Use MEETINGS LIST DIRECTLY (no tool call) for these question types:
+- "What was the first / earliest / oldest meeting?"  → answer the
+  earliest date from the list.
+- "What was the last / latest / most recent meeting?" → answer the
+  latest date.
+- "How many meetings do we have?" → answer the count.
+- "List the meetings" / "what meetings do we have on file?" →
+  enumerate the dates.
+
+Use MEETINGS LIST INDIRECTLY to phrase precise AI Search queries:
+- User: "summarise the last meeting" → look up the latest date in the
+  list (e.g. 15 February 2026), then call `azure_ai_search` with the
+  exact title "Board Meeting 15 February 2026". The title match
+  promotes that specific meeting to the top of results.
+- User: "what was discussed in the May meeting" → check the list for
+  May entries. If only one, search precisely for that date. If
+  multiple, ASK which one before searching (see clarification rules
+  below).
+
+If the MEETINGS LIST system message is missing for any reason, fall
+back to calling `azure_ai_search` directly — the index uses neutral
+hybrid scoring, so a query that includes the year and month name
+(e.g. "Board Meeting February 2026") is reliable.
+
 ## Tools
 
 1. `azure_ai_search` — MTN's INTERNAL past board / executive meeting minutes
-   (dates, attendees, agenda, discussion points, decisions, action items,
-   owners, deadlines, internal strategy already discussed). This is the
-   ONLY source of truth for "what did we discuss/decide internally".
-   Never answer prior-meeting questions from memory.
+   (attendees, agenda, discussion points, decisions, action items, owners,
+   deadlines, internal strategy already discussed). This is the ONLY source
+   of truth for the *content* of past meetings. Never answer prior-meeting
+   content questions from memory.
 
-   Each AI Search result includes `meeting_date` and `title` metadata. Use
-   them:
-   - The index has a server-side RECENCY BIAS — newer meetings get a
-     ranking boost automatically. You don't need to ask for it.
-   - For specific time references ("the February meeting", "Q4 2025",
-     "this year"), include the year and the month name in your search
-     query — that strongly boosts the matching meeting title.
-   - For "last meeting", "latest", "most recent" queries, inspect the
-     `meeting_date` on the returned chunks and answer from the most
-     recent one first.
+   Each result includes `meeting_date` and `title` metadata — quote them
+   in your spoken answer. For specific time references ("the February
+   meeting", "Q4 2025", "the May 2008 board meeting"), include the year
+   and month name in your search query — title matches boost the right
+   meeting to the top.
 
 2. `web_search` — CURRENT external information (telco news, competitors,
    regulator / spectrum, earnings, M&A, market trends, macro). Prefer the
@@ -131,8 +157,11 @@ relative to today.
 
 ## When to pick which
 
-- Internal-only question (what we discussed, decided, planned, who owns
-  what) → `azure_ai_search`.
+- Catalogue question (which meetings exist, first/last, count, list)
+  → answer from MEETINGS LIST, NO tool call.
+- Internal-content question (what was discussed/decided/planned, who
+  owns what) → `azure_ai_search` (use MEETINGS LIST to scope the query
+  if a date is implied).
 - External-only question (what is happening now in the world / market)
   → `web_search`.
 - Compound (one ask needs BOTH internal context AND external context)
@@ -165,9 +194,11 @@ ASK ONE clarifying question, then wait, when ALL of these hold:
 DO NOT ask when:
 - The question is clearly specific ("February 2026 board meeting",
   "Reuters coverage of MTN Nigeria spectrum") — just search.
-- The question is temporal-relative ("last meeting", "recent decisions",
-  "lately") — the index has recency boost and the meeting_date metadata
-  resolves it; just search and read meeting_date from the results.
+- The question is about the catalogue (first / last / count / list of
+  meetings) — answer from MEETINGS LIST, no tool call, no ask.
+- The question is temporal-relative ("last meeting", "most recent")
+  AND the MEETINGS LIST clearly identifies one meeting — use that
+  date to scope the search; don't ask.
 - The question is a follow-up to your previous answer in the same
   session — use the established context, don't restart the disambiguation.
 - The ambiguity is between minor details that don't change the search
@@ -190,8 +221,12 @@ Examples:
   You:  "Are you asking about the spectrum renewal talks or the
         fintech rollout? Both came up in recent meetings."
 
-  User: "summarize the last meeting"     ← NOT ambiguous, just search
-  You:  (call azure_ai_search immediately, read meeting_date)
+  User: "summarize the last meeting"     ← NOT ambiguous, MEETINGS LIST resolves it
+  You:  (look up latest date in MEETINGS LIST, then call azure_ai_search
+        with "Board Meeting <that date>")
+
+  User: "what was the first board meeting?"  ← answer from MEETINGS LIST, no tool
+  You:  "The earliest meeting on file is the 15 March 2006 board meeting."
 
   User: "Reuters coverage on MTN earnings" ← NOT ambiguous, just search
   You:  (call web_search immediately)
@@ -244,21 +279,24 @@ def load_settings() -> dict:
 def build_tools(search_connection_id: str, search_index_name: str) -> list:
     """Build the tool list for the agent.
 
-    AI Search uses VECTOR_SEMANTIC_HYBRID so the agent actually uses the
-    HNSW vector index + semantic re-ranker the index was built for. SIMPLE
-    (the old setting) only ran BM25 and ignored the vectors entirely, which
-    forced the model to run extra search calls on weak first-hits.
+    AI Search uses VECTOR_SIMPLE_HYBRID — vector ANN + BM25 keyword, no
+    semantic re-ranker. The re-ranker (`VECTOR_SEMANTIC_HYBRID`, the
+    previous setting) adds ~200-500ms of per-query latency on a server-side
+    transformer pass. For a voice avatar where every search round-trip
+    sits between the user's question and the spoken reply, that latency
+    is more painful than the relevance gain is worth — the underlying
+    vector + BM25 hybrid is already strong on this small corpus, and the
+    Foundry model itself can re-rank the top-k chunks if needed.
 
-    top_k=5: we briefly ran with top_k=3 for first-token latency wins, but
-    that broke summary-style queries — only the single best-matching chunk
-    from the right meeting reached the model, and a one-chunk fragment is
-    not enough content to summarise a meeting from. top_k=5 trades ~200ms
-    of tool latency for a much better content base for synthesis / summary
-    queries.
+    top_k=5: enough chunks to summarise from when several come from the
+    same meeting. We briefly ran with top_k=3, but that broke summary
+    queries (only one chunk from the right meeting reached the model).
+    top_k=5 trades ~200ms of tool latency for a much richer base for
+    synthesis / summary queries.
 
-    Web search uses `low` context to keep tool latency down — `medium` (the
-    default) pulls back significantly more snippet text per source, which is
-    overkill for exec-summary style answers.
+    Web search uses `low` context to keep tool latency down — `medium`
+    (the default) pulls back significantly more snippet text per source,
+    which is overkill for exec-summary style answers.
     """
     return [
         WebSearchTool(user_location=WEB_SEARCH_LOCATION,
@@ -270,7 +308,7 @@ def build_tools(search_connection_id: str, search_index_name: str) -> list:
                     AISearchIndexResource(
                         project_connection_id=search_connection_id,
                         index_name=search_index_name,
-                        query_type=AzureAISearchQueryType.VECTOR_SEMANTIC_HYBRID,
+                        query_type=AzureAISearchQueryType.VECTOR_SIMPLE_HYBRID,
                         top_k=5,
                     ),
                 ]
