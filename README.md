@@ -80,6 +80,9 @@ The avatar feature is currently available in the following service regions: Sout
 
    Authentication uses Entra ID via `DefaultAzureCredential` — run `az login` once before starting the server. The Voice Live agent path does not support API-key auth.
 
+   Optional dev-only knobs:
+   - `AUTH_EXCLUDE_MANAGED_IDENTITY=true` — on a developer laptop, set this to skip the IMDS managed-identity probe that `DefaultAzureCredential` otherwise waits ~5s for at startup. Cuts the cold-start credential pre-warm from ~7s to ~1.5s. **Leave UNSET in Azure** (Container Apps / App Service / AKS workload identity all need the managed-identity path enabled). See the [Authentication](#authentication) section for details.
+
 3. **Run the server:**
 
    ```bash
@@ -377,7 +380,30 @@ mtn-exec-copilot/
 
 ## Authentication
 
-Voice Live agent sessions (`agent_config = { agent_name, project_name }`) require Entra ID; API-key auth is rejected by the agent path. The backend always uses [`DefaultAzureCredential`](https://learn.microsoft.com/python/api/azure-identity/azure.identity.defaultazurecredential) (token scope `https://cognitiveservices.azure.com/.default`). Run `az login` locally; in Azure, attach a managed identity. The identity needs the **Cognitive Services User** role on the AI Services resource and access to the Foundry project.
+Voice Live agent sessions (`agent_config = { agent_name, project_name }`) require Entra ID; API-key auth is rejected by the agent path. The backend uses [`DefaultAzureCredential`](https://learn.microsoft.com/python/api/azure-identity/azure.identity.defaultazurecredential) (singleton per process — see `backend/voice/auth.py`) and acquires tokens for two scopes:
+
+- `https://ai.azure.com/.default` — Voice Live + Foundry agent
+- `https://search.azure.com/.default` — AI Search index (catalogue pre-warm)
+
+Run `az login` locally; in Azure, attach a managed identity. The identity needs the **Cognitive Services User** role on the AI Services resource and access to the Foundry project. For AI Search the identity needs **Search Index Data Reader** (queries) and, only when running `scripts/setup_aisearch_index.py`, **Search Service Contributor** + **Search Index Data Contributor**.
+
+### Startup credential pre-warm
+
+To avoid paying token-acquisition cost on the first user connect, the FastAPI lifespan kicks off `_prewarm_startup()` which sequences (1) `credential.get_token(...)` for both scopes above, then (2) the meeting-catalogue fetch from AI Search. This warms both the credential chain and the AI Search service before any user arrives. Code: [`backend/main.py`](backend/main.py) `_prewarm_startup` and [`backend/voice/catalog.py`](backend/voice/catalog.py) `prewarm_catalog`.
+
+### Dev laptop: skipping the IMDS probe
+
+Off-Azure, `DefaultAzureCredential` still tries `ManagedIdentityCredential` (IMDS endpoint at `169.254.169.254`) before falling through to `AzureCliCredential`. That probe takes ~5 seconds to time out per parallel `get_token` call, which inflates the startup pre-warm from ~1.5s to ~7s. To skip it on a dev laptop, set:
+
+```
+AUTH_EXCLUDE_MANAGED_IDENTITY=true
+```
+
+`auth.py` then constructs `DefaultAzureCredential(exclude_managed_identity_credential=True)`. **Leave this unset in any Azure-hosted environment** — Container Apps, App Service, and AKS workload identity all rely on the IMDS path.
+
+### What this env var does NOT fix
+
+Even with the IMDS probe skipped, `AzureCliCredential` has no in-memory token cache and shells out to `az account get-access-token` (~1.5s per Windows subprocess spawn) every time an SDK requests a token. You will still see one extra `AzureCliCredential.get_token_info succeeded` log line per scope when (a) the catalogue's `SearchClient.search()` runs and (b) the Voice Live SDK opens a session. These are dev-laptop only — in Azure with managed identity the tokens are cached in-process for ~1 hour and these duplicate acquisitions disappear.
 
 ## WebSocket Protocol
 
