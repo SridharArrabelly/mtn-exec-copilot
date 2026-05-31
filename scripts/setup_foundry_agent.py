@@ -44,7 +44,9 @@ from azure.ai.projects.models import (
     WebSearchApproximateLocation,
     WebSearchTool,
 )
+from azure.core.credentials import AzureKeyCredential
 from azure.identity import DefaultAzureCredential
+from azure.search.documents import SearchClient
 from dotenv import load_dotenv
 
 AGENT_DESCRIPTION = "MTN executive assistant grounded in past meetings and live web search."
@@ -357,11 +359,90 @@ def create_agent(project: AIProjectClient, settings: dict):
     )
     print(f"Agent created (id: {agent.id}, name: {agent.name}, version: {agent.version})")
     return agent
-    return agent
+
+
+def _fetch_catalog_for_smoke_test() -> str | None:
+    """Mirror of `backend/voice/catalog.py` for the CLI smoke test.
+
+    The live Voice Live handler injects a MEETINGS LIST system message
+    at session start so the model can answer catalogue questions
+    (first / last / count / list) directly without hallucinating. The
+    smoke test path needs the same context — otherwise the model will
+    invent meeting dates based on today's calendar. This function
+    fetches the catalogue synchronously (the script is sync) and
+    returns the same text format as the async runtime version.
+
+    Returns the catalogue string, or None if AI Search is unreachable
+    or the env vars are missing. On None, the smoke test falls back to
+    its original behaviour.
+    """
+    endpoint = os.getenv("AZURE_SEARCH_ENDPOINT", "").strip().rstrip("/")
+    index = os.getenv("SEARCH_INDEX_NAME", "").strip()
+    if not endpoint or not index:
+        return None
+
+    api_key = os.getenv("AZURE_SEARCH_API_KEY", "").strip()
+    credential = AzureKeyCredential(api_key) if api_key else DefaultAzureCredential()
+    client = SearchClient(endpoint=endpoint, index_name=index, credential=credential)
+    try:
+        results = client.search(
+            search_text="*",
+            select=["title", "meeting_date"],
+            top=1000,
+        )
+        by_date: dict[str, str] = {}
+        for r in results:
+            date_iso = r.get("meeting_date")
+            title = r.get("title") or ""
+            if not date_iso:
+                continue
+            if date_iso not in by_date:
+                by_date[date_iso] = title
+        if not by_date:
+            return None
+        ordered = sorted(by_date.items(), key=lambda kv: kv[0])
+        lines = [
+            "MEETINGS LIST — the complete authoritative roster of board / "
+            "executive meetings currently in the AI Search index. Use this "
+            "to answer first / last / count / listing questions directly "
+            "(no tool call), and to phrase precise content searches by "
+            "exact meeting date."
+        ]
+        for date_iso, title in ordered:
+            date_part = date_iso.split("T", 1)[0]
+            try:
+                dt = datetime.strptime(date_part, "%Y-%m-%d")
+                pretty = f"{dt.day} {dt.strftime('%B %Y')}"
+            except ValueError:
+                pretty = date_iso
+            if title and title.strip():
+                lines.append(f"- {pretty}  ({title.strip()})")
+            else:
+                lines.append(f"- {pretty}")
+        lines.append(
+            f"Total: {len(ordered)} meeting(s). Earliest is the first entry, "
+            "latest is the last entry."
+        )
+        return "\n".join(lines)
+    except Exception as e:
+        print(f"(Smoke test: catalogue fetch failed: {e})")
+        return None
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
 
 
 def smoke_test(project: AIProjectClient, agent_name: str) -> None:
-    """Prompt the user once and stream a response from the freshly-created agent."""
+    """Prompt the user once and stream a response from the freshly-created agent.
+
+    Injects the MEETINGS LIST as a system message before the user's
+    question, mirroring what `backend/voice/handler.py` does for live
+    Voice Live sessions. Without this, catalogue questions ("what was
+    my last meeting?") trigger model hallucination based on today's
+    date instead of the real index contents.
+    """
     try:
         user_input = input(
             "\nEnter a question to test the agent (Ctrl+C to skip):\n> "
@@ -373,11 +454,24 @@ def smoke_test(project: AIProjectClient, agent_name: str) -> None:
         print("No question entered; skipping smoke test.")
         return
 
+    catalog = _fetch_catalog_for_smoke_test()
+    request_input: list[dict] | str
+    if catalog:
+        meeting_count = catalog.count("\n- ")
+        print(f"(Injecting MEETINGS LIST: {meeting_count} meetings, {len(catalog)} chars)")
+        request_input = [
+            {"role": "system", "content": catalog},
+            {"role": "user", "content": user_input},
+        ]
+    else:
+        print("(No catalogue available — agent will answer without MEETINGS LIST context.)")
+        request_input = user_input
+
     openai = project.get_openai_client()
     stream = openai.responses.create(
         stream=True,
         tool_choice="auto",
-        input=user_input,
+        input=request_input,
         extra_body={"agent_reference": {"name": agent_name, "type": "agent_reference"}},
         parallel_tool_calls=True,
     )
