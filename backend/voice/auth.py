@@ -1,6 +1,7 @@
 """Credential factory for the Voice Live SDK."""
 
 import logging
+import os
 from threading import Lock
 
 from azure.core.credentials import AzureKeyCredential
@@ -12,6 +13,24 @@ logger = logging.getLogger(__name__)
 # on every new client connection.
 _default_credential = None
 _default_credential_lock = Lock()
+
+
+def _exclude_managed_identity() -> bool:
+    """Return True if the IMDS probe should be skipped (dev laptops).
+
+    On a developer machine, `DefaultAzureCredential` walks the chain in order:
+    Env → ManagedIdentity (IMDS) → AzureCli. The IMDS probe at
+    169.254.169.254 is unreachable off-Azure and takes ~5s to time out per
+    parallel `get_token` call before falling through to `az login`. Setting
+    `AUTH_EXCLUDE_MANAGED_IDENTITY=true` skips that probe entirely, cutting
+    cold-start pre-warm from ~7s to ~1.5s. Leave UNSET in production —
+    Container Apps / App Service use managed identity via IMDS.
+    """
+    return os.getenv("AUTH_EXCLUDE_MANAGED_IDENTITY", "").strip().lower() in (
+        "true",
+        "1",
+        "yes",
+    )
 
 
 def create_credential(api_key: str):
@@ -35,8 +54,17 @@ def create_credential(api_key: str):
         with _default_credential_lock:
             if _default_credential is None:
                 from azure.identity.aio import DefaultAzureCredential
-                logger.info("Auth: creating DefaultAzureCredential singleton")
-                _default_credential = DefaultAzureCredential()
+                if _exclude_managed_identity():
+                    logger.info(
+                        "Auth: creating DefaultAzureCredential singleton "
+                        "(managed identity / IMDS excluded — dev mode)"
+                    )
+                    _default_credential = DefaultAzureCredential(
+                        exclude_managed_identity_credential=True
+                    )
+                else:
+                    logger.info("Auth: creating DefaultAzureCredential singleton")
+                    _default_credential = DefaultAzureCredential()
     return _default_credential
 
 
