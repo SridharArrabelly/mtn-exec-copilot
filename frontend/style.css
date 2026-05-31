@@ -731,3 +731,62 @@ input[type="range"]::-webkit-slider-thumb {
 .flex-spacer { flex: 1; }
 .btn-faded { opacity: 0.5; }
 
+/* ===== Production layout (UI_DEVELOPER_MODE=false) =====
+ * Sidebar + mobile hamburger are kept in the DOM but `hidden` collapses them
+ * out of the flex layout. We also force-hide the mobile menu so the 768px
+ * media query above doesn't re-show it.
+ */
+body.no-sidebar .sidebar,
+body.no-sidebar .mobile-menu {
+    display: none !important;
+}
+
+/* ===== Avatar name label =====
+ * Small caption shown directly under the avatar video in both modes.
+ * Sourced from UI_AVATAR_DISPLAY_NAME (or derived from the avatar name).
+ */
+.avatar-name-label {
+    position: absolute;
+    bottom: 12px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 500;
+    letter-spacing: 0.2px;
+    pointer-events: none;
+}
+
+/* ===== Connect status pill ===== */
+.connect-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* ===== Connect error banner ===== */
+.connect-error-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 12px 16px 0;
+    padding: 10px 14px;
+    background: var(--danger-dim);
+    border: 1px solid var(--danger);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.connect-retry-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+}
+

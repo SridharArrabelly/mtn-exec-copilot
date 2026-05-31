@@ -8,7 +8,7 @@ from typing import Dict
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ..config import DEFAULT_ENDPOINT, DEFAULT_API_KEY
+from ..config import DEFAULT_ENDPOINT, DEFAULT_API_KEY, get_ui_config
 from ..voice import VoiceSessionHandler
 from ..voice.auth import create_credential
 
@@ -81,9 +81,38 @@ async def _handle_message(client_id: str, message: dict, websocket: WebSocket):
         logger.warning(f"Unknown or unhandled message type: {msg_type}")
 
 
-async def _start_session(client_id: str, config: dict, websocket: WebSocket):
-    """Start a new Voice Live session for a client."""
+async def _start_session(client_id: str, client_config: dict, websocket: WebSocket):
+    """Start a new Voice Live session for a client.
+
+    Trust model is hybrid and gated by UI_DEVELOPER_MODE:
+      * Production (developerMode=false): client_config is ignored entirely.
+        The session uses only the env-resolved get_ui_config(). DevTools
+        tampering with start_session.config has no effect.
+      * Dev mode (developerMode=true): client_config is merged on top of
+        get_ui_config() so sidebar tweaks override env defaults per-key.
+    """
     await cleanup_client(client_id)
+
+    env_config = get_ui_config()
+    developer_mode = bool(env_config.get("developerMode", False))
+    if developer_mode and isinstance(client_config, dict) and client_config:
+        config = {**env_config, **client_config}
+        logger.debug(
+            f"[{client_id}] start_session: dev mode, merged "
+            f"{len(client_config)} client override(s) over env defaults"
+        )
+    else:
+        config = env_config
+        if isinstance(client_config, dict) and client_config:
+            logger.debug(
+                f"[{client_id}] start_session: production mode, ignoring "
+                f"{len(client_config)} client config field(s)"
+            )
+        else:
+            logger.debug(
+                f"[{client_id}] start_session: using env config "
+                f"(dev_mode={developer_mode})"
+            )
 
     endpoint = (DEFAULT_ENDPOINT or "").strip()
     if endpoint:

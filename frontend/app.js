@@ -25,6 +25,12 @@ let avatarOutputMode = 'webrtc';
 let cachedIceServers = null;
 let peerConnectionQueue = [];
 
+// Server-resolved UI config (single source of truth, loaded once on boot).
+// Populated by fetchServerConfig(); consumed by gatherConfig(),
+// applyServerConfig(), and the auto-connect flow.
+let serverConfig = null;
+let serverConfigPromise = null;
+
 // Volume animation state
 let analyserNode = null;
 let analyserDataArray = null;
@@ -43,12 +49,85 @@ const clientId = 'client-' + Math.random().toString(36).substr(2, 9);
 
 // ===== DOM Ready =====
 document.addEventListener('DOMContentLoaded', () => {
-    setupUIBindings();
-    updateConditionalFields();
-    updateControlStates();
-    fetchServerConfig();
+    // Wire the retry button once — it's used by both config-fetch failures
+    // and session-start failures.
+    const retryBtn = document.getElementById('connectRetryBtn');
+    if (retryBtn) retryBtn.addEventListener('click', handleConnectRetry);
+
     warmWebRTCEngine();
+    initApp();
 });
+
+async function initApp() {
+    hideConnectError();
+    try {
+        const config = await fetchServerConfig();
+        applyServerConfig(config);
+    } catch (err) {
+        console.error('[config] /api/config failed:', err);
+        showConnectError(
+            'Could not load configuration from the server. Check that the backend is running.'
+        );
+        return;
+    }
+
+    if (isDeveloperMode) {
+        // Dev mode: sidebar is visible. Wire all sidebar listeners and let the
+        // developer drive Connect/Disconnect manually after tweaking values.
+        setupUIBindings();
+        updateConditionalFields();
+        updateControlStates();
+        updateDeveloperModeLayout();
+    } else {
+        // Production: sidebar stays hidden. Auto-connect on page load so the
+        // user sees nothing but the avatar coming alive.
+        updateControlStates();
+        updateDeveloperModeLayout();
+        autoConnect();
+    }
+}
+
+function handleConnectRetry() {
+    hideConnectError();
+    if (!serverConfig) {
+        // Config never loaded — retry the whole boot sequence.
+        initApp();
+        return;
+    }
+    connectSession();
+}
+
+function autoConnect() {
+    if (isConnected || isConnecting) return;
+    setConnectStatus('Connecting…');
+    connectSession();
+}
+
+function setConnectStatus(text) {
+    const el = document.getElementById('connectStatus');
+    if (!el) return;
+    if (text) {
+        el.textContent = text;
+        el.hidden = false;
+    } else {
+        el.textContent = '';
+        el.hidden = true;
+    }
+}
+
+function showConnectError(message) {
+    const banner = document.getElementById('connectErrorBanner');
+    const textEl = document.getElementById('connectErrorText');
+    if (!banner) return;
+    if (textEl) textEl.textContent = message || 'Connection failed.';
+    banner.hidden = false;
+    setConnectStatus('');
+}
+
+function hideConnectError() {
+    const banner = document.getElementById('connectErrorBanner');
+    if (banner) banner.hidden = true;
+}
 
 // Construct (and immediately close) a throwaway RTCPeerConnection at page load
 // so the browser loads/initializes its WebRTC native code, codec backends, and
@@ -71,13 +150,123 @@ function warmWebRTCEngine() {
 
 // ===== Server Config =====
 async function fetchServerConfig() {
-    try {
+    if (serverConfigPromise) return serverConfigPromise;
+    serverConfigPromise = (async () => {
         const resp = await fetch('/api/config');
+        if (!resp.ok) {
+            throw new Error(`/api/config returned ${resp.status}`);
+        }
         const config = await resp.json();
-        if (config.voice) document.getElementById('voiceName').value = config.voice;
-    } catch (e) {
-        console.log('No server config available, using defaults');
+        serverConfig = config;
+        return config;
+    })();
+    return serverConfigPromise;
+}
+
+function applyServerConfig(config) {
+    isDeveloperMode = !!config.developerMode;
+    avatarOutputMode = config.avatarOutputMode || 'webrtc';
+
+    // Show/hide the sidebar shell based on env. Sidebar DOM is always in the
+    // page so dev tooling can introspect it, but `hidden` keeps it off-screen
+    // and out of the layout in production. We always populate the hidden
+    // controls from server config so legacy DOM-readers in the rest of the
+    // app (e.g. onSessionStarted reading isPhotoAvatar) keep working.
+    const sidebar = document.getElementById('sidebar');
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    populateSidebarFromConfig(config);
+    if (isDeveloperMode) {
+        if (sidebar) sidebar.hidden = false;
+        if (mobileMenuBtn) mobileMenuBtn.hidden = false;
+        document.body.classList.remove('no-sidebar');
+    } else {
+        if (sidebar) sidebar.hidden = true;
+        if (mobileMenuBtn) mobileMenuBtn.hidden = true;
+        document.body.classList.add('no-sidebar');
     }
+
+    // Avatar name caption shown under the avatar in both modes.
+    const label = document.getElementById('avatarNameLabel');
+    if (label) {
+        const name = (config.avatarDisplayName || '').trim();
+        if (name) {
+            label.textContent = name;
+            label.hidden = false;
+        } else {
+            label.textContent = '';
+            label.hidden = true;
+        }
+    }
+}
+
+// Mirror /api/config back into the (now dev-only) sidebar form controls so
+// devs always start from the same baseline the backend will resolve to.
+function populateSidebarFromConfig(config) {
+    const setVal = (id, value) => {
+        const el = document.getElementById(id);
+        if (!el || value === undefined || value === null) return;
+        el.value = value;
+    };
+    const setChecked = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.checked = !!value;
+    };
+
+    setVal('srModel', config.srModel);
+    setVal('recognitionLanguage', config.recognitionLanguage);
+    setChecked('useNS', config.useNS);
+    setChecked('useEC', config.useEC);
+    setVal('turnDetectionType', config.turnDetectionType);
+    setChecked('removeFillerWords', config.removeFillerWords);
+    setVal('eouDetectionType', config.eouDetectionType);
+    setChecked('enableProactive', config.enableProactive);
+
+    setVal('voiceType', config.voiceType);
+    setVal('voiceName', config.voiceName || config.voice);
+    setVal('voiceTemperature', config.voiceTemperature);
+    // get_ui_config() returns voiceSpeed as a multiplier (1.0 == 100%);
+    // the slider expects the percent (50-150).
+    if (typeof config.voiceSpeed === 'number') {
+        setVal('voiceSpeed', Math.round(config.voiceSpeed * 100));
+    }
+    setVal('voiceDeploymentId', config.voiceDeploymentId);
+    setVal('customVoiceName', config.customVoiceName);
+    setVal('personalVoiceName', config.personalVoiceName);
+    setVal('personalVoiceModel', config.personalVoiceModel);
+
+    setChecked('avatarEnabled', config.avatarEnabled);
+    setVal('avatarOutputMode', config.avatarOutputMode);
+    setChecked('isPhotoAvatar', config.isPhotoAvatar);
+    setChecked('isCustomAvatar', config.isCustomAvatar);
+    // The sidebar splits the effective avatar name into three fields by
+    // category; reconstruct each from server config (avatarName is the
+    // effective resolved name, so push it into the matching slot).
+    if (config.isCustomAvatar) {
+        setVal('customAvatarName', config.customAvatarName || config.avatarName);
+    } else if (config.isPhotoAvatar) {
+        setVal('photoAvatarName', config.photoAvatarName || config.avatarName);
+    } else {
+        setVal('avatarName', config.avatarName);
+    }
+    setVal('avatarBackgroundImageUrl', config.avatarBackgroundImageUrl);
+
+    const scene = config.photoScene || {};
+    setVal('sceneZoom', scene.zoom);
+    setVal('scenePositionX', scene.positionX);
+    setVal('scenePositionY', scene.positionY);
+    setVal('sceneRotationX', scene.rotationX);
+    setVal('sceneRotationY', scene.rotationY);
+    setVal('sceneRotationZ', scene.rotationZ);
+    setVal('sceneAmplitude', scene.amplitude);
+
+    // Refresh the range slider labels so they reflect the populated values.
+    const refreshRange = (id) => {
+        const el = document.getElementById(id);
+        if (el) el.dispatchEvent(new Event('input'));
+    };
+    ['voiceTemperature', 'voiceSpeed', 'sceneZoom', 'scenePositionX',
+     'scenePositionY', 'sceneRotationX', 'sceneRotationY', 'sceneRotationZ',
+     'sceneAmplitude'].forEach(refreshRange);
 }
 
 // ===== UI Bindings =====
@@ -92,11 +281,6 @@ function setupUIBindings() {
     document.getElementById('isPhotoAvatar').addEventListener('change', updateConditionalFields);
     // Custom avatar
     document.getElementById('isCustomAvatar').addEventListener('change', updateConditionalFields);
-    // Developer mode
-    document.getElementById('developerMode').addEventListener('change', (e) => {
-        isDeveloperMode = e.target.checked;
-        updateDeveloperModeLayout();
-    });
     // Turn detection type
     document.getElementById('turnDetectionType').addEventListener('change', updateConditionalFields);
     // SR Model
@@ -298,7 +482,11 @@ function updateClearChatButton() {
 }
 
 // ===== Gather Config =====
+// Returns a config object only in dev mode; otherwise returns {} so the
+// backend ignores client-supplied overrides and uses env defaults.
 function gatherConfig() {
+    if (!isDeveloperMode) return {};
+
     const voiceType = document.getElementById('voiceType').value;
     const isPhotoAvatar = document.getElementById('isPhotoAvatar').checked;
     const isCustomAvatar = document.getElementById('isCustomAvatar').checked;
@@ -362,6 +550,8 @@ async function toggleConnection() {
 
 async function connectSession() {
     setConnecting(true);
+    hideConnectError();
+    setConnectStatus('Connecting…');
     addMessage('system', 'Session started, click on the mic button to start conversation! debug id: connecting...');
 
     try {
@@ -388,6 +578,7 @@ async function connectSession() {
         ws.onerror = (err) => {
             console.error('WebSocket error', err);
             addMessage('system', 'WebSocket error');
+            notifyConnectFailure('Connection failed. Check the backend and try again.');
             setConnecting(false);
         };
 
@@ -395,6 +586,9 @@ async function connectSession() {
             console.log('WebSocket closed');
             if (isConnected) {
                 addMessage('system', 'Disconnected');
+            } else if (isConnecting) {
+                // Closed before we ever got session_started — surface a retry.
+                notifyConnectFailure('Connection closed before the session started.');
             }
             handleDisconnect();
         };
@@ -402,8 +596,16 @@ async function connectSession() {
     } catch (err) {
         console.error('Connection error', err);
         addMessage('system', 'Failed to connect: ' + err.message);
+        notifyConnectFailure('Failed to connect: ' + err.message);
         setConnecting(false);
     }
+}
+
+// In production we surface a retry banner; in dev mode the sidebar Connect
+// button is already visible so the banner would be redundant.
+function notifyConnectFailure(message) {
+    setConnectStatus('');
+    if (!isDeveloperMode) showConnectError(message);
 }
 
 async function disconnect() {
@@ -450,6 +652,7 @@ function handleServerMessage(msg) {
             break;
         case 'session_error':
             addMessage('system', 'Error: ' + (msg.error || 'Unknown error'));
+            notifyConnectFailure('Server error: ' + (msg.error || 'Unknown error'));
             setConnecting(false);
             break;
         case 'ice_servers':
@@ -557,6 +760,8 @@ function onAssistantDelta(text) {
 async function onSessionStarted(msg) {
     isConnected = true;
     isConnecting = false;
+    setConnectStatus('');
+    hideConnectError();
     updateConnectionUI();
 
     // Update the "connecting..." status message with the real session ID

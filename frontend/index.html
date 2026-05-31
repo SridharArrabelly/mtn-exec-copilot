@@ -9,8 +9,8 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- Left sidebar: Settings -->
-        <aside class="sidebar" id="sidebar">
+        <!-- Left sidebar: Settings (hidden in production; revealed when UI_DEVELOPER_MODE=true) -->
+        <aside class="sidebar" id="sidebar" hidden>
             <div class="sidebar-scroll">
 
 
@@ -349,15 +349,12 @@
         <main class="main-content">
             <!-- Header -->
             <div class="header-bar">
-                <button class="btn btn-icon mobile-menu" onclick="toggleSidebar()" aria-label="Toggle menu" title="Toggle menu">
+                <button class="btn btn-icon mobile-menu" id="mobileMenuBtn" onclick="toggleSidebar()" aria-label="Toggle menu" title="Toggle menu" hidden>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
                 </button>
                 <div class="header-right">
-                    <label class="toggle-label compact">
-                        <span>Developer mode</span>
-                        <input type="checkbox" id="developerMode" />
-                    </label>
                     <div class="flex-spacer"></div>
+                    <span id="connectStatus" class="connect-status" hidden></span>
                     <button id="clearChatBtn" class="btn btn-text btn-faded" onclick="clearChat()" aria-label="Clear chat" title="Clear chat" disabled>
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M17.9099 2.18209C18.1052 2.37735 18.1052 2.69394 17.9099 2.8892L12.5872 8.21193C14.0023 9.97877 13.8909 12.5651 12.2531 14.2029L11.5895 14.8665L9.49982 18.3493C9.4206 18.4813 9.28498 18.5695 9.13216 18.5883C8.97935 18.6071 8.82639 18.5544 8.71752 18.4456L1.64645 11.3745C1.53758 11.2656 1.48494 11.1127 1.50375 10.9599C1.52256 10.807 1.61073 10.6714 1.74276 10.5922L5.2255 8.50256L5.88909 7.83896C7.52695 6.20111 10.1132 6.08973 11.8801 7.50482L17.2028 2.18209C17.3981 1.98683 17.7146 1.98683 17.9099 2.18209ZM6.24265 8.89962L11.1924 13.8494L11.5459 13.4958C12.9128 12.129 12.9128 9.9129 11.5459 8.54607C10.1791 7.17923 7.96303 7.17923 6.5962 8.54607L6.24265 8.89962ZM5.45803 9.52923L2.80638 11.1202L8.9718 17.2856L10.5628 14.634L5.45803 9.52923Z" fill="#424242"/></svg>
                     </button>
@@ -366,9 +363,15 @@
 
             <!-- Content area -->
             <div class="content-area" id="contentArea">
+                <!-- Connect error banner (production auto-connect failure) -->
+                <div id="connectErrorBanner" class="connect-error-banner" role="alert" hidden>
+                    <span id="connectErrorText">Connection failed.</span>
+                    <button id="connectRetryBtn" class="btn btn-primary connect-retry-btn">Retry</button>
+                </div>
                 <!-- Avatar video (WebRTC) -->
                 <div id="avatarVideoContainer" class="avatar-container hidden">
                     <div id="avatarVideo" class="avatar-video"></div>
+                    <div id="avatarNameLabel" class="avatar-name-label" aria-live="polite" hidden></div>
                 </div>
 
                 <!-- Volume animation (no avatar) -->
