@@ -460,8 +460,8 @@ def smoke_test(project: AIProjectClient, agent_name: str) -> None:
         meeting_count = catalog.count("\n- ")
         print(f"(Injecting MEETINGS LIST: {meeting_count} meetings, {len(catalog)} chars)")
         request_input = [
-            {"role": "system", "content": catalog},
-            {"role": "user", "content": user_input},
+            {"type": "message", "role": "system", "content": catalog},
+            {"type": "message", "role": "user", "content": user_input},
         ]
     else:
         print("(No catalogue available — agent will answer without MEETINGS LIST context.)")
