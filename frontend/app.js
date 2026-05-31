@@ -393,8 +393,8 @@ function updateConditionalFields() {
     const turnDetectionType = document.getElementById('turnDetectionType').value;
     const srModel = document.getElementById('srModel').value;
 
-    // Recognition language hidden when SR model is mai-ears-1
-    show('recognitionLanguageField', srModel !== 'mai-ears-1');
+    // Recognition language hidden when SR model is mai-transcribe-1
+    show('recognitionLanguageField', srModel !== 'mai-transcribe-1');
 
     // Filler words (semantic VAD)
     show('fillerWordsField', turnDetectionType === 'azure_semantic_vad');
