@@ -266,6 +266,9 @@ def load_settings() -> dict:
         "search_index_name": os.getenv("SEARCH_INDEX_NAME"),
         "agent_name": os.getenv("AGENT_NAME"),
         "agent_model": os.getenv("AGENT_MODEL"),
+        # Optional. Only set for reasoning models (o-series, gpt-5 family).
+        # gpt-4.x / gpt-4o reject `reasoning.effort` at /responses time.
+        "agent_reasoning_effort": (os.getenv("AGENT_REASONING_EFFORT") or "").strip() or None,
     }
     missing = [k for k in ("project_endpoint", "search_connection_name", "search_index_name", "agent_name", "agent_model") if not settings[k]]
     if missing:
@@ -320,29 +323,40 @@ def build_tools(search_connection_id: str, search_index_name: str) -> list:
 def create_agent(project: AIProjectClient, settings: dict):
     """Create a new version of the Foundry agent.
 
-    `reasoning=Reasoning(effort="low")`: gpt-5.4-mini defaults to `medium`
-    reasoning, which spent up to ~19s "thinking" before responding on
-    tool-using turns (observed in production logs). This is a voice-first
-    avatar — latency is the dominant UX metric, and the work it does
-    (pick a tool, phrase a query, summarise) does not need deep chain-of-
-    thought. `low` keeps enough judgement for tool selection but cuts the
-    thinking overhead substantially. If `low` still feels too slow, the
-    next steps are `minimal` and then `none` — both supported by the SDK.
+    Reasoning effort (`AGENT_REASONING_EFFORT`) is OPTIONAL and only
+    applied when the env var is set. Reasoning models (o1, o3, o4-mini,
+    gpt-5 family) accept it; gpt-4.x and gpt-4o models reject it at
+    /responses time with `unsupported_parameter`. To use a reasoning
+    model on voice-first turns, set `AGENT_REASONING_EFFORT=low` in
+    `.env` — `low` keeps enough judgement for tool selection but cuts
+    the multi-second "thinking" overhead. Valid values: `minimal`,
+    `low`, `medium`, `high`. Leave UNSET for any non-reasoning model.
     """
     azs_connection = project.connections.get(settings["search_connection_name"])
     tools = build_tools(azs_connection.id, settings["search_index_name"])
 
+    definition_kwargs = {
+        "model": settings["agent_model"],
+        "instructions": AGENT_INSTRUCTIONS,
+        "tools": tools,
+    }
+    effort = settings.get("agent_reasoning_effort")
+    if effort:
+        definition_kwargs["reasoning"] = Reasoning(effort=effort)
+        print(f"Applying reasoning.effort={effort!r} (AGENT_REASONING_EFFORT is set).")
+    else:
+        print(
+            "Skipping reasoning.effort — AGENT_REASONING_EFFORT not set. "
+            "Set it ONLY for reasoning models (o-series, gpt-5 family)."
+        )
+
     agent = project.agents.create_version(
         agent_name=settings["agent_name"],
-        definition=PromptAgentDefinition(
-            model=settings["agent_model"],
-            instructions=AGENT_INSTRUCTIONS,
-            tools=tools,
-            reasoning=Reasoning(effort="low"),
-        ),
+        definition=PromptAgentDefinition(**definition_kwargs),
         description=AGENT_DESCRIPTION,
     )
     print(f"Agent created (id: {agent.id}, name: {agent.name}, version: {agent.version})")
+    return agent
     return agent
 
 

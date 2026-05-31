@@ -71,7 +71,7 @@ The avatar feature is currently available in the following service regions: Sout
    - `AZURE_SEARCH_ENDPOINT` - **Required.** `https://<service>.search.windows.net`
    - `SEARCH_INDEX_NAME` - **Required.** Index name to create/update (e.g. `mtn-meetings`)
    - `PROJECT_ENDPOINT` - **Required.** Same Foundry project endpoint as above; embeddings are called through it
-   - `EMBEDDING_DEPLOYMENT` - Foundry-deployed embedding model (default: `text-embedding-3-large`)
+   - `EMBEDDING_DEPLOYMENT` - Foundry-deployed embedding model (default: `text-embedding-3-small`, 1536 dims)
    - `AZURE_OPENAI_API_VERSION` - default: `2024-10-21`
    - `AZURE_SEARCH_API_KEY` - optional; if unset, uses `DefaultAzureCredential`
    - `DATA_DIR` - default: `./data`
@@ -111,7 +111,7 @@ Supported file types (auto-detected by extension, recursive): **`.docx`, `.pdf`,
 1. **Discover** — walks `data/` recursively and picks up files whose extension is registered in `READERS`.
 2. **Read** — extracts plain text per file type (`python-docx` for `.docx`, `pypdf` for `.pdf`, raw read for `.md`/`.txt`).
 3. **Chunk** — splits each document into overlapping windows of `CHUNK_SIZE` chars with `CHUNK_OVERLAP` chars of overlap.
-4. **Embed** — sends chunks to the Foundry resource's Azure OpenAI route (`text-embedding-3-large` by default, 3072 dims).
+4. **Embed** — sends chunks to the Foundry resource's Azure OpenAI route (`text-embedding-3-small` by default, 1536 dims).
 5. **Upload** — pushes the chunks + vectors into the index, which is configured for **hybrid search** (BM25 + HNSW/cosine) with a **semantic configuration** (`mtn-semantic`) for L2 re-ranking.
 
 This is a one-off bootstrap step — the running app never re-ingests; it only queries the index at request time.
