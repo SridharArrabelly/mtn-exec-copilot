@@ -134,7 +134,7 @@ The avatar app no longer renders a settings sidebar in production. Every voice /
 | `UI_ENABLE_PROACTIVE` | `true` | bool — proactive greeting on connect |
 | **Voice** | | |
 | `UI_VOICE_TYPE` | `standard` | `standard`, `custom`, `personal` |
-| `UI_VOICE_NAME` | inherits `VOICELIVE_VOICE` (or `en-US-AvaMultilingualNeural`) | any Azure neural voice name |
+| `UI_VOICE_NAME` | `en-ZA-LeahNeural` | any Azure neural voice name (default: Leah, the South-African English neural voice) |
 | `UI_VOICE_TEMPERATURE` | `0.9` | float 0.0–1.0 |
 | `UI_VOICE_SPEED` | `100` | int 50–150 (percent; converted to a 1.0 multiplier server-side) |
 | `UI_CUSTOM_VOICE_DEPLOYMENT_ID` | *(empty)* | only when `UI_VOICE_TYPE=custom` |
@@ -144,12 +144,12 @@ The avatar app no longer renders a settings sidebar in production. Every voice /
 | **Avatar** | | |
 | `UI_AVATAR_ENABLED` | `true` | bool |
 | `UI_AVATAR_OUTPUT_MODE` | `webrtc` | `webrtc`, `websocket` |
-| `UI_IS_PHOTO_AVATAR` | `false` | bool |
-| `UI_IS_CUSTOM_AVATAR` | `false` | bool |
-| `UI_AVATAR_NAME` | `Lisa-casual-sitting` | preset avatar name |
-| `UI_AVATAR_DISPLAY_NAME` | *(derived from the effective avatar name)* | small caption rendered under the avatar (e.g. `Lisa-casual-sitting` → `Lisa`) |
-| `UI_PHOTO_AVATAR_NAME` | `Anika` | only when `UI_IS_PHOTO_AVATAR=true` |
-| `UI_CUSTOM_AVATAR_NAME` | *(empty)* | only when `UI_IS_CUSTOM_AVATAR=true` |
+| `UI_IS_PHOTO_AVATAR` | `true` | bool |
+| `UI_IS_CUSTOM_AVATAR` | `true` | bool — when `true`, `UI_CUSTOM_AVATAR_NAME` is **required** (startup-validated) |
+| `UI_AVATAR_NAME` | `Lisa-casual-sitting` | standard preset (used when avatar is not photo/custom) |
+| `UI_AVATAR_DISPLAY_NAME` | *(derived from the effective avatar name)* | small caption rendered under the avatar (e.g. `Lisa-casual-sitting` → `Lisa`, `Nuru` → `Nuru`) |
+| `UI_PHOTO_AVATAR_NAME` | `Anika` | standard photo fallback (used when `UI_IS_PHOTO_AVATAR=true` AND `UI_IS_CUSTOM_AVATAR=false`) |
+| `UI_CUSTOM_AVATAR_NAME` | `Nuru` | the trained custom-avatar character name (e.g. `Nuru`); required when `UI_IS_CUSTOM_AVATAR=true` |
 | `UI_AVATAR_BACKGROUND_IMAGE_URL` | *(empty)* | URL string |
 | **Photo-avatar scene** *(only when `UI_IS_PHOTO_AVATAR=true`)* | | |
 | `UI_SCENE_ZOOM` | `100` | int |
@@ -163,6 +163,18 @@ The avatar app no longer renders a settings sidebar in production. Every voice /
 | `UI_DEVELOPER_MODE` | `false` | bool — `true` re-enables the sidebar locally for ad-hoc tuning |
 
 Enum-bounded fields (SR model, turn-detection type, EOU type, voice type, avatar output mode) are validated server-side; an unknown value falls back to the default with a log line. The effective `avatarName` is resolved server-side (custom > photo > standard), so changing `UI_IS_PHOTO_AVATAR` automatically swaps the avatar without needing to update `UI_AVATAR_NAME`.
+
+**Resolver behaviour.** `GET /api/config` always returns a sanitised payload — the frontend just consumes it as-is. The same cascades are re-applied to dev-mode sidebar overrides on the server side, so a developer flipping `voiceType` to `personal` mid-session can't leave stray custom-voice fields in the merged config. The full rule set:
+
+1. `UI_SR_MODEL=mai-ears-1` forces `recognitionLanguage="auto"` (matches the runtime handler behaviour).
+2. **`UI_VOICE_TYPE` cascade** — the unused custom / personal voice fields are blanked in the resolved config:
+   - `standard` → blanks custom + personal voice fields
+   - `custom` → blanks personal voice fields
+   - `personal` → blanks custom voice fields
+3. `UI_AVATAR_ENABLED=false` does **not** blank the avatar / scene fields. The runtime ignores them when avatar is off, so leaving them populated preserves a clean dev re-enable.
+4. `UI_IS_CUSTOM_AVATAR=true` **requires** `UI_CUSTOM_AVATAR_NAME` to be non-empty (whitespace-only is rejected). Startup validation runs in the FastAPI lifespan; a bad combo raises `RuntimeError` and prevents the Container App revision from going healthy → automatic rollback to the previous revision. The check is skipped when `UI_AVATAR_ENABLED=false`.
+5. Effective `avatarName` precedence: **custom > photo > standard**. The runtime applies the same precedence in `builders.py`, so dev-mode merges that touch only some avatar fields still produce the right SDK character.
+6. `UI_IS_PHOTO_AVATAR=false` → `photoScene` is emptied to `{}` in the resolved config (scene transforms only apply to photo avatars).
 
 ### Docker
 

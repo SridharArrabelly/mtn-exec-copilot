@@ -21,5 +21,11 @@ async def get_config():
     the UI (or hide the sidebar in production) and to assemble the
     start_session payload. See backend/config.py::get_ui_config for the
     canonical shape and defaults.
+
+    ``voiceName`` is the authoritative voice for the session (resolved from
+    ``UI_VOICE_NAME``). The top-level ``voice`` field is a legacy
+    back-compat alias for older frontend builds and reflects the
+    server-side ``VOICELIVE_VOICE`` default — current frontend code prefers
+    ``voiceName`` via ``config.voiceName || config.voice``.
     """
     return {**get_ui_config(), "voice": DEFAULT_VOICE}

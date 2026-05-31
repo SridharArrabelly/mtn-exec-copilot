@@ -8,7 +8,7 @@ from typing import Dict
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ..config import DEFAULT_ENDPOINT, DEFAULT_API_KEY, get_ui_config
+from ..config import DEFAULT_ENDPOINT, DEFAULT_API_KEY, apply_resolver_rules, get_ui_config
 from ..voice import VoiceSessionHandler
 from ..voice.auth import create_credential
 
@@ -96,10 +96,15 @@ async def _start_session(client_id: str, client_config: dict, websocket: WebSock
     env_config = get_ui_config()
     developer_mode = bool(env_config.get("developerMode", False))
     if developer_mode and isinstance(client_config, dict) and client_config:
-        config = {**env_config, **client_config}
+        # Re-run the resolver on the merged dict so dev sidebar overrides
+        # can't defeat server-side cascading rules (e.g. flipping voiceType
+        # to 'personal' must re-blank custom/voiceDeploymentId fields that
+        # the env-resolved baseline left populated).
+        config = apply_resolver_rules({**env_config, **client_config})
         logger.debug(
             f"[{client_id}] start_session: dev mode, merged "
-            f"{len(client_config)} client override(s) over env defaults"
+            f"{len(client_config)} client override(s) over env defaults "
+            f"(resolver rules re-applied)"
         )
     else:
         config = env_config

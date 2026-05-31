@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .api import routes, websocket as ws
-from .config import HOST, PORT, configure_logging
+from .config import HOST, PORT, configure_logging, get_ui_config, validate_ui_config
 from .voice.auth import close_credential, create_credential
 from .voice.catalog import prewarm_catalog
 
@@ -72,6 +72,10 @@ async def _prewarm_startup() -> None:
 async def lifespan(app: FastAPI):
     """Startup/shutdown hook: pre-warms credentials, closes outstanding sessions on shutdown."""
     logger.info("MTN Exec Copilot server starting...")
+    # Fail-fast on bad UI_* env configuration. Lifespan exception →
+    # uvicorn refuses to start → Container App revision goes unhealthy and
+    # rolls back to the previous good revision. Loud and visible.
+    validate_ui_config(get_ui_config())
     # Fire-and-forget sequenced pre-warm so startup is not blocked but the
     # catalogue fetch benefits from a hot token cache.
     asyncio.create_task(_prewarm_startup())
