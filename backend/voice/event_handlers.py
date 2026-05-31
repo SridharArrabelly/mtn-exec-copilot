@@ -179,7 +179,10 @@ async def handle_event(handler, event, connection):
                     handler._pending_proactive = False
                     try:
                         logger.info("[SEND] response.create (proactive greeting, after avatar connect)")
-                        await connection.response.create()
+                        from .handler import PROACTIVE_GREETING_INSTRUCTIONS
+                        await connection.response.create(
+                            additional_instructions=PROACTIVE_GREETING_INSTRUCTIONS
+                        )
                         logger.info("Proactive greeting sent after avatar connect")
                     except Exception as e:
                         logger.error(f"Failed to send proactive greeting: {e}")

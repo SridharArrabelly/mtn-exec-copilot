@@ -31,6 +31,21 @@ from .event_handlers import handle_event
 logger = logging.getLogger(__name__)
 
 
+# Override applied to the proactive opening response only. Without this, the
+# model would respond to whatever was last in context — which, immediately
+# after SESSION_UPDATED, is the MEETINGS LIST system message we just injected.
+# It would then read the list aloud. Instead we tell it to deliver a short,
+# warm greeting and explicitly not mention the catalogue, the date, or any
+# internal data. Applied via response.create(additional_instructions=...).
+PROACTIVE_GREETING_INSTRUCTIONS = (
+    "This is the opening of the session and the user has not spoken yet. "
+    "Say ONLY a short, warm greeting: introduce yourself by name (Nuru), "
+    "state you are the user's executive assistant, and ask how you can help. "
+    "Do NOT mention the meeting catalogue, the meetings list, today's date, "
+    "or any internal data. Keep it to two short sentences."
+)
+
+
 class VoiceSessionHandler:
     """Single Voice Live session bridged to one browser WebSocket client."""
 
@@ -239,7 +254,9 @@ class VoiceSessionHandler:
             if config.get("enableProactive", True):
                 try:
                     logger.info("[SEND] response.create (proactive greeting, no avatar)")
-                    await connection.response.create()
+                    await connection.response.create(
+                        additional_instructions=PROACTIVE_GREETING_INSTRUCTIONS
+                    )
                     logger.info("Proactive greeting sent")
                 except Exception as e:
                     logger.error(f"Failed to send proactive greeting: {e}")
@@ -248,7 +265,9 @@ class VoiceSessionHandler:
             if config.get("enableProactive", True):
                 try:
                     logger.info("[SEND] response.create (proactive greeting, websocket avatar)")
-                    await connection.response.create()
+                    await connection.response.create(
+                        additional_instructions=PROACTIVE_GREETING_INSTRUCTIONS
+                    )
                     logger.info("Proactive greeting sent (websocket avatar)")
                 except Exception as e:
                     logger.error(f"Failed to send proactive greeting: {e}")
