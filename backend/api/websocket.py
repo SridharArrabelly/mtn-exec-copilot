@@ -81,6 +81,25 @@ async def _handle_message(client_id: str, message: dict, websocket: WebSocket):
         logger.warning(f"Unknown or unhandled message type: {msg_type}")
 
 
+def _strip_unset_overrides(client_config: dict) -> dict:
+    """Drop keys whose value is None or an empty string from a client config dict.
+
+    The dev-mode merge is `{**env, **client}` (client wins per-key). Without
+    this filter, a sidebar field that the browser left at its empty HTML
+    default (e.g. a text `<input>` whose env value didn't match any option
+    in populateSidebarFromConfig) would clobber a perfectly good env default
+    on the server side. We treat None and "" as "unset DOM value", not
+    "explicit clear" — the cascading resolver rules already blank dependent
+    fields based on type/flag toggles, so a dev never needs to manually clear
+    a sub-field. False, 0, 0.0, and other falsy-but-meaningful values are
+    preserved as legitimate explicit overrides (e.g. avatarEnabled=False,
+    voiceSpeed=0, sceneZoom=0).
+    """
+    if not isinstance(client_config, dict):
+        return {}
+    return {k: v for k, v in client_config.items() if v is not None and v != ""}
+
+
 async def _start_session(client_id: str, client_config: dict, websocket: WebSocket):
     """Start a new Voice Live session for a client.
 
@@ -90,6 +109,8 @@ async def _start_session(client_id: str, client_config: dict, websocket: WebSock
         tampering with start_session.config has no effect.
       * Dev mode (developerMode=true): client_config is merged on top of
         get_ui_config() so sidebar tweaks override env defaults per-key.
+        None / "" client values are stripped before merging so unset DOM
+        fields can't clobber env defaults (see _strip_unset_overrides).
     """
     await cleanup_client(client_id)
 
@@ -100,11 +121,13 @@ async def _start_session(client_id: str, client_config: dict, websocket: WebSock
         # can't defeat server-side cascading rules (e.g. flipping voiceType
         # to 'personal' must re-blank custom/voiceDeploymentId fields that
         # the env-resolved baseline left populated).
-        config = apply_resolver_rules({**env_config, **client_config})
+        effective_client = _strip_unset_overrides(client_config)
+        config = apply_resolver_rules({**env_config, **effective_client})
         logger.debug(
             f"[{client_id}] start_session: dev mode, merged "
-            f"{len(client_config)} client override(s) over env defaults "
-            f"(resolver rules re-applied)"
+            f"{len(effective_client)}/{len(client_config)} client override(s) "
+            f"over env defaults (resolver rules re-applied; "
+            f"{len(client_config) - len(effective_client)} unset DOM field(s) stripped)"
         )
     else:
         config = env_config

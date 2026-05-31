@@ -178,6 +178,8 @@ Enum-bounded fields (SR model, turn-detection type, EOU type, voice type, avatar
 5. Effective `avatarName` precedence: **custom > photo > standard**. The runtime applies the same precedence in `builders.py`, so dev-mode merges that touch only some avatar fields still produce the right SDK character.
 6. `UI_IS_PHOTO_AVATAR=false` → `photoScene` is emptied to `{}` in the resolved config (scene transforms only apply to photo avatars).
 
+**Dev-mode merge safety.** When `UI_DEVELOPER_MODE=true`, the merge is `{**env, **client}` (client wins per-key), but client fields whose value is `None` or `""` are stripped before merging. This stops an unset DOM field (e.g. a `<select>` whose env value didn't match any `<option>`) from accidentally clobbering a perfectly good env default. Meaningful falsy values (`False`, `0`, `0.0`) are preserved as legitimate explicit overrides.
+
 ### Docker
 
 You do **not** need Docker to run this app locally — use the host instructions above (`uv run uvicorn ...` with `az login`). The `Dockerfile` exists only so [`azd`](#deploy-to-azure-with-azd) can build the image during `azd up` / `azd deploy` and push it to the ACR provisioned by the infra; the Azure Container App then pulls it and authenticates via the user-assigned managed identity. Make sure Docker Desktop is **running** when you invoke `azd up`, but you don't need to call `docker build` or `docker run` yourself.
