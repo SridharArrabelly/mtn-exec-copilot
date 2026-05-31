@@ -83,6 +83,8 @@ The avatar feature is currently available in the following service regions: Sout
    Optional dev-only knobs:
    - `AUTH_EXCLUDE_MANAGED_IDENTITY=true` — on a developer laptop, set this to skip the IMDS managed-identity probe that `DefaultAzureCredential` otherwise waits ~5s for at startup. Cuts the cold-start credential pre-warm from ~7s to ~1.5s. **Leave UNSET in Azure** (Container Apps / App Service / AKS workload identity all need the managed-identity path enabled). See the [Authentication](#authentication) section for details.
 
+   UI / Behaviour configuration (`UI_*`) — see the dedicated [UI Configuration](#ui-configuration) section below.
+
 3. **Run the server:**
 
    ```bash
@@ -98,6 +100,69 @@ The avatar feature is currently available in the following service regions: Sout
 4. **Open the browser:**
 
    Navigate to [http://localhost:3000](http://localhost:3000)
+
+### UI Configuration
+
+The avatar app no longer renders a settings sidebar in production. Every voice / avatar / turn-detection knob that used to live there is now driven from `UI_*` environment variables, read once by the backend and served to the browser via `GET /api/config`. To change behaviour, edit `.env` (or your Container App env) and restart.
+
+**Production UX (default, `UI_DEVELOPER_MODE=false`):**
+
+- Header shows only the app title and **Clear chat** — no sidebar, no mobile hamburger, no in-header Developer Mode toggle.
+- The session **auto-connects on page load** as soon as `/api/config` resolves and WebRTC is ready. A `Connecting…` pill appears briefly; if the connection fails, an inline error banner with a Retry button is shown.
+- The backend **ignores any client-supplied `start_session.config`**. DevTools tampering has no effect on the resolved session config.
+
+**Dev mode (`UI_DEVELOPER_MODE=true`):**
+
+- The sidebar reappears with all controls pre-populated from `/api/config` so you start from the same baseline the backend would resolve to.
+- No auto-connect — press **Connect** in the sidebar footer after tweaking values to start the session with your overrides.
+- The backend merges your sidebar tweaks on top of env defaults per-key (env baseline, client values win).
+- Use this mode for ad-hoc voice / avatar / turn-detection tuning on a developer laptop. Production deployments should leave `UI_DEVELOPER_MODE` unset or `false`.
+
+**Variable reference** — all are optional; defaults shown.
+
+| Variable | Default | Valid values / notes |
+| --- | --- | --- |
+| **Speech recognition** | | |
+| `UI_SR_MODEL` | `azure-speech` | `azure-speech`, `mai-ears-1` |
+| `UI_RECOGNITION_LANGUAGE` | `auto` | `auto`, `en-US`, `en-GB`, `es-ES`, … (ignored when `srModel=mai-ears-1`) |
+| `UI_USE_NS` | `true` | bool — noise suppression |
+| `UI_USE_EC` | `true` | bool — echo cancellation |
+| **Turn detection** | | |
+| `UI_TURN_DETECTION_TYPE` | `azure_semantic_vad` | `azure_semantic_vad`, `server_vad` |
+| `UI_REMOVE_FILLER_WORDS` | `false` | bool |
+| `UI_EOU_DETECTION_TYPE` | `semantic_detection_v1` | `semantic_detection_v1`, `semantic_detection_v1_multilingual`, `none` |
+| `UI_ENABLE_PROACTIVE` | `true` | bool — proactive greeting on connect |
+| **Voice** | | |
+| `UI_VOICE_TYPE` | `standard` | `standard`, `custom`, `personal` |
+| `UI_VOICE_NAME` | inherits `VOICELIVE_VOICE` (or `en-US-AvaMultilingualNeural`) | any Azure neural voice name |
+| `UI_VOICE_TEMPERATURE` | `0.9` | float 0.0–1.0 |
+| `UI_VOICE_SPEED` | `100` | int 50–150 (percent; converted to a 1.0 multiplier server-side) |
+| `UI_CUSTOM_VOICE_DEPLOYMENT_ID` | *(empty)* | only when `UI_VOICE_TYPE=custom` |
+| `UI_CUSTOM_VOICE_NAME` | *(empty)* | only when `UI_VOICE_TYPE=custom` |
+| `UI_PERSONAL_VOICE_NAME` | *(empty)* | only when `UI_VOICE_TYPE=personal` |
+| `UI_PERSONAL_VOICE_MODEL` | `DragonLatestNeural` | only when `UI_VOICE_TYPE=personal` |
+| **Avatar** | | |
+| `UI_AVATAR_ENABLED` | `true` | bool |
+| `UI_AVATAR_OUTPUT_MODE` | `webrtc` | `webrtc`, `websocket` |
+| `UI_IS_PHOTO_AVATAR` | `false` | bool |
+| `UI_IS_CUSTOM_AVATAR` | `false` | bool |
+| `UI_AVATAR_NAME` | `Lisa-casual-sitting` | preset avatar name |
+| `UI_AVATAR_DISPLAY_NAME` | *(derived from the effective avatar name)* | small caption rendered under the avatar (e.g. `Lisa-casual-sitting` → `Lisa`) |
+| `UI_PHOTO_AVATAR_NAME` | `Anika` | only when `UI_IS_PHOTO_AVATAR=true` |
+| `UI_CUSTOM_AVATAR_NAME` | *(empty)* | only when `UI_IS_CUSTOM_AVATAR=true` |
+| `UI_AVATAR_BACKGROUND_IMAGE_URL` | *(empty)* | URL string |
+| **Photo-avatar scene** *(only when `UI_IS_PHOTO_AVATAR=true`)* | | |
+| `UI_SCENE_ZOOM` | `100` | int |
+| `UI_SCENE_POSITION_X` | `0` | int |
+| `UI_SCENE_POSITION_Y` | `0` | int |
+| `UI_SCENE_ROTATION_X` | `0` | int |
+| `UI_SCENE_ROTATION_Y` | `0` | int |
+| `UI_SCENE_ROTATION_Z` | `0` | int |
+| `UI_SCENE_AMPLITUDE` | `100` | int |
+| **Developer mode** | | |
+| `UI_DEVELOPER_MODE` | `false` | bool — `true` re-enables the sidebar locally for ad-hoc tuning |
+
+Enum-bounded fields (SR model, turn-detection type, EOU type, voice type, avatar output mode) are validated server-side; an unknown value falls back to the default with a log line. The effective `avatarName` is resolved server-side (custom > photo > standard), so changing `UI_IS_PHOTO_AVATAR` automatically swaps the avatar without needing to update `UI_AVATAR_NAME`.
 
 ### Docker
 

@@ -14,6 +14,23 @@ param searchIndexName string
 param voiceLiveVoice string
 param appInsightsConnectionString string
 
+@description('Bag of UI_* env vars (keys are the full UI_* env var names; values are strings) merged into the container env block.')
+param uiEnv object = {}
+
+var uiEnvArray = [for item in items(uiEnv): { name: item.key, value: string(item.value) }]
+var baseEnv = [
+  { name: 'PORT', value: '3000' }
+  { name: 'AZURE_CLIENT_ID', value: uamiClientId }
+  { name: 'AZURE_VOICELIVE_ENDPOINT', value: voiceliveEndpoint }
+  { name: 'PROJECT_ENDPOINT', value: projectEndpoint }
+  { name: 'AGENT_NAME', value: agentName }
+  { name: 'AGENT_PROJECT_NAME', value: agentProjectName }
+  { name: 'SEARCH_CONNECTION_NAME', value: searchConnectionName }
+  { name: 'SEARCH_INDEX_NAME', value: searchIndexName }
+  { name: 'VOICELIVE_VOICE', value: voiceLiveVoice }
+  { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
+]
+
 @description('Placeholder image used on first provision; azd replaces it during `azd deploy`.')
 param containerImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -57,18 +74,7 @@ resource app 'Microsoft.App/containerApps@2024-10-02-preview' = {
             cpu: json('1.0')
             memory: '2.0Gi'
           }
-          env: [
-            { name: 'PORT', value: '3000' }
-            { name: 'AZURE_CLIENT_ID', value: uamiClientId }
-            { name: 'AZURE_VOICELIVE_ENDPOINT', value: voiceliveEndpoint }
-            { name: 'PROJECT_ENDPOINT', value: projectEndpoint }
-            { name: 'AGENT_NAME', value: agentName }
-            { name: 'AGENT_PROJECT_NAME', value: agentProjectName }
-            { name: 'SEARCH_CONNECTION_NAME', value: searchConnectionName }
-            { name: 'SEARCH_INDEX_NAME', value: searchIndexName }
-            { name: 'VOICELIVE_VOICE', value: voiceLiveVoice }
-            { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
-          ]
+          env: concat(baseEnv, uiEnvArray)
           probes: [
             {
               type: 'Liveness'

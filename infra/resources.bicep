@@ -30,6 +30,9 @@ param modelDeploymentName string
 param modelSkuName string
 param modelCapacity int
 
+@description('Bag of UI_* env vars passed through to the container app.')
+param uiEnv object
+
 var abbrs = loadJsonContent('abbreviations.json')
 
 // ───────── Identity ─────────
@@ -155,6 +158,7 @@ module app 'modules/containerApp.bicep' = {
     searchIndexName: searchIndexNameEffective
     voiceLiveVoice: voiceLiveVoice
     appInsightsConnectionString: appInsights.outputs.connectionString
+    uiEnv: uiEnv
   }
 }
 

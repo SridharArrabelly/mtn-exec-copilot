@@ -66,10 +66,10 @@ _ui_logger = logging.getLogger(__name__)
 
 
 def _get_str(name: str, default: str) -> str:
-    value = os.getenv(name)
-    if value is None:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
         return default
-    return value
+    return raw
 
 
 def _get_bool(name: str, default: bool) -> bool:

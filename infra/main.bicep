@@ -59,6 +59,10 @@ param modelSkuName string = 'GlobalStandard'
 @description('Model deployment capacity (thousands of TPM).')
 param modelCapacity int = 50
 
+// ───────── UI / behaviour configuration (UI_*) ─────────
+@description('Bag of UI_* env vars resolved by the frontend via /api/config. Keys are the full UI_* env var names; values are strings. See README "UI Configuration" for the full list and defaults.')
+param uiEnv object = {}
+
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = {
   'azd-env-name': environmentName
@@ -101,6 +105,7 @@ module resources 'resources.bicep' = {
     modelDeploymentName: modelDeploymentName
     modelSkuName: modelSkuName
     modelCapacity: modelCapacity
+    uiEnv: uiEnv
   }
 }
 

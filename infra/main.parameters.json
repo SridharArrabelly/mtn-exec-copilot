@@ -25,6 +25,44 @@
     "modelVersion":        { "value": "${MODEL_VERSION}" },
     "modelDeploymentName": { "value": "${MODEL_DEPLOYMENT_NAME}" },
     "modelSkuName":        { "value": "${MODEL_SKU_NAME=GlobalStandard}" },
-    "modelCapacity":       { "value": ${MODEL_CAPACITY=50} }
+    "modelCapacity":       { "value": ${MODEL_CAPACITY=50} },
+
+    "uiEnv": {
+      "value": {
+        "UI_SR_MODEL":                    "${UI_SR_MODEL=azure-speech}",
+        "UI_RECOGNITION_LANGUAGE":        "${UI_RECOGNITION_LANGUAGE=auto}",
+        "UI_USE_NS":                      "${UI_USE_NS=true}",
+        "UI_USE_EC":                      "${UI_USE_EC=true}",
+        "UI_TURN_DETECTION_TYPE":         "${UI_TURN_DETECTION_TYPE=azure_semantic_vad}",
+        "UI_REMOVE_FILLER_WORDS":         "${UI_REMOVE_FILLER_WORDS=false}",
+        "UI_EOU_DETECTION_TYPE":          "${UI_EOU_DETECTION_TYPE=semantic_detection_v1}",
+        "UI_ENABLE_PROACTIVE":            "${UI_ENABLE_PROACTIVE=true}",
+        "UI_VOICE_TYPE":                  "${UI_VOICE_TYPE=standard}",
+        "UI_VOICE_NAME":                  "${UI_VOICE_NAME=}",
+        "UI_VOICE_TEMPERATURE":           "${UI_VOICE_TEMPERATURE=0.9}",
+        "UI_VOICE_SPEED":                 "${UI_VOICE_SPEED=100}",
+        "UI_CUSTOM_VOICE_DEPLOYMENT_ID":  "${UI_CUSTOM_VOICE_DEPLOYMENT_ID=}",
+        "UI_CUSTOM_VOICE_NAME":           "${UI_CUSTOM_VOICE_NAME=}",
+        "UI_PERSONAL_VOICE_NAME":         "${UI_PERSONAL_VOICE_NAME=}",
+        "UI_PERSONAL_VOICE_MODEL":        "${UI_PERSONAL_VOICE_MODEL=DragonLatestNeural}",
+        "UI_AVATAR_ENABLED":              "${UI_AVATAR_ENABLED=true}",
+        "UI_AVATAR_OUTPUT_MODE":          "${UI_AVATAR_OUTPUT_MODE=webrtc}",
+        "UI_IS_PHOTO_AVATAR":             "${UI_IS_PHOTO_AVATAR=false}",
+        "UI_IS_CUSTOM_AVATAR":            "${UI_IS_CUSTOM_AVATAR=false}",
+        "UI_AVATAR_NAME":                 "${UI_AVATAR_NAME=Lisa-casual-sitting}",
+        "UI_AVATAR_DISPLAY_NAME":         "${UI_AVATAR_DISPLAY_NAME=}",
+        "UI_PHOTO_AVATAR_NAME":           "${UI_PHOTO_AVATAR_NAME=Anika}",
+        "UI_CUSTOM_AVATAR_NAME":          "${UI_CUSTOM_AVATAR_NAME=}",
+        "UI_AVATAR_BACKGROUND_IMAGE_URL": "${UI_AVATAR_BACKGROUND_IMAGE_URL=}",
+        "UI_SCENE_ZOOM":                  "${UI_SCENE_ZOOM=100}",
+        "UI_SCENE_POSITION_X":            "${UI_SCENE_POSITION_X=0}",
+        "UI_SCENE_POSITION_Y":            "${UI_SCENE_POSITION_Y=0}",
+        "UI_SCENE_ROTATION_X":            "${UI_SCENE_ROTATION_X=0}",
+        "UI_SCENE_ROTATION_Y":            "${UI_SCENE_ROTATION_Y=0}",
+        "UI_SCENE_ROTATION_Z":            "${UI_SCENE_ROTATION_Z=0}",
+        "UI_SCENE_AMPLITUDE":             "${UI_SCENE_AMPLITUDE=100}",
+        "UI_DEVELOPER_MODE":              "${UI_DEVELOPER_MODE=false}"
+      }
+    }
   }
 }
