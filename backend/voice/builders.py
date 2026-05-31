@@ -171,18 +171,18 @@ def build_turn_detection(config: dict):
                 timeout_ms=300,
             )
         return AzureSemanticVad(
-            threshold=0.3,
+            threshold=0.5,
             prefix_padding_ms=300,
             speech_duration_ms=80,
-            silence_duration_ms=300,
+            silence_duration_ms=500,
             remove_filler_words=remove_filler,
             interrupt_response=True,
             end_of_utterance_detection=eou_detection,
         )
     else:
         return ServerVad(
-            threshold=0.3,
+            threshold=0.5,
             prefix_padding_ms=300,
-            silence_duration_ms=300,
+            silence_duration_ms=500,
         )
 

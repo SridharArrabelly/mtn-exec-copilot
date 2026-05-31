@@ -147,7 +147,7 @@ class VoiceSessionHandler:
         recognition_language = config.get("recognitionLanguage", "auto")
         input_audio_transcription = AudioInputTranscriptionOptions(
             model=sr_model,
-            language=None if (sr_model == "mai-ears-1" or recognition_language == "auto")
+            language=None if (sr_model == "mai-transcribe-1" or recognition_language == "auto")
             else recognition_language,
         )
 
