@@ -643,6 +643,21 @@ input[type="range"]::-webkit-slider-thumb {
 
 .send-btn { padding: 8px 12px; }
 
+.clear-btn {
+    padding: 8px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.clear-btn:hover:not(:disabled) { background: var(--bg-hover); }
+.clear-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.clear-btn svg { display: block; }
+
+
 /* ===== Footer / Record Button ===== */
 .footer-area {
     padding: 16px;
@@ -771,7 +786,7 @@ body.no-sidebar .mobile-menu {
 }
 
 /* ===== Connect error banner ===== */
-.connect-error-banner {
+.connect-error-banner:not([hidden]) {
     display: flex;
     align-items: center;
     justify-content: space-between;
