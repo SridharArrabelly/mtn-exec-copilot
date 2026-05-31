@@ -103,7 +103,17 @@ async def _fetch_catalog() -> Optional[str]:
         # Sort ascending by date so "first" is the first bullet, "last" the last.
         ordered = sorted(by_date.items(), key=lambda kv: kv[0])
 
+        # Preamble framing matters: without an explicit "silent reference"
+        # marker, the model occasionally reads the list aloud as its first
+        # utterance (especially when the agent prompt also says "read this
+        # BEFORE thinking about tools"). Marking it as silent reference
+        # data tells the model NOT to volunteer the list; only use when
+        # the user asks a relevant question.
         lines = [
+            "[SILENT REFERENCE DATA — do not speak this aloud, do not "
+            "summarise it, do not volunteer it. Only USE it when the user "
+            "asks a question that this data helps answer.]",
+            "",
             "MEETINGS LIST — the complete authoritative roster of board / "
             "executive meetings currently in the AI Search index. Use this "
             "to answer first / last / count / listing questions directly "

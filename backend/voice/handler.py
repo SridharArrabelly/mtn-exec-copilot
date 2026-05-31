@@ -31,18 +31,26 @@ from .event_handlers import handle_event
 logger = logging.getLogger(__name__)
 
 
-# Override applied to the proactive opening response only. Without this, the
-# model would respond to whatever was last in context — which, immediately
-# after SESSION_UPDATED, is the MEETINGS LIST system message we just injected.
-# It would then read the list aloud. Instead we tell it to deliver a short,
-# warm greeting and explicitly not mention the catalogue, the date, or any
-# internal data. Applied via response.create(additional_instructions=...).
+# Override applied to the proactive opening response only.
+#
+# Why this is so directive: immediately after SESSION_UPDATED, the most
+# recent thing in model context is the MEETINGS LIST system message the
+# backend just injected, AND the agent system prompt explicitly tells the
+# model "read MEETINGS LIST BEFORE thinking about tools". With both of
+# those pulling toward "enumerate the meetings", a soft override like
+# "say a short greeting, don't mention the catalogue" is not reliable:
+# the model occasionally reads the list aloud as the opening utterance.
+#
+# Solution: pin the opening to a verbatim string. This removes all model
+# freedom on the first turn (good for a deterministic, branded opener)
+# without touching the agent's behaviour on any subsequent turn.
+# Applied via response.create(additional_instructions=...).
 PROACTIVE_GREETING_INSTRUCTIONS = (
     "This is the opening of the session and the user has not spoken yet. "
-    "Say ONLY a short, warm greeting: introduce yourself by name (Nuru), "
-    "state you are the user's executive assistant, and ask how you can help. "
-    "Do NOT mention the meeting catalogue, the meetings list, today's date, "
-    "or any internal data. Keep it to two short sentences."
+    "Output EXACTLY the following text and absolutely nothing else — no "
+    "additions, no list of meetings, no date, no internal data: "
+    '"Hello, I am Nuru, your executive assistant. '
+    'I hope you are doing well today. How can I help you?"'
 )
 
 
