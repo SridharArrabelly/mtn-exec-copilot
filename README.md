@@ -120,6 +120,8 @@ The avatar app no longer renders a settings sidebar in production. Every voice /
 
 **Variable reference** — all are optional; defaults shown.
 
+> 💡 [`.env.example`](.env.example) is the canonical settings panel: every `UI_*` variable lists its full set of allowed values (or numeric range / free-text expectation) inline, grouped by the same sections as the legacy sidebar. Copy a value from there into your `.env` and restart. The table below is a compact at-a-glance reference; treat `.env.example` as the source of truth for option lists.
+
 | Variable | Default | Valid values / notes |
 | --- | --- | --- |
 | **Speech recognition** | | |
