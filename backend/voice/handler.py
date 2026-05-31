@@ -19,14 +19,39 @@ from azure.ai.voicelive.models import (
     OutputAudioFormat,
     RequestSession,
     ServerEventType,
+    SystemMessageItem,
     UserMessageItem,
 )
 
 from ..config import AGENT_NAME, AGENT_PROJECT_NAME
 from .builders import build_avatar_config, build_turn_detection, build_voice_config
+from .catalog import get_meeting_catalog
 from .event_handlers import handle_event
 
 logger = logging.getLogger(__name__)
+
+
+# Override applied to the proactive opening response only.
+#
+# Why this is so directive: immediately after SESSION_UPDATED, the most
+# recent thing in model context is the MEETINGS LIST system message the
+# backend just injected, AND the agent system prompt explicitly tells the
+# model "read MEETINGS LIST BEFORE thinking about tools". With both of
+# those pulling toward "enumerate the meetings", a soft override like
+# "say a short greeting, don't mention the catalogue" is not reliable:
+# the model occasionally reads the list aloud as the opening utterance.
+#
+# Solution: pin the opening to a verbatim string. This removes all model
+# freedom on the first turn (good for a deterministic, branded opener)
+# without touching the agent's behaviour on any subsequent turn.
+# Applied via response.create(additional_instructions=...).
+PROACTIVE_GREETING_INSTRUCTIONS = (
+    "This is the opening of the session and the user has not spoken yet. "
+    "Output EXACTLY the following text and absolutely nothing else — no "
+    "additions, no list of meetings, no date, no internal data: "
+    '"Hello, I am Nuru, your executive assistant. '
+    'I hope you are doing well today. How can I help you?"'
+)
 
 
 class VoiceSessionHandler:
@@ -100,6 +125,11 @@ class VoiceSessionHandler:
         """Configure the Voice Live session with avatar, voice, and other settings."""
         config = self.config
 
+        # Kick off meeting catalogue fetch in parallel with session setup. The
+        # Voice Live handshake itself takes ~1-2s so this fetch (~50-100ms on
+        # cache miss, ~0 on hit) is almost always free.
+        catalog_task = asyncio.create_task(get_meeting_catalog())
+
         # Build voice configuration
         voice_config = build_voice_config(config)
 
@@ -155,6 +185,32 @@ class VoiceSessionHandler:
 
         logger.info(f"Session configured for client {self.client_id}")
 
+        # Inject the live meeting catalogue as a SYSTEM message so the
+        # Foundry agent can answer first/last/count/listing questions
+        # without searching, and can phrase precise content searches with
+        # exact meeting dates. Wrapped in try/except so a fetch failure
+        # never breaks the session — the agent prompt has a fallback path.
+        try:
+            catalog = await catalog_task
+            if catalog:
+                catalog_item = SystemMessageItem(
+                    content=[InputTextContentPart(text=catalog)]
+                )
+                await connection.conversation.item.create(item=catalog_item)
+                logger.info(
+                    f"Injected meeting catalogue ({len(catalog)} chars) "
+                    f"for client {self.client_id}"
+                )
+            else:
+                logger.info(
+                    f"No meeting catalogue available; agent will fall back "
+                    f"to direct search for client {self.client_id}"
+                )
+        except Exception as e:
+            logger.warning(
+                f"Failed to inject meeting catalogue for {self.client_id}: {e}"
+            )
+
         avatar_output_mode = config.get("avatarOutputMode", "webrtc")
 
         # If avatar is enabled with WebRTC mode, relay ICE servers info to browser
@@ -206,7 +262,9 @@ class VoiceSessionHandler:
             if config.get("enableProactive", True):
                 try:
                     logger.info("[SEND] response.create (proactive greeting, no avatar)")
-                    await connection.response.create()
+                    await connection.response.create(
+                        additional_instructions=PROACTIVE_GREETING_INSTRUCTIONS
+                    )
                     logger.info("Proactive greeting sent")
                 except Exception as e:
                     logger.error(f"Failed to send proactive greeting: {e}")
@@ -215,7 +273,9 @@ class VoiceSessionHandler:
             if config.get("enableProactive", True):
                 try:
                     logger.info("[SEND] response.create (proactive greeting, websocket avatar)")
-                    await connection.response.create()
+                    await connection.response.create(
+                        additional_instructions=PROACTIVE_GREETING_INSTRUCTIONS
+                    )
                     logger.info("Proactive greeting sent (websocket avatar)")
                 except Exception as e:
                     logger.error(f"Failed to send proactive greeting: {e}")

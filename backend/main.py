@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from .api import routes, websocket as ws
 from .config import HOST, PORT, configure_logging
 from .voice.auth import close_credential, create_credential
+from .voice.catalog import prewarm_catalog
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -25,19 +26,20 @@ async def _prewarm_credential() -> None:
     (resolves AzureCliCredential / managed identity / env-based chains, then
     shells out to ``az account get-access-token`` for the first scope).
 
-    **Tokens are cached per-scope**, so we must warm the scope Voice Live
-    actually requests (``https://ai.azure.com/.default``). Previously we only
-    warmed ``https://cognitiveservices.azure.com/.default``, which left
-    Voice Live to pay the full ~6s CLI spawn on the first user's Connect.
+    **Tokens are cached per-scope**, so we must warm every distinct Azure
+    resource the backend actually talks to:
+    - ``ai.azure.com`` — Voice Live SDK (primary path, every session)
+    - ``search.azure.com`` — Azure AI Search (catalogue + agent tool calls)
 
-    Both scopes are warmed in parallel:
-    - ``ai.azure.com`` — Voice Live SDK (primary path)
-    - ``cognitiveservices.azure.com`` — direct AOAI embeddings / AI Search
-      calls if the backend ever makes them (e.g. for diagnostic scripts)
+    Scopes warmed in parallel. The Cognitive Services scope is NOT included
+    because the backend has no direct AOAI / Cognitive Services callers
+    (the Foundry agent and Voice Live SDK both use ``ai.azure.com``).
+    Removing the unused scope shaves one ``az`` invocation (~1.3s) off
+    startup.
     """
     scopes = (
         "https://ai.azure.com/.default",
-        "https://cognitiveservices.azure.com/.default",
+        "https://search.azure.com/.default",
     )
     try:
         credential = create_credential("")
@@ -49,12 +51,30 @@ async def _prewarm_credential() -> None:
         logger.warning(f"Credential pre-warm failed (will retry on first session): {e}")
 
 
+async def _prewarm_startup() -> None:
+    """Sequenced startup pre-warm: credential first, THEN catalogue.
+
+    Sequencing matters — if these run in parallel, the catalogue's AI Search
+    call asks the SDK for a ``search.azure.com`` token at the same moment
+    ``_prewarm_credential`` is still acquiring it. The catalogue's request
+    misses the cache and spawns ITS OWN ``az account get-access-token``
+    call, duplicating ~1.3s of credential work and causing the catalogue
+    fetch to be measured as ~7s instead of ~3-4s.
+
+    Sequenced: catalogue fetch starts with a hot token cache; it only pays
+    the AI Search round-trip cost.
+    """
+    await _prewarm_credential()
+    await prewarm_catalog()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown hook: pre-warms credentials, closes outstanding sessions on shutdown."""
     logger.info("MTN Exec Copilot server starting...")
-    # Fire-and-forget pre-warm so startup is not blocked.
-    asyncio.create_task(_prewarm_credential())
+    # Fire-and-forget sequenced pre-warm so startup is not blocked but the
+    # catalogue fetch benefits from a hot token cache.
+    asyncio.create_task(_prewarm_startup())
     yield
     # Order matters: stop session handlers first (they may still use the
     # credential to refresh tokens during teardown), THEN close the

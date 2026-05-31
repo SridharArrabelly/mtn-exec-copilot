@@ -44,7 +44,9 @@ from azure.ai.projects.models import (
     WebSearchApproximateLocation,
     WebSearchTool,
 )
+from azure.core.credentials import AzureKeyCredential
 from azure.identity import DefaultAzureCredential
+from azure.search.documents import SearchClient
 from dotenv import load_dotenv
 
 AGENT_DESCRIPTION = "MTN executive assistant grounded in past meetings and live web search."
@@ -76,14 +78,15 @@ WEB_SEARCH_LOCATION = WebSearchApproximateLocation(
 #     resolve relative time terms ("recent", "this quarter", "lately"). The
 #     date drifts between re-runs of this script — re-run monthly to keep it
 #     fresh.
-#   * For temporal queries against AI Search the index has a recency-boost
-#     scoring profile (set as default), so newer meetings already get a
-#     ranking boost server-side. The prompt rule below tells the model how
-#     to phrase queries to take advantage of it, and how to read the
-#     meeting_date metadata from results when the user asks about "the
-#     last meeting".
-#   * A more verbose variant of this prompt is preserved below (commented
-#     out) if the model ever needs more hand-holding.
+#   * The backend injects a MEETINGS LIST as a system message at session
+#     start (live fetch from AI Search via chunk_index filter — no rebuild
+#     needed when new
+#     minutes are ingested). The prompt below tells the model to answer
+#     first/last/count/listing questions directly from that list rather
+#     than calling AI Search, and to use the list to phrase precise
+#     content searches by exact meeting date. This decouples temporal
+#     awareness from index ranking — the index itself uses neutral hybrid
+#     scoring (no recency boost) which works for both old and new docs.
 
 
 def _build_agent_instructions() -> str:
@@ -95,8 +98,11 @@ def _build_agent_instructions() -> str:
     reasoning accurate.
     """
     today = datetime.now().strftime("%A, %d %B %Y")
-    return f"""You are MtnAvatarAgent, a voice assistant for MTN executive leadership.
+    return f"""You are Nuru, an executive assistant for MTN's leadership team.
 Your answer will be SPOKEN by a video avatar — write for the EAR, not the page.
+
+If asked who you are or what your name is, you are Nuru. Speak as Nuru
+consistently across the session.
 
 ## Context
 
@@ -104,24 +110,56 @@ Today is {today}. When the user uses relative time terms ("today", "this
 week", "this quarter", "last year", "lately", "recent"), interpret them
 relative to today.
 
+## Meeting catalogue (silent reference data)
+
+At the start of every session you receive a system message marked
+"[SILENT REFERENCE DATA ...]" that contains a MEETINGS LIST — the
+complete, authoritative roster of board / executive meetings currently
+in the index, one line per meeting with the meeting date. Treat it as
+ground truth.
+
+NEVER speak the MEETINGS LIST aloud on your own. Do not summarise it,
+do not list it, do not mention it exists, unless the user asks a
+question that this data helps answer. In particular: when the session
+opens or after any greeting, do NOT volunteer the list.
+
+Use MEETINGS LIST DIRECTLY (no tool call) for these question types:
+- "What was the first / earliest / oldest meeting?"  → answer the
+  earliest date from the list.
+- "What was the last / latest / most recent meeting?" → answer the
+  latest date.
+- "How many meetings do we have?" → answer the count.
+- "List the meetings" / "what meetings do we have on file?" →
+  enumerate the dates.
+
+Use MEETINGS LIST INDIRECTLY to phrase precise AI Search queries:
+- User: "summarise the last meeting" → look up the latest date in the
+  list (e.g. 15 February 2026), then call `azure_ai_search` with the
+  exact title "Board Meeting 15 February 2026". The title match
+  promotes that specific meeting to the top of results.
+- User: "what was discussed in the May meeting" → check the list for
+  May entries. If only one, search precisely for that date. If
+  multiple, ASK which one before searching (see clarification rules
+  below).
+
+If the MEETINGS LIST system message is missing for any reason, fall
+back to calling `azure_ai_search` directly — the index uses neutral
+hybrid scoring, so a query that includes the year and month name
+(e.g. "Board Meeting February 2026") is reliable.
+
 ## Tools
 
 1. `azure_ai_search` — MTN's INTERNAL past board / executive meeting minutes
-   (dates, attendees, agenda, discussion points, decisions, action items,
-   owners, deadlines, internal strategy already discussed). This is the
-   ONLY source of truth for "what did we discuss/decide internally".
-   Never answer prior-meeting questions from memory.
+   (attendees, agenda, discussion points, decisions, action items, owners,
+   deadlines, internal strategy already discussed). This is the ONLY source
+   of truth for the *content* of past meetings. Never answer prior-meeting
+   content questions from memory.
 
-   Each AI Search result includes `meeting_date` and `title` metadata. Use
-   them:
-   - The index has a server-side RECENCY BIAS — newer meetings get a
-     ranking boost automatically. You don't need to ask for it.
-   - For specific time references ("the February meeting", "Q4 2025",
-     "this year"), include the year and the month name in your search
-     query — that strongly boosts the matching meeting title.
-   - For "last meeting", "latest", "most recent" queries, inspect the
-     `meeting_date` on the returned chunks and answer from the most
-     recent one first.
+   Each result includes `meeting_date` and `title` metadata — quote them
+   in your spoken answer. For specific time references ("the February
+   meeting", "Q4 2025", "the May 2008 board meeting"), include the year
+   and month name in your search query — title matches boost the right
+   meeting to the top.
 
 2. `web_search` — CURRENT external information (telco news, competitors,
    regulator / spectrum, earnings, M&A, market trends, macro). Prefer the
@@ -131,8 +169,11 @@ relative to today.
 
 ## When to pick which
 
-- Internal-only question (what we discussed, decided, planned, who owns
-  what) → `azure_ai_search`.
+- Catalogue question (which meetings exist, first/last, count, list)
+  → answer from MEETINGS LIST, NO tool call.
+- Internal-content question (what was discussed/decided/planned, who
+  owns what) → `azure_ai_search` (use MEETINGS LIST to scope the query
+  if a date is implied).
 - External-only question (what is happening now in the world / market)
   → `web_search`.
 - Compound (one ask needs BOTH internal context AND external context)
@@ -165,9 +206,11 @@ ASK ONE clarifying question, then wait, when ALL of these hold:
 DO NOT ask when:
 - The question is clearly specific ("February 2026 board meeting",
   "Reuters coverage of MTN Nigeria spectrum") — just search.
-- The question is temporal-relative ("last meeting", "recent decisions",
-  "lately") — the index has recency boost and the meeting_date metadata
-  resolves it; just search and read meeting_date from the results.
+- The question is about the catalogue (first / last / count / list of
+  meetings) — answer from MEETINGS LIST, no tool call, no ask.
+- The question is temporal-relative ("last meeting", "most recent")
+  AND the MEETINGS LIST clearly identifies one meeting — use that
+  date to scope the search; don't ask.
 - The question is a follow-up to your previous answer in the same
   session — use the established context, don't restart the disambiguation.
 - The ambiguity is between minor details that don't change the search
@@ -190,8 +233,12 @@ Examples:
   You:  "Are you asking about the spectrum renewal talks or the
         fintech rollout? Both came up in recent meetings."
 
-  User: "summarize the last meeting"     ← NOT ambiguous, just search
-  You:  (call azure_ai_search immediately, read meeting_date)
+  User: "summarize the last meeting"     ← NOT ambiguous, MEETINGS LIST resolves it
+  You:  (look up latest date in MEETINGS LIST, then call azure_ai_search
+        with "Board Meeting <that date>")
+
+  User: "what was the first board meeting?"  ← answer from MEETINGS LIST, no tool
+  You:  "The earliest meeting on file is the 15 March 2006 board meeting."
 
   User: "Reuters coverage on MTN earnings" ← NOT ambiguous, just search
   You:  (call web_search immediately)
@@ -231,6 +278,9 @@ def load_settings() -> dict:
         "search_index_name": os.getenv("SEARCH_INDEX_NAME"),
         "agent_name": os.getenv("AGENT_NAME"),
         "agent_model": os.getenv("AGENT_MODEL"),
+        # Optional. Only set for reasoning models (o-series, gpt-5 family).
+        # gpt-4.x / gpt-4o reject `reasoning.effort` at /responses time.
+        "agent_reasoning_effort": (os.getenv("AGENT_REASONING_EFFORT") or "").strip() or None,
     }
     missing = [k for k in ("project_endpoint", "search_connection_name", "search_index_name", "agent_name", "agent_model") if not settings[k]]
     if missing:
@@ -244,21 +294,24 @@ def load_settings() -> dict:
 def build_tools(search_connection_id: str, search_index_name: str) -> list:
     """Build the tool list for the agent.
 
-    AI Search uses VECTOR_SEMANTIC_HYBRID so the agent actually uses the
-    HNSW vector index + semantic re-ranker the index was built for. SIMPLE
-    (the old setting) only ran BM25 and ignored the vectors entirely, which
-    forced the model to run extra search calls on weak first-hits.
+    AI Search uses VECTOR_SIMPLE_HYBRID — vector ANN + BM25 keyword, no
+    semantic re-ranker. The re-ranker (`VECTOR_SEMANTIC_HYBRID`, the
+    previous setting) adds ~200-500ms of per-query latency on a server-side
+    transformer pass. For a voice avatar where every search round-trip
+    sits between the user's question and the spoken reply, that latency
+    is more painful than the relevance gain is worth — the underlying
+    vector + BM25 hybrid is already strong on this small corpus, and the
+    Foundry model itself can re-rank the top-k chunks if needed.
 
-    top_k=5: we briefly ran with top_k=3 for first-token latency wins, but
-    that broke summary-style queries — only the single best-matching chunk
-    from the right meeting reached the model, and a one-chunk fragment is
-    not enough content to summarise a meeting from. top_k=5 trades ~200ms
-    of tool latency for a much better content base for synthesis / summary
-    queries.
+    top_k=5: enough chunks to summarise from when several come from the
+    same meeting. We briefly ran with top_k=3, but that broke summary
+    queries (only one chunk from the right meeting reached the model).
+    top_k=5 trades ~200ms of tool latency for a much richer base for
+    synthesis / summary queries.
 
-    Web search uses `low` context to keep tool latency down — `medium` (the
-    default) pulls back significantly more snippet text per source, which is
-    overkill for exec-summary style answers.
+    Web search uses `low` context to keep tool latency down — `medium`
+    (the default) pulls back significantly more snippet text per source,
+    which is overkill for exec-summary style answers.
     """
     return [
         WebSearchTool(user_location=WEB_SEARCH_LOCATION,
@@ -270,7 +323,7 @@ def build_tools(search_connection_id: str, search_index_name: str) -> list:
                     AISearchIndexResource(
                         project_connection_id=search_connection_id,
                         index_name=search_index_name,
-                        query_type=AzureAISearchQueryType.VECTOR_SEMANTIC_HYBRID,
+                        query_type=AzureAISearchQueryType.VECTOR_SIMPLE_HYBRID,
                         top_k=5,
                     ),
                 ]
@@ -282,34 +335,129 @@ def build_tools(search_connection_id: str, search_index_name: str) -> list:
 def create_agent(project: AIProjectClient, settings: dict):
     """Create a new version of the Foundry agent.
 
-    `reasoning=Reasoning(effort="low")`: gpt-5.4-mini defaults to `medium`
-    reasoning, which spent up to ~19s "thinking" before responding on
-    tool-using turns (observed in production logs). This is a voice-first
-    avatar — latency is the dominant UX metric, and the work it does
-    (pick a tool, phrase a query, summarise) does not need deep chain-of-
-    thought. `low` keeps enough judgement for tool selection but cuts the
-    thinking overhead substantially. If `low` still feels too slow, the
-    next steps are `minimal` and then `none` — both supported by the SDK.
+    Reasoning effort (`AGENT_REASONING_EFFORT`) is OPTIONAL and only
+    applied when the env var is set. Reasoning models (o1, o3, o4-mini,
+    gpt-5 family) accept it; gpt-4.x and gpt-4o models reject it at
+    /responses time with `unsupported_parameter`. To use a reasoning
+    model on voice-first turns, set `AGENT_REASONING_EFFORT=low` in
+    `.env` — `low` keeps enough judgement for tool selection but cuts
+    the multi-second "thinking" overhead. Valid values: `minimal`,
+    `low`, `medium`, `high`. Leave UNSET for any non-reasoning model.
     """
     azs_connection = project.connections.get(settings["search_connection_name"])
     tools = build_tools(azs_connection.id, settings["search_index_name"])
 
+    definition_kwargs = {
+        "model": settings["agent_model"],
+        "instructions": AGENT_INSTRUCTIONS,
+        "tools": tools,
+    }
+    effort = settings.get("agent_reasoning_effort")
+    if effort:
+        definition_kwargs["reasoning"] = Reasoning(effort=effort)
+        print(f"Applying reasoning.effort={effort!r} (AGENT_REASONING_EFFORT is set).")
+    else:
+        print(
+            "Skipping reasoning.effort — AGENT_REASONING_EFFORT not set. "
+            "Set it ONLY for reasoning models (o-series, gpt-5 family)."
+        )
+
     agent = project.agents.create_version(
         agent_name=settings["agent_name"],
-        definition=PromptAgentDefinition(
-            model=settings["agent_model"],
-            instructions=AGENT_INSTRUCTIONS,
-            tools=tools,
-            reasoning=Reasoning(effort="low"),
-        ),
+        definition=PromptAgentDefinition(**definition_kwargs),
         description=AGENT_DESCRIPTION,
     )
     print(f"Agent created (id: {agent.id}, name: {agent.name}, version: {agent.version})")
     return agent
 
 
+def _fetch_catalog_for_smoke_test() -> str | None:
+    """Mirror of `backend/voice/catalog.py` for the CLI smoke test.
+
+    The live Voice Live handler injects a MEETINGS LIST system message
+    at session start so the model can answer catalogue questions
+    (first / last / count / list) directly without hallucinating. The
+    smoke test path needs the same context — otherwise the model will
+    invent meeting dates based on today's calendar. This function
+    fetches the catalogue synchronously (the script is sync) and
+    returns the same text format as the async runtime version.
+
+    Returns the catalogue string, or None if AI Search is unreachable
+    or the env vars are missing. On None, the smoke test falls back to
+    its original behaviour.
+    """
+    endpoint = os.getenv("AZURE_SEARCH_ENDPOINT", "").strip().rstrip("/")
+    index = os.getenv("SEARCH_INDEX_NAME", "").strip()
+    if not endpoint or not index:
+        return None
+
+    api_key = os.getenv("AZURE_SEARCH_API_KEY", "").strip()
+    credential = AzureKeyCredential(api_key) if api_key else DefaultAzureCredential()
+    client = SearchClient(endpoint=endpoint, index_name=index, credential=credential)
+    try:
+        # Mirrors backend/voice/catalog.py: filter on chunk_index eq 0 to
+        # return one doc per meeting (~10 rows) instead of every chunk
+        # (~100+ rows). The indexer assigns chunk_index via enumerate(),
+        # so every meeting has a chunk 0.
+        results = client.search(
+            search_text="*",
+            filter="chunk_index eq 0",
+            select=["title", "meeting_date"],
+            top=200,
+        )
+        by_date: dict[str, str] = {}
+        for r in results:
+            date_iso = r.get("meeting_date")
+            title = r.get("title") or ""
+            if not date_iso:
+                continue
+            if date_iso not in by_date:
+                by_date[date_iso] = title
+        if not by_date:
+            return None
+        ordered = sorted(by_date.items(), key=lambda kv: kv[0])
+        lines = [
+            "MEETINGS LIST — the complete authoritative roster of board / "
+            "executive meetings currently in the AI Search index. Use this "
+            "to answer first / last / count / listing questions directly "
+            "(no tool call), and to phrase precise content searches by "
+            "exact meeting date."
+        ]
+        for date_iso, title in ordered:
+            date_part = date_iso.split("T", 1)[0]
+            try:
+                dt = datetime.strptime(date_part, "%Y-%m-%d")
+                pretty = f"{dt.day} {dt.strftime('%B %Y')}"
+            except ValueError:
+                pretty = date_iso
+            if title and title.strip():
+                lines.append(f"- {pretty}  ({title.strip()})")
+            else:
+                lines.append(f"- {pretty}")
+        lines.append(
+            f"Total: {len(ordered)} meeting(s). Earliest is the first entry, "
+            "latest is the last entry."
+        )
+        return "\n".join(lines)
+    except Exception as e:
+        print(f"(Smoke test: catalogue fetch failed: {e})")
+        return None
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
 def smoke_test(project: AIProjectClient, agent_name: str) -> None:
-    """Prompt the user once and stream a response from the freshly-created agent."""
+    """Prompt the user once and stream a response from the freshly-created agent.
+
+    Injects the MEETINGS LIST as a system message before the user's
+    question, mirroring what `backend/voice/handler.py` does for live
+    Voice Live sessions. Without this, catalogue questions ("what was
+    my last meeting?") trigger model hallucination based on today's
+    date instead of the real index contents.
+    """
     try:
         user_input = input(
             "\nEnter a question to test the agent (Ctrl+C to skip):\n> "
@@ -321,11 +469,24 @@ def smoke_test(project: AIProjectClient, agent_name: str) -> None:
         print("No question entered; skipping smoke test.")
         return
 
+    catalog = _fetch_catalog_for_smoke_test()
+    request_input: list[dict] | str
+    if catalog:
+        meeting_count = catalog.count("\n- ")
+        print(f"(Injecting MEETINGS LIST: {meeting_count} meetings, {len(catalog)} chars)")
+        request_input = [
+            {"type": "message", "role": "system", "content": catalog},
+            {"type": "message", "role": "user", "content": user_input},
+        ]
+    else:
+        print("(No catalogue available — agent will answer without MEETINGS LIST context.)")
+        request_input = user_input
+
     openai = project.get_openai_client()
     stream = openai.responses.create(
         stream=True,
         tool_choice="auto",
-        input=user_input,
+        input=request_input,
         extra_body={"agent_reference": {"name": agent_name, "type": "agent_reference"}},
         parallel_tool_calls=True,
     )
