@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from ..config import DEFAULT_VOICE
+from ..config import DEFAULT_VOICE, DEVELOPER_MODE, get_ui_defaults
 
 router = APIRouter()
 
@@ -18,4 +18,6 @@ async def get_config():
     """Return default configuration to the frontend."""
     return {
         "voice": DEFAULT_VOICE,
+        "developerMode": DEVELOPER_MODE,
+        "defaults": get_ui_defaults(),
     }

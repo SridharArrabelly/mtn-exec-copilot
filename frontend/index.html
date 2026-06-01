@@ -38,8 +38,8 @@
                         <div id="srModelField">
                             <label>Speech Recognition Model
                                 <select id="srModel">
-                                    <option value="azure-speech" selected>Azure Speech</option>
-                                    <option value="mai-transcribe-1">MAI Transcribe 1 (preview)</option>
+                                    <option value="azure-speech">Azure Speech</option>
+                                    <option value="mai-transcribe-1" selected>MAI Transcribe 1</option>
                                 </select>
                             </label>
                         </div>
@@ -154,7 +154,7 @@
                                             <option value="en-us-davis:DragonHDLatestNeural">DragonHDLatestNeural, Davis (HD)</option>
                                             <option value="en-us-jenny:DragonHDLatestNeural">DragonHDLatestNeural, Jenny (HD)</option>
                                             <option value="ja-jp-masaru:DragonHDLatestNeural">DragonHDLatestNeural, Masaru (HD)</option>
-                                            <option value="en-US-AvaMultilingualNeural" selected>Ava Multilingual</option>
+                                            <option value="en-US-AvaMultilingualNeural">Ava Multilingual</option>
                                             <option value="en-US-AlloyTurboMultilingualNeural">Alloy Turbo Multilingual</option>
                                             <option value="en-US-AndrewMultilingualNeural">Andrew Multilingual</option>
                                             <option value="en-US-BrianMultilingualNeural">Brian Multilingual</option>
@@ -164,7 +164,7 @@
                                             <option value="en-US-AvaNeural">Ava</option>
                                             <option value="en-US-AndrewNeural">Andrew</option>
                                             <option value="en-US-JennyNeural">Jenny</option>
-                                            <option value="en-ZA-LeahNeural">Leah (South Africa)</option>
+                                            <option value="en-ZA-LeahNeural" selected>Leah (South Africa)</option>
                                             <option value="en-ZA-LukeNeural">Luke (South Africa)</option>
                                             <option value="zh-HK-HiuMaanNeural">HiuMaan (Cantonese)</option>
                                             <option value="mt-MT-JosephNeural">Joseph (Maltese)</option>
@@ -369,6 +369,7 @@
                 <!-- Avatar video (WebRTC) -->
                 <div id="avatarVideoContainer" class="avatar-container hidden">
                     <div id="avatarVideo" class="avatar-video"></div>
+                    <div id="avatarNameLabel" class="avatar-name-label"></div>
                 </div>
 
                 <!-- Volume animation (no avatar) -->

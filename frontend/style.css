@@ -731,3 +731,20 @@ input[type="range"]::-webkit-slider-thumb {
 .flex-spacer { flex: 1; }
 .btn-faded { opacity: 0.5; }
 
+
+.avatar-name-label {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #242424;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 6px 18px;
+    border-radius: 999px;
+    letter-spacing: 0.02em;
+    pointer-events: none;
+    z-index: 2;
+}
+.avatar-name-label:empty { display: none; }

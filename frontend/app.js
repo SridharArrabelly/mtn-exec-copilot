@@ -70,13 +70,58 @@ function warmWebRTCEngine() {
 }
 
 // ===== Server Config =====
+function applyServerDefaults(defaults) {
+    if (!defaults) return;
+    for (const [id, val] of Object.entries(defaults)) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        if (el.type === 'checkbox') {
+            el.checked = !!val;
+        } else {
+            el.value = String(val);
+        }
+        // Notify listeners (range displays, conditional fields).
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        if (el.type === 'range') el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+}
+
 async function fetchServerConfig() {
     try {
         const resp = await fetch('/api/config');
         const config = await resp.json();
-        if (config.voice) document.getElementById('voiceName').value = config.voice;
+
+        // Apply env-driven defaults to all matching controls.
+        applyServerDefaults(config.defaults);
+
+        // Back-compat: top-level voice (older /api/config shape).
+        if (config.voice) {
+            const v = document.getElementById('voiceName');
+            if (v && !config.defaults?.voiceName) v.value = config.voice;
+        }
+
+        // Refresh any cascaded visibility now that values are in place.
+        if (typeof updateConditionalFields === 'function') updateConditionalFields();
+
+        if (config.developerMode === false) {
+            // Production: hide entire sidebar (settings + Connect button),
+            // hide the dev-mode toggle + mobile menu, then auto-start.
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) sidebar.style.display = 'none';
+            const devToggle = document.getElementById('developerMode');
+            if (devToggle) {
+                const label = devToggle.closest('label');
+                if (label) label.style.display = 'none';
+            }
+            document.querySelectorAll('.mobile-menu').forEach(el => { el.style.display = 'none'; });
+            const clearBtn = document.getElementById('clearChatBtn');
+            if (clearBtn) clearBtn.style.display = 'none';
+            // Auto-connect with the env-configured defaults.
+            try { await connectSession(); }
+            catch (err) { console.error('Auto-connect failed', err); }
+        }
     } catch (e) {
-        console.log('No server config available, using defaults');
+        console.log('No server config available, using defaults', e);
     }
 }
 
@@ -436,6 +481,9 @@ function handleDisconnect() {
         ws = null;
     }
 
+    const lbl = document.getElementById('avatarNameLabel');
+    if (lbl) lbl.textContent = '';
+
     updateConnectionUI();
     updateDeveloperModeLayout();
 }
@@ -576,6 +624,19 @@ async function onSessionStarted(msg) {
     const avatarContainer = document.getElementById('avatarVideoContainer');
     if (avatarContainer) {
         avatarContainer.classList.toggle('photo-avatar', isPhotoAvatarSession);
+    }
+    const labelEl = document.getElementById('avatarNameLabel');
+    if (labelEl) {
+        const isCustomA = document.getElementById('isCustomAvatar')?.checked;
+        const isPhotoA = document.getElementById('isPhotoAvatar')?.checked;
+        const rawName = isCustomA
+            ? (document.getElementById('customAvatarName')?.value || '')
+            : isPhotoA
+                ? (document.getElementById('photoAvatarName')?.value || '')
+                : (document.getElementById('avatarName')?.value || '');
+        // Strip suffixes like '-business', '-casual-sitting' for a friendlier label.
+        const pretty = rawName ? rawName.split('-')[0] : '';
+        labelEl.textContent = avatarEnabled ? pretty : '';
     }
     updateDeveloperModeLayout();
 
