@@ -10,8 +10,8 @@ The agent's system prompt, model, and tool wiring live here; the runtime
 backend (``backend/``) only references the agent by ``AGENT_NAME`` /
 ``AGENT_PROJECT_NAME`` and lets Foundry resolve the rest server-side.
 
-After provisioning, the script prompts for a question and streams a single
-response to verify the agent works end-to-end.
+For end-to-end verification (prompt + streaming response) use the separate
+``scripts/test_foundry_agent.py`` script - this one only provisions.
 
 Required environment variables (see ``.env.example``):
     PROJECT_ENDPOINT       Foundry project endpoint
@@ -19,20 +19,34 @@ Required environment variables (see ``.env.example``):
     SEARCH_CONNECTION_NAME Name of the Azure AI Search connection in the project
     SEARCH_INDEX_NAME      Azure AI Search index to expose to the agent
     AGENT_NAME             Name of the Foundry agent to create / version (e.g. ``MtnAvatarAgent``)
-    AGENT_MODEL            Model deployment name to bind to the agent (e.g. ``gpt-5.4-mini``)
+
+Optional:
+    AGENT_MODEL              Model deployment name. Default: ``gpt-5.4-mini``.
+    AGENT_REASONING_EFFORT   ``minimal`` | ``low`` | ``medium`` | ``high``.
+                             Default: ``medium`` (matches gpt-5.4-mini sweet
+                             spot of tool-call accuracy vs. voice latency).
+                             Silently ignored if the bound model is not a
+                             reasoning model - keep ``AGENT_MODEL`` on a
+                             reasoning model (o-series / gpt-5 family) for it
+                             to take effect.
+
+CLI flags:
+    --if-missing   Skip provisioning entirely if the agent already has at
+                   least one version. Used by the azd postprovision hook so
+                   greenfield deploys auto-create the agent, while brownfield
+                   deploys preserve any portal edits.
 
 Auth: uses ``DefaultAzureCredential`` - run ``az login`` first.
 
 Usage:
     uv run python scripts/setup_foundry_agent.py
+    uv run python scripts/setup_foundry_agent.py --if-missing
 """
 
 from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime
-
 from azure.ai.projects import AIProjectClient
 from azure.ai.projects.models import (
     AISearchIndexResource,
@@ -44,9 +58,7 @@ from azure.ai.projects.models import (
     WebSearchApproximateLocation,
     WebSearchTool,
 )
-from azure.core.credentials import AzureKeyCredential
 from azure.identity import DefaultAzureCredential
-from azure.search.documents import SearchClient
 from dotenv import load_dotenv
 
 AGENT_DESCRIPTION = "MTN executive assistant grounded in past meetings and live web search."
@@ -277,12 +289,17 @@ def load_settings() -> dict:
         "search_connection_name": os.getenv("SEARCH_CONNECTION_NAME"),
         "search_index_name": os.getenv("SEARCH_INDEX_NAME"),
         "agent_name": os.getenv("AGENT_NAME"),
-        "agent_model": os.getenv("AGENT_MODEL"),
-        # Optional. Only set for reasoning models (o-series, gpt-5 family).
-        # gpt-4.x / gpt-4o reject `reasoning.effort` at /responses time.
-        "agent_reasoning_effort": (os.getenv("AGENT_REASONING_EFFORT") or "").strip() or None,
+        # gpt-5.4-mini is the project default - reasoning-capable, fast enough
+        # for voice. Override AGENT_MODEL only when binding to a different
+        # deployment (e.g. gpt-4.1-mini for non-reasoning workloads, in which
+        # case reasoning.effort below will be silently ignored).
+        "agent_model": (os.getenv("AGENT_MODEL") or "").strip() or "gpt-5.4-mini",
+        # medium is the sweet spot for tool-call accuracy vs. voice latency on
+        # gpt-5.4-mini. Set AGENT_REASONING_EFFORT explicitly to override
+        # (minimal | low | medium | high). Has no effect on non-reasoning models.
+        "agent_reasoning_effort": (os.getenv("AGENT_REASONING_EFFORT") or "").strip() or "medium",
     }
-    missing = [k for k in ("project_endpoint", "search_connection_name", "search_index_name", "agent_name", "agent_model") if not settings[k]]
+    missing = [k for k in ("project_endpoint", "search_connection_name", "search_index_name", "agent_name") if not settings[k]]
     if missing:
         raise EnvironmentError(
             f"Missing required environment variables: {', '.join(m.upper() for m in missing)}. "
@@ -352,15 +369,9 @@ def create_agent(project: AIProjectClient, settings: dict):
         "instructions": AGENT_INSTRUCTIONS,
         "tools": tools,
     }
-    effort = settings.get("agent_reasoning_effort")
-    if effort:
-        definition_kwargs["reasoning"] = Reasoning(effort=effort)
-        print(f"Applying reasoning.effort={effort!r} (AGENT_REASONING_EFFORT is set).")
-    else:
-        print(
-            "Skipping reasoning.effort — AGENT_REASONING_EFFORT not set. "
-            "Set it ONLY for reasoning models (o-series, gpt-5 family)."
-        )
+    effort = settings["agent_reasoning_effort"]
+    definition_kwargs["reasoning"] = Reasoning(effort=effort)
+    print(f"Applying reasoning.effort={effort!r} (ignored if model is not a reasoning model).")
 
     agent = project.agents.create_version(
         agent_name=settings["agent_name"],
@@ -371,150 +382,36 @@ def create_agent(project: AIProjectClient, settings: dict):
     return agent
 
 
-def _fetch_catalog_for_smoke_test() -> str | None:
-    """Mirror of `backend/voice/catalog.py` for the CLI smoke test.
 
-    The live Voice Live handler injects a MEETINGS LIST system message
-    at session start so the model can answer catalogue questions
-    (first / last / count / list) directly without hallucinating. The
-    smoke test path needs the same context — otherwise the model will
-    invent meeting dates based on today's calendar. This function
-    fetches the catalogue synchronously (the script is sync) and
-    returns the same text format as the async runtime version.
+def _agent_has_versions(project: AIProjectClient, agent_name: str) -> bool:
+    """Return True if the named agent already has at least one version.
 
-    Returns the catalogue string, or None if AI Search is unreachable
-    or the env vars are missing. On None, the smoke test falls back to
-    its original behaviour.
-    """
-    endpoint = os.getenv("AZURE_SEARCH_ENDPOINT", "").strip().rstrip("/")
-    index = os.getenv("SEARCH_INDEX_NAME", "").strip()
-    if not endpoint or not index:
-        return None
-
-    api_key = os.getenv("AZURE_SEARCH_API_KEY", "").strip()
-    credential = AzureKeyCredential(api_key) if api_key else DefaultAzureCredential()
-    client = SearchClient(endpoint=endpoint, index_name=index, credential=credential)
-    try:
-        # Mirrors backend/voice/catalog.py: filter on chunk_index eq 0 to
-        # return one doc per meeting (~10 rows) instead of every chunk
-        # (~100+ rows). The indexer assigns chunk_index via enumerate(),
-        # so every meeting has a chunk 0.
-        results = client.search(
-            search_text="*",
-            filter="chunk_index eq 0",
-            select=["title", "meeting_date"],
-            top=200,
-        )
-        by_date: dict[str, str] = {}
-        for r in results:
-            date_iso = r.get("meeting_date")
-            title = r.get("title") or ""
-            if not date_iso:
-                continue
-            if date_iso not in by_date:
-                by_date[date_iso] = title
-        if not by_date:
-            return None
-        ordered = sorted(by_date.items(), key=lambda kv: kv[0])
-        lines = [
-            "MEETINGS LIST — the complete authoritative roster of board / "
-            "executive meetings currently in the AI Search index. Use this "
-            "to answer first / last / count / listing questions directly "
-            "(no tool call), and to phrase precise content searches by "
-            "exact meeting date."
-        ]
-        for date_iso, title in ordered:
-            date_part = date_iso.split("T", 1)[0]
-            try:
-                dt = datetime.strptime(date_part, "%Y-%m-%d")
-                pretty = f"{dt.day} {dt.strftime('%B %Y')}"
-            except ValueError:
-                pretty = date_iso
-            if title and title.strip():
-                lines.append(f"- {pretty}  ({title.strip()})")
-            else:
-                lines.append(f"- {pretty}")
-        lines.append(
-            f"Total: {len(ordered)} meeting(s). Earliest is the first entry, "
-            "latest is the last entry."
-        )
-        return "\n".join(lines)
-    except Exception as e:
-        print(f"(Smoke test: catalogue fetch failed: {e})")
-        return None
-    finally:
-        try:
-            client.close()
-        except Exception:
-            pass
-
-
-def smoke_test(project: AIProjectClient, agent_name: str) -> None:
-    """Prompt the user once and stream a response from the freshly-created agent.
-
-    Injects the MEETINGS LIST as a system message before the user's
-    question, mirroring what `backend/voice/handler.py` does for live
-    Voice Live sessions. Without this, catalogue questions ("what was
-    my last meeting?") trigger model hallucination based on today's
-    date instead of the real index contents.
+    Used by --if-missing to make the azd postprovision hook idempotent:
+    greenfield first run creates the agent; later runs (and brownfield
+    deploys against an existing project) skip and preserve portal edits.
+    Treats any client error (404 / agent not found) as "no versions".
     """
     try:
-        user_input = input(
-            "\nEnter a question to test the agent (Ctrl+C to skip):\n> "
-        ).strip()
-    except (EOFError, KeyboardInterrupt):
-        print("\nSkipped smoke test.")
-        return
-    if not user_input:
-        print("No question entered; skipping smoke test.")
-        return
-
-    catalog = _fetch_catalog_for_smoke_test()
-    request_input: list[dict] | str
-    if catalog:
-        meeting_count = catalog.count("\n- ")
-        print(f"(Injecting MEETINGS LIST: {meeting_count} meetings, {len(catalog)} chars)")
-        request_input = [
-            {"type": "message", "role": "system", "content": catalog},
-            {"type": "message", "role": "user", "content": user_input},
-        ]
-    else:
-        print("(No catalogue available — agent will answer without MEETINGS LIST context.)")
-        request_input = user_input
-
-    openai = project.get_openai_client()
-    stream = openai.responses.create(
-        stream=True,
-        tool_choice="auto",
-        input=request_input,
-        extra_body={"agent_reference": {"name": agent_name, "type": "agent_reference"}},
-        parallel_tool_calls=True,
-    )
-
-    for event in stream:
-        if event.type == "response.output_text.delta":
-            print(event.delta, end="", flush=True)
-        elif event.type == "response.output_item.done":
-            item = event.item
-            if item.type == "message" and item.content[-1].type == "output_text":
-                for annotation in item.content[-1].annotations:
-                    if annotation.type == "url_citation":
-                        print(
-                            f"\nURL Citation: {annotation.url} "
-                            f"[{annotation.start_index}:{annotation.end_index}]"
-                        )
-        elif event.type == "response.completed":
-            print()  # trailing newline after the streamed text
+        versions = list(project.agents.list_versions(agent_name=agent_name))
+    except Exception:
+        return False
+    return len(versions) > 0
 
 
 def main() -> int:
+    if_missing = "--if-missing" in sys.argv[1:]
     settings = load_settings()
     project = AIProjectClient(
         endpoint=settings["project_endpoint"],
         credential=DefaultAzureCredential(),
     )
-    agent = create_agent(project, settings)
-    smoke_test(project, agent.name)
+    if if_missing and _agent_has_versions(project, settings["agent_name"]):
+        print(
+            f"Agent {settings['agent_name']!r} already has versions; "
+            "skipping (--if-missing). Re-run without the flag to publish a new version."
+        )
+        return 0
+    create_agent(project, settings)
     return 0
 
 

@@ -19,22 +19,38 @@ services:
       remoteBuild: true
 
 hooks:
+  # Greenfield: provision the Foundry agent so the first deploy is functional
+  # without manual steps. --if-missing makes the hook idempotent on brownfield
+  # deploys (agent already has versions -> skip, preserves portal edits).
+  # Set SKIP_AGENT_SETUP=true to opt out entirely.
+  # AI Search index seeding is intentionally NOT run here - it is slow, data-
+  # heavy, and destructive on re-runs (see scripts/setup_aisearch_index.py).
   postprovision:
     windows:
       shell: pwsh
       run: |
         Write-Host "Provision complete. App URL: $env:SERVICE_APP_URI"
         Write-Host "Foundry endpoint: $env:AZURE_VOICELIVE_ENDPOINT"
+        if ($env:SKIP_AGENT_SETUP -eq "true") {
+          Write-Host "SKIP_AGENT_SETUP=true; skipping Foundry agent provisioning." -ForegroundColor Yellow
+        } else {
+          Write-Host "Provisioning Foundry agent (if missing)..." -ForegroundColor Cyan
+          uv run python scripts/setup_foundry_agent.py --if-missing
+        }
         Write-Host ""
-        Write-Host "Next steps before the app is functional:" -ForegroundColor Yellow
-        Write-Host "  1. Populate the Foundry agent: uv run python scripts/setup_foundry_agent.py"
-        Write-Host "  2. Populate the AI Search index: uv run python scripts/setup_aisearch_index.py"
+        Write-Host "Manual follow-up:" -ForegroundColor Yellow
+        Write-Host "  Populate the AI Search index: uv run python scripts/setup_aisearch_index.py"
     posix:
       shell: sh
       run: |
         echo "Provision complete. App URL: $SERVICE_APP_URI"
         echo "Foundry endpoint: $AZURE_VOICELIVE_ENDPOINT"
+        if [ "$SKIP_AGENT_SETUP" = "true" ]; then
+          echo "SKIP_AGENT_SETUP=true; skipping Foundry agent provisioning."
+        else
+          echo "Provisioning Foundry agent (if missing)..."
+          uv run python scripts/setup_foundry_agent.py --if-missing
+        fi
         echo ""
-        echo "Next steps before the app is functional:"
-        echo "  1. Populate the Foundry agent: uv run python scripts/setup_foundry_agent.py"
-        echo "  2. Populate the AI Search index: uv run python scripts/setup_aisearch_index.py"
+        echo "Manual follow-up:"
+        echo "  Populate the AI Search index: uv run python scripts/setup_aisearch_index.py"
