@@ -12,3 +12,5 @@
 node_modules
 assets
 scripts
+*.log
+.azd-*.log
