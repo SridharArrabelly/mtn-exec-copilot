@@ -17,7 +17,7 @@ param embeddingModelName string = 'text-embedding-3-small'
 param embeddingModelVersion string = '1'
 param embeddingDeploymentName string = 'text-embedding-3-small'
 @allowed([ 'Standard', 'GlobalStandard' ])
-param embeddingSkuName string = 'Standard'
+param embeddingSkuName string = 'GlobalStandard'
 param embeddingCapacity int = 50
 
 resource account 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
