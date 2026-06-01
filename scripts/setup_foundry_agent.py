@@ -273,10 +273,10 @@ def build_tools(search_connection_id: str, search_index_name: str) -> list:
     (the default) pulls back significantly more snippet text per source,
     which is overkill for exec-summary style answers.
     """
+    # Tool ORDER matters: gpt-5.4-mini at reasoning.effort=none biases hard
+    # toward the first tool. Put azure_ai_search first so MTN-meeting questions
+    # ground in the index instead of falling through to web_search.
     return [
-        WebSearchTool(user_location=WEB_SEARCH_LOCATION,
-                      search_context_size='low',
-                      ),
         AzureAISearchTool(
             azure_ai_search=AzureAISearchToolResource(
                 indexes=[
@@ -289,6 +289,9 @@ def build_tools(search_connection_id: str, search_index_name: str) -> list:
                 ]
             )
         ),
+        WebSearchTool(user_location=WEB_SEARCH_LOCATION,
+                      search_context_size='low',
+                      ),
     ]
 
 

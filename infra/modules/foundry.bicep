@@ -136,9 +136,9 @@ resource deployerAiDev 'Microsoft.Authorization/roleAssignments@2022-04-01' = if
 
 output accountId string = account.id
 output accountName string = account.name
-output accountEndpoint string = account.properties.endpoint
+output accountEndpoint string = 'https://${account.name}.services.ai.azure.com/'
 output projectName string = project.name
-output projectEndpoint string = '${account.properties.endpoint}api/projects/${project.name}'
+output projectEndpoint string = 'https://${account.name}.services.ai.azure.com/api/projects/${project.name}'
 output modelDeploymentName string = deployment.name
 output embeddingDeploymentName string = embeddingDeployment.name
 

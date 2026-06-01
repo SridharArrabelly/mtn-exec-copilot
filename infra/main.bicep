@@ -10,6 +10,9 @@ param environmentName string
 @description('Azure region for all resources.')
 param location string
 
+@description('Region for the Foundry account+project. Leave empty to reuse location. Use a Voice Live supported region (eastus2, swedencentral, southeastasia, centralindia, westus2) if location is not one.')
+param foundryLocation string = ''
+
 @minLength(1)
 @maxLength(90)
 @description('Name of the resource group to create / deploy into.')
@@ -73,6 +76,7 @@ module resources 'resources.bicep' = {
   scope: rg
   params: {
     location: location
+    foundryLocation: empty(foundryLocation) ? location : foundryLocation
     environmentName: environmentName
     resourceToken: resourceToken
     tags: tags

@@ -2,6 +2,8 @@
 targetScope = 'resourceGroup'
 
 param location string
+@description('Region for the Foundry account+project (defaults to location).')
+param foundryLocation string = location
 param environmentName string
 param resourceToken string
 param tags object
@@ -100,7 +102,7 @@ module foundry 'modules/foundry.bicep' = if (createFoundry) {
   params: {
     accountName: toLower('${abbrs.cognitiveServices}-${environmentName}-${resourceToken}')
     projectName: 'proj-${environmentName}'
-    location: location
+    location: foundryLocation
     tags: tags
     uamiPrincipalId: uami.outputs.principalId
     deployerPrincipalId: principalId
@@ -165,7 +167,7 @@ module app 'modules/containerApp.bicep' = {
     voiceliveEndpoint: foundryEndpointEffective
     projectEndpoint: foundryProjectEndpointEffective
     agentName: agentName
-    agentProjectName: agentProjectName
+    agentProjectName: createFoundry ? 'proj-${environmentName}' : agentProjectName
     searchConnectionName: searchConnectionName
     searchIndexName: searchIndexNameEffective
     searchEndpoint: searchEndpointEffective

@@ -158,6 +158,30 @@ The repository ships a complete [Azure Developer CLI](https://learn.microsoft.co
 - An Azure subscription with **Owner** (or Contributor + User Access Administrator) on the target subscription — the template grants RBAC roles
 - Docker (only required if you want to run `azd deploy` locally; remote build via ACR is also supported)
 
+#### Pre-deployment checks (run this first)
+
+Two things have caused silent failures in past deployments:
+
+1. **Voice Live (preview) is only available in a small set of regions** — `eastus2`, `swedencentral`, `southeastasia`, `centralindia`, `westus2`. Deploying the Foundry account anywhere else lets the WebSocket connect and the MI token succeed, then the server closes the socket within ~2 seconds with no error event. The app surfaces this as `SESSION_UPDATED event not received`.
+2. **TTS Avatar is only available in** `eastus2`, `westus2`, `northeurope`, `westeurope`, `swedencentral`, `southeastasia`.
+
+Run the preflight before `azd up`:
+
+```bash
+# All-in-one (Foundry in same region as everything else)
+uv run python scripts/preflight.py --location <your-region>
+
+# Split regions (e.g. app stack in southafricanorth, Foundry+VoiceLive in eastus2)
+uv run python scripts/preflight.py --location southafricanorth --voicelive-location eastus2
+```
+
+If your primary `AZURE_LOCATION` is NOT a Voice Live region, set `FOUNDRY_LOCATION` to one that is — the Foundry account+project (and the avatar voice path) will be created there while the rest of the stack stays in `AZURE_LOCATION`:
+
+```bash
+azd env set AZURE_LOCATION   southafricanorth
+azd env set FOUNDRY_LOCATION eastus2
+```
+
 #### Deploy
 
 > **Greenfield only - load your documents first.** The `postprovision` hook indexes every `data/*.docx` into the freshly-created AI Search service. Drop your documents into [`data/`](data/) **before** running `azd up`; otherwise the index will be empty and you will need to rerun `scripts/setup_aisearch_index.py` manually. BYO Search deployments skip this step.
