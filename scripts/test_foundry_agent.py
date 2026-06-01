@@ -24,7 +24,6 @@ import os
 import sys
 from datetime import datetime
 
-from azure.ai.projects import AIProjectClient
 from azure.core.credentials import AzureKeyCredential
 from azure.identity import DefaultAzureCredential
 from azure.search.documents import SearchClient
@@ -122,7 +121,7 @@ def _fetch_catalog() -> str | None:
             pass
 
 
-def smoke_test(project: AIProjectClient, agent_name: str) -> None:
+def smoke_test(agent_name: str) -> None:
     """Prompt the user once and stream a response from the agent.
 
     Injects the MEETINGS LIST as a system message before the user's
@@ -155,21 +154,57 @@ def smoke_test(project: AIProjectClient, agent_name: str) -> None:
         print("(No catalogue available — agent will answer without MEETINGS LIST context.)")
         request_input = user_input
 
-    openai = project.get_openai_client()
+    # Foundry PromptAgents (and hosted agents) only surface their full
+    # server-side tool list (Azure AI Search, MCP, etc.) when invoked through
+    # the per-agent endpoint. The project-level OpenAI client with
+    # extra_body={"agent_reference": ...} only exposes universal tools
+    # (web_search), so the model never fires azure_ai_search. Point the
+    # OpenAI client at the agent endpoint directly — same path the Foundry
+    # playground uses.
+    from openai import OpenAI
+    project_endpoint = os.environ["PROJECT_ENDPOINT"].rstrip("/")
+    agent_base_url = f"{project_endpoint}/agents/{agent_name}/endpoint/protocols/openai"
+    cred = DefaultAzureCredential()
+    token = cred.get_token("https://ai.azure.com/.default").token
+    openai = OpenAI(
+        base_url=agent_base_url,
+        api_key=token,  # AAD token used as bearer
+        default_query={"api-version": "v1"},
+    )
     stream = openai.responses.create(
         stream=True,
         tool_choice="auto",
         input=request_input,
-        extra_body={"agent_reference": {"name": agent_name, "type": "agent_reference"}},
         parallel_tool_calls=True,
     )
 
     for event in stream:
         if event.type == "response.output_text.delta":
             print(event.delta, end="", flush=True)
+        elif event.type == "response.output_item.added":
+            item = event.item
+            itype = getattr(item, "type", "")
+            if itype.endswith("_call") and itype != "function_call":
+                # Foundry hosted tool calls: azure_ai_search_call, web_search_call, etc.
+                print(f"\n[tool-call:{itype}] starting", flush=True)
         elif event.type == "response.output_item.done":
             item = event.item
-            if item.type == "message" and item.content[-1].type == "output_text":
+            itype = getattr(item, "type", "")
+            if itype.endswith("_call") and itype != "function_call":
+                # Dump every non-private attribute so we can see query, status, results.
+                payload = {}
+                for attr in dir(item):
+                    if attr.startswith("_"):
+                        continue
+                    try:
+                        val = getattr(item, attr)
+                    except Exception:
+                        continue
+                    if callable(val):
+                        continue
+                    payload[attr] = val
+                print(f"[tool-call:{itype}] done -> {payload}", flush=True)
+            elif itype == "message" and item.content and item.content[-1].type == "output_text":
                 for annotation in item.content[-1].annotations:
                     if annotation.type == "url_citation":
                         print(
@@ -182,11 +217,7 @@ def smoke_test(project: AIProjectClient, agent_name: str) -> None:
 
 def main() -> int:
     settings = load_settings()
-    project = AIProjectClient(
-        endpoint=settings["project_endpoint"],
-        credential=DefaultAzureCredential(),
-    )
-    smoke_test(project, settings["agent_name"])
+    smoke_test(settings["agent_name"])
     return 0
 
 
