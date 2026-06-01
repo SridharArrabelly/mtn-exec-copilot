@@ -1,3 +1,4 @@
+
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 name: mtn-exec-copilot
 metadata:
@@ -24,17 +25,63 @@ hooks:
       shell: pwsh
       run: |
         Write-Host "Provision complete. App URL: $env:SERVICE_APP_URI"
-        Write-Host "Foundry endpoint: $env:AZURE_VOICELIVE_ENDPOINT"
+        Write-Host "Foundry endpoint:  $env:AZURE_VOICELIVE_ENDPOINT"
+        Write-Host "Project endpoint:  $env:PROJECT_ENDPOINT"
+        Write-Host "Search endpoint:   $env:AZURE_SEARCH_ENDPOINT"
         Write-Host ""
-        Write-Host "Next steps before the app is functional:" -ForegroundColor Yellow
-        Write-Host "  1. Populate the Foundry agent: uv run python scripts/setup_foundry_agent.py"
-        Write-Host "  2. Populate the AI Search index: uv run python scripts/setup_aisearch_index.py"
+
+        $greenfieldFoundry = [string]::IsNullOrWhiteSpace($env:EXISTING_FOUNDRY_ACCOUNT_NAME)
+        $greenfieldSearch  = [string]::IsNullOrWhiteSpace($env:EXISTING_SEARCH_SERVICE_NAME)
+
+        if ($greenfieldSearch) {
+          Write-Host "[greenfield] Building AI Search index from data/*.docx ..." -ForegroundColor Cyan
+          $docs = @(Get-ChildItem -Path data -Filter *.docx -ErrorAction SilentlyContinue)
+          if ($docs.Count -eq 0) {
+            Write-Warning "data/ has no .docx files - skipping index build. Drop your documents into data/ and run: uv run python scripts/setup_aisearch_index.py"
+          } else {
+            uv run python scripts/setup_aisearch_index.py
+            if ($LASTEXITCODE -ne 0) { Write-Warning "AI Search index build failed (exit $LASTEXITCODE). Run it manually after fixing the issue." }
+          }
+        } else {
+          Write-Host "[brownfield] Skipping AI Search index build - using existing index '$env:SEARCH_INDEX_NAME'." -ForegroundColor Yellow
+        }
+
+        if ($greenfieldFoundry) {
+          Write-Host "[greenfield] Creating Foundry agent '$env:AGENT_NAME' ..." -ForegroundColor Cyan
+          uv run python scripts/setup_foundry_agent.py
+          if ($LASTEXITCODE -ne 0) { Write-Warning "Foundry agent setup failed (exit $LASTEXITCODE). Run it manually after fixing the issue." }
+        } else {
+          Write-Host "[brownfield] Skipping Foundry agent creation - using existing agent '$env:AGENT_NAME'." -ForegroundColor Yellow
+        }
+
+        Write-Host ""
+        Write-Host "App ready: $env:SERVICE_APP_URI" -ForegroundColor Green
     posix:
       shell: sh
       run: |
         echo "Provision complete. App URL: $SERVICE_APP_URI"
-        echo "Foundry endpoint: $AZURE_VOICELIVE_ENDPOINT"
+        echo "Foundry endpoint:  $AZURE_VOICELIVE_ENDPOINT"
+        echo "Project endpoint:  $PROJECT_ENDPOINT"
+        echo "Search endpoint:   $AZURE_SEARCH_ENDPOINT"
         echo ""
-        echo "Next steps before the app is functional:"
-        echo "  1. Populate the Foundry agent: uv run python scripts/setup_foundry_agent.py"
-        echo "  2. Populate the AI Search index: uv run python scripts/setup_aisearch_index.py"
+
+        if [ -z "$EXISTING_SEARCH_SERVICE_NAME" ]; then
+          echo "[greenfield] Building AI Search index from data/*.docx ..."
+          if ls data/*.docx >/dev/null 2>&1; then
+            uv run python scripts/setup_aisearch_index.py || echo "WARN: AI Search index build failed. Re-run manually."
+          else
+            echo "WARN: data/ has no .docx files - skipping index build. Drop your documents into data/ and run: uv run python scripts/setup_aisearch_index.py"
+          fi
+        else
+          echo "[brownfield] Skipping AI Search index build - using existing index '$SEARCH_INDEX_NAME'."
+        fi
+
+        if [ -z "$EXISTING_FOUNDRY_ACCOUNT_NAME" ]; then
+          echo "[greenfield] Creating Foundry agent '$AGENT_NAME' ..."
+          uv run python scripts/setup_foundry_agent.py || echo "WARN: Foundry agent setup failed. Re-run manually."
+        else
+          echo "[brownfield] Skipping Foundry agent creation - using existing agent '$AGENT_NAME'."
+        fi
+
+        echo ""
+        echo "App ready: $SERVICE_APP_URI"

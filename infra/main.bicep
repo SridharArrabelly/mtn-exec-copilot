@@ -18,45 +18,39 @@ param resourceGroupName string
 @description('Object ID of the deploying principal (for direct role assignments, optional).')
 param principalId string = ''
 
-// ───────── BYO Foundry (skip provisioning if all three are provided) ─────────
-@description('Name of an existing Azure AI Foundry / Cognitive Services account.')
+// ───────── BYO Foundry ─────────
 param existingFoundryAccountName string = ''
-@description('Resource group of the existing Foundry account.')
 param existingFoundryResourceGroup string = ''
-@description('Endpoint of the existing Foundry project, e.g. https://<acct>.services.ai.azure.com/api/projects/<proj>.')
 param existingFoundryProjectEndpoint string = ''
 
-// ───────── BYO AI Search (skip provisioning if all three are provided) ─────────
-@description('Name of an existing Azure AI Search service.')
+// ───────── BYO AI Search ─────────
 param existingSearchServiceName string = ''
-@description('Resource group of the existing AI Search service.')
 param existingSearchResourceGroup string = ''
-@description('Existing AI Search index name.')
 param existingSearchIndexName string = ''
 
 // ───────── Application runtime config ─────────
-@description('Foundry Agent name used by the app.')
 param agentName string = 'MtnAvatarAgent'
-@description('Foundry project display name used by the app.')
 param agentProjectName string = 'mtn-execu-bot'
-@description('AI Search connection name (configured inside the Foundry project).')
 param searchConnectionName string = 'aisearch-mtn'
-@description('AI Search index name to query at runtime.')
 param searchIndexName string = 'mtn-board-index'
-@description('Default voice for Voice Live.')
 param voiceLiveVoice string = 'en-US-AvaMultilingualNeural'
 
-// ───────── Model deployment ─────────
-@description('OpenAI model name to deploy on the Foundry account.')
+// App runtime extras
+param agentModel string = 'gpt-5.4-mini'
+param embeddingDeployment string = 'text-embedding-3-small'
+param avatarName string = 'Lisa-casual-sitting'
+param customAvatarName string = ''
+param photoAvatarName string = ''
+param isPhotoAvatar string = 'false'
+param isCustomAvatar string = 'false'
+param avatarBackgroundImageUrl string = ''
+
+// ───────── Model deployment (used only when creating Foundry) ─────────
 param modelName string = 'gpt-5.4-mini'
-@description('Model version.')
 param modelVersion string = '2025-04-14'
-@description('Model deployment name (referenced by the agent).')
 param modelDeploymentName string = 'gpt-5.4-mini'
-@description('Model deployment SKU.')
 @allowed([ 'GlobalStandard', 'Standard', 'DataZoneStandard' ])
 param modelSkuName string = 'GlobalStandard'
-@description('Model deployment capacity (thousands of TPM).')
 param modelCapacity int = 50
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -101,6 +95,14 @@ module resources 'resources.bicep' = {
     modelDeploymentName: modelDeploymentName
     modelSkuName: modelSkuName
     modelCapacity: modelCapacity
+    agentModel: agentModel
+    embeddingDeployment: embeddingDeployment
+    avatarName: avatarName
+    customAvatarName: customAvatarName
+    photoAvatarName: photoAvatarName
+    isPhotoAvatar: isPhotoAvatar
+    isCustomAvatar: isCustomAvatar
+    avatarBackgroundImageUrl: avatarBackgroundImageUrl
   }
 }
 
@@ -119,6 +121,7 @@ output SERVICE_APP_IDENTITY_PRINCIPAL_ID string = resources.outputs.uamiPrincipa
 
 output AZURE_VOICELIVE_ENDPOINT string = resources.outputs.foundryEndpoint
 output PROJECT_ENDPOINT string = resources.outputs.foundryProjectEndpoint
+output AZURE_SEARCH_ENDPOINT string = resources.outputs.searchEndpoint
 output AGENT_NAME string = agentName
 output AGENT_PROJECT_NAME string = agentProjectName
 output SEARCH_CONNECTION_NAME string = searchConnectionName

@@ -30,6 +30,16 @@ param modelDeploymentName string
 param modelSkuName string
 param modelCapacity int
 
+// App runtime extras
+param agentModel string = ''
+param embeddingDeployment string = ''
+param avatarName string = ''
+param customAvatarName string = ''
+param photoAvatarName string = ''
+param isPhotoAvatar string = ''
+param isCustomAvatar string = ''
+param avatarBackgroundImageUrl string = ''
+
 var abbrs = loadJsonContent('abbreviations.json')
 
 // ───────── Identity ─────────
@@ -66,7 +76,6 @@ module appInsights 'modules/applicationInsights.bicep' = {
 module acr 'modules/containerRegistry.bicep' = {
   name: 'acr'
   params: {
-    // ACR names must be alphanumeric, 5-50 chars; strip dashes from envName.
     #disable-next-line BCP334
     name: toLower('${abbrs.containerRegistry}${replace(environmentName, '-', '')}${resourceToken}')
     location: location
@@ -136,6 +145,7 @@ module searchByoRoles 'modules/roleAssignmentsForeignSearch.bicep' = if (!create
 var foundryEndpointEffective = createFoundry ? foundry!.outputs.accountEndpoint : 'https://${existingFoundryAccountName}.services.ai.azure.com/'
 var foundryProjectEndpointEffective = createFoundry ? foundry!.outputs.projectEndpoint : existingFoundryProjectEndpoint
 var searchIndexNameEffective = createSearch ? searchIndexName : existingSearchIndexName
+var searchEndpointEffective = createSearch ? search!.outputs.endpoint : 'https://${existingSearchServiceName}.search.windows.net/'
 
 module app 'modules/containerApp.bicep' = {
   name: 'app'
@@ -153,8 +163,17 @@ module app 'modules/containerApp.bicep' = {
     agentProjectName: agentProjectName
     searchConnectionName: searchConnectionName
     searchIndexName: searchIndexNameEffective
+    searchEndpoint: searchEndpointEffective
     voiceLiveVoice: voiceLiveVoice
     appInsightsConnectionString: appInsights.outputs.connectionString
+    agentModel: agentModel
+    embeddingDeployment: embeddingDeployment
+    avatarName: avatarName
+    customAvatarName: customAvatarName
+    photoAvatarName: photoAvatarName
+    isPhotoAvatar: isPhotoAvatar
+    isCustomAvatar: isCustomAvatar
+    avatarBackgroundImageUrl: avatarBackgroundImageUrl
   }
 }
 
@@ -167,4 +186,5 @@ output containerAppUri string = app.outputs.uri
 output uamiPrincipalId string = uami.outputs.principalId
 output foundryEndpoint string = foundryEndpointEffective
 output foundryProjectEndpoint string = foundryProjectEndpointEffective
+output searchEndpoint string = searchEndpointEffective
 output appInsightsConnectionString string = appInsights.outputs.connectionString

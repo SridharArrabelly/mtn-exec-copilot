@@ -13,6 +13,18 @@ param searchConnectionName string
 param searchIndexName string
 param voiceLiveVoice string
 param appInsightsConnectionString string
+@description('Search service endpoint (https://<name>.search.windows.net/)')
+param searchEndpoint string = ''
+param agentModel string = ''
+param embeddingDeployment string = ''
+param avatarName string = ''
+param customAvatarName string = ''
+param photoAvatarName string = ''
+@description('"true"/"false" string — frontend treats prebuilt as photo avatar when "true".')
+param isPhotoAvatar string = ''
+@description('"true"/"false" string — frontend treats avatar as custom when "true".')
+param isCustomAvatar string = ''
+param avatarBackgroundImageUrl string = ''
 
 @description('Placeholder image used on first provision; azd replaces it during `azd deploy`.')
 param containerImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
@@ -34,7 +46,6 @@ resource app 'Microsoft.App/containerApps@2024-10-02-preview' = {
         targetPort: 3000
         transport: 'auto'
         allowInsecure: false
-        // WebSocket-friendly: long sticky-ish session via sessionAffinity off; ACA handles WS natively.
         corsPolicy: {
           allowedOrigins: [ '*' ]
           allowedMethods: [ 'GET','POST','PUT','DELETE','OPTIONS' ]
@@ -60,13 +71,23 @@ resource app 'Microsoft.App/containerApps@2024-10-02-preview' = {
           env: [
             { name: 'PORT', value: '3000' }
             { name: 'AZURE_CLIENT_ID', value: uamiClientId }
+            { name: 'DEVELOPER_MODE', value: 'false' }
             { name: 'AZURE_VOICELIVE_ENDPOINT', value: voiceliveEndpoint }
             { name: 'PROJECT_ENDPOINT', value: projectEndpoint }
             { name: 'AGENT_NAME', value: agentName }
             { name: 'AGENT_PROJECT_NAME', value: agentProjectName }
+            { name: 'AGENT_MODEL', value: agentModel }
+            { name: 'EMBEDDING_DEPLOYMENT', value: embeddingDeployment }
+            { name: 'AZURE_SEARCH_ENDPOINT', value: searchEndpoint }
             { name: 'SEARCH_CONNECTION_NAME', value: searchConnectionName }
             { name: 'SEARCH_INDEX_NAME', value: searchIndexName }
             { name: 'VOICELIVE_VOICE', value: voiceLiveVoice }
+            { name: 'AVATAR_NAME', value: avatarName }
+            { name: 'CUSTOM_AVATAR_NAME', value: customAvatarName }
+            { name: 'PHOTO_AVATAR_NAME', value: photoAvatarName }
+            { name: 'IS_PHOTO_AVATAR', value: isPhotoAvatar }
+            { name: 'IS_CUSTOM_AVATAR', value: isCustomAvatar }
+            { name: 'AVATAR_BACKGROUND_IMAGE_URL', value: avatarBackgroundImageUrl }
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
           ]
           probes: [
@@ -86,8 +107,6 @@ resource app 'Microsoft.App/containerApps@2024-10-02-preview' = {
         rules: [
           {
             name: 'http-scaler'
-            // Long-lived WebSocket = 1 "request" for the entire voice session.
-            // Threshold of 10 triggers scale-out before voice latency degrades.
             http: { metadata: { concurrentRequests: '10' } }
           }
         ]

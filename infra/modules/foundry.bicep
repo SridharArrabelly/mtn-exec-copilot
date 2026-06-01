@@ -12,6 +12,13 @@ param modelVersion string
 param modelDeploymentName string
 param modelSkuName string
 param modelCapacity int
+@description('Embedding model deployment (used by setup_aisearch_index.py to vectorize data/*.docx).')
+param embeddingModelName string = 'text-embedding-3-small'
+param embeddingModelVersion string = '1'
+param embeddingDeploymentName string = 'text-embedding-3-small'
+@allowed([ 'Standard', 'GlobalStandard' ])
+param embeddingSkuName string = 'Standard'
+param embeddingCapacity int = 50
 
 resource account 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
   name: accountName
@@ -58,6 +65,29 @@ resource deployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01
   }
 }
 
+// Embedding deployment (required by scripts/setup_aisearch_index.py).
+// `dependsOn: [deployment]` serializes the two creates — CS accounts return 409
+// when multiple `accounts/deployments` are submitted in parallel against the
+// same parent account.
+resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = {
+  parent: account
+  name: embeddingDeploymentName
+  sku: {
+    name: embeddingSkuName
+    capacity: embeddingCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: embeddingModelName
+      version: embeddingModelVersion
+    }
+    raiPolicyName: 'Microsoft.DefaultV2'
+    versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
+  }
+  dependsOn: [ deployment ]
+}
+
 // Role IDs
 var cogServicesUserRoleId = 'a97b65f3-24c7-4388-baec-2e87135dc908' // Cognitive Services User
 var aiDeveloperRoleId = '64702f94-c441-49e6-a78b-ef80e0188fee'    // Azure AI Developer
@@ -101,3 +131,4 @@ output accountEndpoint string = account.properties.endpoint
 output projectName string = project.name
 output projectEndpoint string = '${account.properties.endpoint}api/projects/${project.name}'
 output modelDeploymentName string = deployment.name
+output embeddingDeploymentName string = embeddingDeployment.name

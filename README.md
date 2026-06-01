@@ -160,6 +160,8 @@ The repository ships a complete [Azure Developer CLI](https://learn.microsoft.co
 
 #### Deploy
 
+> **Greenfield only - load your documents first.** The `postprovision` hook indexes every `data/*.docx` into the freshly-created AI Search service. Drop your documents into [`data/`](data/) **before** running `azd up`; otherwise the index will be empty and you will need to rerun `scripts/setup_aisearch_index.py` manually. BYO Search deployments skip this step.
+
 ```bash
 # 1. Authenticate
 az login
@@ -316,11 +318,18 @@ The Bicep template accepts overrides via azd environment variables — set any o
 
 #### Post-deploy steps
 
-The infra creates an empty Foundry agent and empty Search index. To make the app functional, run these one-off scripts (point your local `.env` at the new endpoints, e.g. via `azd env get-values`):
+For **greenfield** deployments (template provisions Foundry + Search) the `postprovision` hook in [azure.yaml](azure.yaml) runs both setup scripts automatically:
+
+- `scripts/setup_aisearch_index.py` - chunks + embeds every `data/*.docx` and builds the AI Search index. **Drop your documents into `data/` BEFORE running `azd up`** - otherwise the hook prints a warning and you must run it manually after adding files.
+- `scripts/setup_foundry_agent.py` - registers the Foundry agent (`AGENT_NAME`) with the AI Search + web-search tools.
+
+For **brownfield** (BYO Foundry / Search) the hook skips both - your existing agent and index are reused as-is.
+
+You can always rerun them manually (point your local `.env` at the deployed endpoints via `azd env get-values`):
 
 ```bash
-uv run python scripts/setup_aisearch_index.py     # builds the index
-uv run python scripts/setup_foundry_agent.py      # registers the agent + tools
+uv run python scripts/setup_aisearch_index.py     # rebuild the index
+uv run python scripts/setup_foundry_agent.py      # re-register the agent + tools
 ```
 
 #### CI/CD with GitHub Actions

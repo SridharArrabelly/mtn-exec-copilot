@@ -21,10 +21,19 @@
     "searchIndexName":     { "value": "${SEARCH_INDEX_NAME=mtn-board-index}" },
     "voiceLiveVoice":      { "value": "${VOICELIVE_VOICE=en-US-AvaMultilingualNeural}" },
 
-    "modelName":           { "value": "${MODEL_NAME}" },
-    "modelVersion":        { "value": "${MODEL_VERSION}" },
-    "modelDeploymentName": { "value": "${MODEL_DEPLOYMENT_NAME}" },
+    "agentModel":             { "value": "${AGENT_MODEL=gpt-4.1-mini}" },
+    "embeddingDeployment":    { "value": "${EMBEDDING_DEPLOYMENT=text-embedding-3-small}" },
+    "avatarName":             { "value": "${AVATAR_NAME=Lisa-casual-sitting}" },
+    "customAvatarName":       { "value": "${CUSTOM_AVATAR_NAME=}" },
+    "photoAvatarName":        { "value": "${PHOTO_AVATAR_NAME=}" },
+    "isPhotoAvatar":          { "value": "${IS_PHOTO_AVATAR=false}" },
+    "isCustomAvatar":         { "value": "${IS_CUSTOM_AVATAR=false}" },
+    "avatarBackgroundImageUrl": { "value": "${AVATAR_BACKGROUND_IMAGE_URL=}" },
+
+    "modelName":           { "value": "${MODEL_NAME=gpt-4.1-mini}" },
+    "modelVersion":        { "value": "${MODEL_VERSION=2025-04-14}" },
+    "modelDeploymentName": { "value": "${MODEL_DEPLOYMENT_NAME=gpt-4.1-mini}" },
     "modelSkuName":        { "value": "${MODEL_SKU_NAME=GlobalStandard}" },
-    "modelCapacity":       { "value": ${MODEL_CAPACITY=50} }
+    "modelCapacity":       { "value": 50 }
   }
 }
