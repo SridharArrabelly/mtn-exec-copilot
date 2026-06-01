@@ -126,7 +126,7 @@ def _get_enum(name: str, default: str, allowed: tuple) -> str:
     return raw
 
 
-_SR_MODELS = ("azure-speech", "mai-ears-1")
+_SR_MODELS = ("azure-speech", "mai-transcribe-1")
 _TURN_DETECTION_TYPES = ("azure_semantic_vad", "server_vad")
 _EOU_DETECTION_TYPES = ("semantic_detection_v1", "semantic_detection_v1_multilingual", "none")
 _VOICE_TYPES = ("standard", "custom", "personal")
@@ -220,7 +220,7 @@ def apply_resolver_rules(raw: dict) -> dict:
     developer mode (so dev sidebar overrides can't defeat the rules).
 
     Rules applied here:
-      1. ``srModel == "mai-ears-1"`` → force ``recognitionLanguage = "auto"``.
+      1. ``srModel == "mai-transcribe-1"`` → force ``recognitionLanguage = "auto"``.
          Matches ``handler.py:150-151`` which already enforces this at
          session-build time; surfacing it here makes ``/api/config`` honest.
       2. Voice type cascade — blank dependent string fields the chosen type
@@ -255,8 +255,8 @@ def apply_resolver_rules(raw: dict) -> dict:
     """
     out = dict(raw)
 
-    # Rule 1: SR model mai-ears-1 ignores any language override.
-    if out.get("srModel") == "mai-ears-1":
+    # Rule 1: SR model mai-transcribe-1 ignores any language override.
+    if out.get("srModel") == "mai-transcribe-1":
         out["recognitionLanguage"] = "auto"
 
     # Rule 2: voice type cascade — blank dependent string fields.
