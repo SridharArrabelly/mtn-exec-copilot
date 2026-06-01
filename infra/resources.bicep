@@ -109,6 +109,10 @@ module foundry 'modules/foundry.bicep' = if (createFoundry) {
     modelDeploymentName: modelDeploymentName
     modelSkuName: modelSkuName
     modelCapacity: modelCapacity
+    searchServiceName: createSearch ? search!.outputs.name : ''
+    searchEndpoint: createSearch ? search!.outputs.endpoint : ''
+    searchResourceId: createSearch ? search!.outputs.id : ''
+    searchConnectionName: createSearch ? searchConnectionName : ''
   }
 }
 
@@ -129,6 +133,7 @@ module search 'modules/aiSearch.bicep' = if (createSearch) {
     location: location
     tags: tags
     uamiPrincipalId: uami.outputs.principalId
+    deployerPrincipalId: principalId
   }
 }
 
