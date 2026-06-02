@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # Cache TTL: short enough that newly-ingested meetings appear within a
 # few minutes; long enough that bursts of session connects share one fetch.
-_CACHE_TTL_S = int(os.getenv("MEETING_CATALOG_TTL_S", "300"))
+_CACHE_TTL_S = int(os.getenv("MEETING_CATALOG_TTL_S", "900"))
 
 # (value, monotonic-timestamp) tuple. value is None until first successful fetch.
 _cache: tuple[Optional[str], float] = (None, 0.0)
@@ -46,7 +46,17 @@ def _format_date(iso_date: str) -> str:
         return iso_date
 
 
-def _make_search_client() -> Optional[SearchClient]:
+# Single process-wide SearchClient + credential. azure-identity caches AAD
+# tokens internally per-scope, and SearchClient holds a long-lived aiohttp
+# session, so reusing one instance saves ~200-500ms per refresh (no new TLS
+# handshake, no fresh token chain walk).
+_search_client: Optional[SearchClient] = None
+
+
+def _get_search_client() -> Optional[SearchClient]:
+    global _search_client
+    if _search_client is not None:
+        return _search_client
     endpoint = os.getenv("AZURE_SEARCH_ENDPOINT", "").strip().rstrip("/")
     index = os.getenv("SEARCH_INDEX_NAME", "").strip()
     if not endpoint or not index:
@@ -57,7 +67,8 @@ def _make_search_client() -> Optional[SearchClient]:
         return None
     api_key = os.getenv("AZURE_SEARCH_API_KEY", "").strip()
     credential = AzureKeyCredential(api_key) if api_key else create_credential("")
-    return SearchClient(endpoint=endpoint, index_name=index, credential=credential)
+    _search_client = SearchClient(endpoint=endpoint, index_name=index, credential=credential)
+    return _search_client
 
 
 async def _fetch_catalog() -> Optional[str]:
@@ -71,7 +82,7 @@ async def _fetch_catalog() -> Optional[str]:
     ~100+ chunks. This is dramatically cheaper than ``search_text='*'``
     with ``top=1000`` followed by client-side dedup.
     """
-    client = _make_search_client()
+    client = _get_search_client()
     if client is None:
         return None
     started = time.monotonic()
@@ -147,11 +158,8 @@ async def _fetch_catalog() -> Optional[str]:
     except Exception as e:
         logger.warning("Catalog: fetch failed: %s", e)
         return None
-    finally:
-        try:
-            await client.close()
-        except Exception:
-            pass
+    # Note: do NOT close `client` here — it is a process-wide singleton
+    # reused across refreshes. It is closed on app shutdown if needed.
 
 
 async def get_meeting_catalog(*, force_refresh: bool = False) -> Optional[str]:
