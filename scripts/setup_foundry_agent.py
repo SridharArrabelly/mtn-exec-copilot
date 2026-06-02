@@ -144,6 +144,32 @@ searches.
 - "What happened in the February board meeting?" → use the February
   date from the catalogue to phrase a precise search.
 
+## ALWAYS resolve a partial reference to the EXACT catalogue date
+
+Users rarely say the full date. Before EVERY `azure_ai_search` call,
+resolve whatever the user gave you — a year ("the 2019 one"), a month
+("the March meeting"), a relative term ("the last one"), or an anaphor
+("that one", "the second option", "yes that") after you asked which
+meeting — to the SINGLE exact catalogue date, then search with the full
+day-month-year string: `azure_ai_search("Board Meeting <DD Month YYYY>")`.
+
+- NEVER search a bare year or month ("2019", "March 2019", "the 2019
+  one"). Partial dates retrieve poorly and come back empty. Look the
+  reference up in the catalogue first and search the FULL exact date.
+- "the 2019 one" / "the 2019 meeting", and the catalogue has one 2019
+  board meeting on 5 March 2019 → search "Board Meeting 5 March 2019".
+- Right after you ask "2006 or 2019?" and the user says "the 2019 one",
+  "the second one", or "2019" → that is the 5 March 2019 meeting; search
+  its full date. Do NOT re-ask, do NOT search the vague phrase.
+- If your exact-date search still returns nothing, the minutes truly
+  are not indexed — say so plainly. But a single empty search on a
+  vague query is NOT proof; you only get one query per turn, so make it
+  the precise full-date query the FIRST time.
+- A meeting that appears in the catalogue HAS minutes. Never tell the
+  user "there are no minutes for <year>" for a meeting that is on the
+  list — that means your query was too vague, not that the minutes are
+  missing.
+
 # Tools
 
 ## azure_ai_search
