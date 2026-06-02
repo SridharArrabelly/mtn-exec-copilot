@@ -52,6 +52,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from azure.identity.aio import DefaultAzureCredential
 from dotenv import load_dotenv
@@ -346,10 +347,17 @@ async def one_trial(
     test: TestCase,
     *,
     mode: str,
+    router_client: Optional[AsyncOpenAI],
     router_model: Optional[str],
 ) -> TrialResult:
     """Run one trial. In router mode this may include a clarification
-    round; in baseline mode it's a single agent call with no hint."""
+    round; in baseline mode it's a single agent call with no hint.
+
+    ``client`` is the AGENT endpoint client (used for the actual dispatch
+    in both modes). ``router_client`` is a SEPARATE plain-model client
+    pointed at a project model deployment (e.g. gpt-4.1-mini); the agent
+    endpoint forbids a per-request ``model=`` so the planner must not run
+    against it."""
     if mode == "baseline":
         first, tools, ms, chars, err = await _call_agent_once(
             client, catalog, test.query,
@@ -366,7 +374,7 @@ async def one_trial(
     # Router mode -----------------------------------------------------------
     history: list[dict] = []
     decision = await route(test.query, history=history, catalog=catalog,
-                           client=client, model=router_model)
+                           client=router_client, model=router_model)
 
     clarify_correct: Optional[bool] = None
     if test.category == "clarify":
@@ -400,7 +408,7 @@ async def one_trial(
             {"role": "assistant", "content": decision.clarify_question or ""},
         ]
         decision2 = await route(test.follow_up, history=history,
-                                catalog=catalog, client=client, model=router_model)
+                                catalog=catalog, client=router_client, model=router_model)
         # We grade against the SECOND decision (which should now dispatch).
         final_decision = decision2
         final_user_query = decision2.refined_query or test.follow_up
@@ -549,8 +557,12 @@ async def amain() -> int:
     parser.add_argument("--only", type=str, default=None,
                         help="Comma-separated category subset (e.g. 'internal,both').")
     parser.add_argument("--router-model", type=str,
-                        default=os.getenv("ROUTER_MODEL") or os.getenv("AGENT_MODEL", "gpt-5.4-mini"),
-                        help="Model used by the pre-router planner in --mode router.")
+                        default=os.getenv("ROUTER_MODEL", "gpt-4.1-mini"),
+                        help="Model DEPLOYMENT name used by the pre-router planner "
+                             "in --mode router. Must be a plain (non-agent) deployment "
+                             "on the project resource. Default gpt-4.1-mini (small, "
+                             "non-reasoning) — runs against the resource /openai/v1 "
+                             "endpoint, NOT the agent endpoint.")
     parser.add_argument("--sleep", type=float, default=4.0,
                         help="Seconds between trials (rate-limit safety; default 4s).")
     args = parser.parse_args()
@@ -582,6 +594,27 @@ async def amain() -> int:
         default_query={"api-version": "v1"},
     )
 
+    # Pre-router planner client (router mode only). The agent endpoint
+    # forbids a per-request ``model=`` (same failure class as ``reasoning``),
+    # so the planner runs against the plain model-inference surface on the
+    # SAME resource: ``https://<resource>.services.ai.azure.com/openai/v1/``.
+    # Token audience differs from the agent endpoint (cognitiveservices).
+    router_client: Optional[AsyncOpenAI] = None
+    if args.mode == "router":
+        resource_host = urlparse(project_endpoint).netloc
+        model_base_url = (
+            os.getenv("ROUTER_BASE_URL")
+            or f"https://{resource_host}/openai/v1/"
+        )
+        router_token = (
+            await cred.get_token("https://cognitiveservices.azure.com/.default")
+        ).token
+        router_client = AsyncOpenAI(
+            base_url=model_base_url, api_key=router_token,
+            default_query={"api-version": os.getenv("ROUTER_API_VERSION", "preview")},
+        )
+        print(f"Router planner: model={args.router_model} @ {model_base_url}")
+
     results: list[TrialResult] = []
     for ti, test in enumerate(tests, start=1):
         print(f"\n[{ti}/{len(tests)}] [{test.category}] {test.query}")
@@ -596,6 +629,7 @@ async def amain() -> int:
             r = await one_trial(
                 client, catalog, test,
                 mode=args.mode,
+                router_client=router_client,
                 router_model=args.router_model if args.mode == "router" else None,
             )
             results.append(r)
