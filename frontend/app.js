@@ -1247,6 +1247,7 @@ function preparePeerConnection(iceServers) {
     // at PC construction time, so by the time we createOffer() the candidates are
     // mostly gathered. Cuts cold-start gathering latency.
     const pc = new RTCPeerConnection({ iceServers: iceConfig, iceCandidatePoolSize: 4 });
+    attachAvatarConnectionMonitor(pc);
     let iceGatheringDone = false;
 
     // Handle incoming tracks (video and audio)
@@ -1367,6 +1368,7 @@ function setupWebRTC(iceServers) {
 
     // See preparePeerConnection() for why iceCandidatePoolSize is set.
     peerConnection = new RTCPeerConnection({ iceServers: iceConfig, iceCandidatePoolSize: 4 });
+    attachAvatarConnectionMonitor(peerConnection);
 
     // Handle incoming tracks (video and audio)
     peerConnection.ontrack = (event) => {
@@ -1462,11 +1464,36 @@ function handleAvatarSdpAnswer(serverSdpBase64) {
         peerConnection.setRemoteDescription(new RTCSessionDescription(serverSdpObj)).then(() => {
             console.log('[WebRTC] Remote SDP set');
         }).catch(err => {
+            // A failed setRemoteDescription leaves the avatar permanently frozen
+            // with no video. Surface it instead of swallowing it silently.
             console.error('SDP answer error', err);
+            addMessage('system', 'The avatar could not start (connection negotiation failed). You can keep talking with audio, or reconnect to retry the avatar.');
         });
     } catch (e) {
         console.error('Failed to parse server SDP', e);
+        addMessage('system', 'The avatar could not start (invalid connection answer). You can keep talking with audio, or reconnect to retry the avatar.');
     }
+}
+
+// Watch the peer connection and surface a terminal WebRTC failure to the user.
+// Without this, a dropped/failed ICE negotiation just leaves the avatar frozen
+// with no feedback ("sometimes unresponsive"). Attached to every PC we build.
+function attachAvatarConnectionMonitor(pc) {
+    if (!pc || pc._avatarMonitorAttached) return;
+    pc._avatarMonitorAttached = true;
+    let notified = false;
+    const onFail = (label) => {
+        if (notified) return;
+        notified = true;
+        console.error('[WebRTC] avatar connection ' + label);
+        addMessage('system', 'The avatar connection dropped. You can keep talking with audio, or reconnect to retry the avatar.');
+    };
+    pc.addEventListener('iceconnectionstatechange', () => {
+        if (pc.iceConnectionState === 'failed') onFail('iceConnectionState=failed');
+    });
+    pc.addEventListener('connectionstatechange', () => {
+        if (pc.connectionState === 'failed') onFail('connectionState=failed');
+    });
 }
 
 function cleanupWebRTC() {

@@ -25,10 +25,10 @@
     "agentModel":             { "value": "${AGENT_MODEL=gpt-4.1-mini}" },
     "embeddingDeployment":    { "value": "${EMBEDDING_DEPLOYMENT=text-embedding-3-small}" },
     "avatarName":             { "value": "${AVATAR_NAME=Lisa-casual-sitting}" },
-    "customAvatarName":       { "value": "${CUSTOM_AVATAR_NAME=}" },
+    "customAvatarName":       { "value": "${CUSTOM_AVATAR_NAME=Nuru}" },
     "photoAvatarName":        { "value": "${PHOTO_AVATAR_NAME=}" },
-    "isPhotoAvatar":          { "value": "${IS_PHOTO_AVATAR=false}" },
-    "isCustomAvatar":         { "value": "${IS_CUSTOM_AVATAR=false}" },
+    "isPhotoAvatar":          { "value": "${IS_PHOTO_AVATAR=true}" },
+    "isCustomAvatar":         { "value": "${IS_CUSTOM_AVATAR=true}" },
     "avatarBackgroundImageUrl": { "value": "${AVATAR_BACKGROUND_IMAGE_URL=}" },
 
     "modelName":           { "value": "${MODEL_NAME=gpt-4.1-mini}" },
