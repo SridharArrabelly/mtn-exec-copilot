@@ -17,8 +17,17 @@ param embeddingModelName string = 'text-embedding-3-small'
 param embeddingModelVersion string = '1'
 param embeddingDeploymentName string = 'text-embedding-3-small'
 @allowed([ 'Standard', 'GlobalStandard' ])
-param embeddingSkuName string = 'Standard'
+param embeddingSkuName string = 'GlobalStandard'
 param embeddingCapacity int = 50
+
+@description('Search service name to link as a Foundry project connection (optional). Leave empty to skip.')
+param searchServiceName string = ''
+@description('Search service endpoint (https://<name>.search.windows.net/). Required when searchServiceName is set.')
+param searchEndpoint string = ''
+@description('Search service resource ID. Required when searchServiceName is set.')
+param searchResourceId string = ''
+@description('Name of the project connection created for the search service.')
+param searchConnectionName string = ''
 
 resource account 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
   name: accountName
@@ -125,10 +134,28 @@ resource deployerAiDev 'Microsoft.Authorization/roleAssignments@2022-04-01' = if
   }
 }
 
+output projectPrincipalId string = project.identity.principalId
 output accountId string = account.id
 output accountName string = account.name
-output accountEndpoint string = account.properties.endpoint
+output accountEndpoint string = 'https://${account.name}.services.ai.azure.com/'
 output projectName string = project.name
-output projectEndpoint string = '${account.properties.endpoint}api/projects/${project.name}'
+output projectEndpoint string = 'https://${account.name}.services.ai.azure.com/api/projects/${project.name}'
 output modelDeploymentName string = deployment.name
 output embeddingDeploymentName string = embeddingDeployment.name
+
+// Foundry project connection to AI Search (greenfield wiring; setup_foundry_agent.py looks this up by name)
+resource searchConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2025-04-01-preview' = if (!empty(searchServiceName) && !empty(searchEndpoint) && !empty(searchResourceId) && !empty(searchConnectionName)) {
+  parent: project
+  name: searchConnectionName
+  properties: {
+    category: 'CognitiveSearch'
+    target: searchEndpoint
+    authType: 'AAD'
+    isSharedToAll: true
+    metadata: {
+      ApiType: 'Azure'
+      ResourceId: searchResourceId
+      Location: location
+    }
+  }
+}

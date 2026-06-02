@@ -4,6 +4,7 @@
   "parameters": {
     "environmentName": { "value": "${AZURE_ENV_NAME}" },
     "location":        { "value": "${AZURE_LOCATION}" },
+    "foundryLocation": { "value": "${FOUNDRY_LOCATION=}" },
     "resourceGroupName": { "value": "${AZURE_RESOURCE_GROUP_NAME}" },
     "principalId":     { "value": "${AZURE_PRINCIPAL_ID=}" },
 

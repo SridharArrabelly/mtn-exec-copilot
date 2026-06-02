@@ -2,6 +2,8 @@
 targetScope = 'resourceGroup'
 
 param location string
+@description('Region for the Foundry account+project (defaults to location).')
+param foundryLocation string = location
 param environmentName string
 param resourceToken string
 param tags object
@@ -100,7 +102,7 @@ module foundry 'modules/foundry.bicep' = if (createFoundry) {
   params: {
     accountName: toLower('${abbrs.cognitiveServices}-${environmentName}-${resourceToken}')
     projectName: 'proj-${environmentName}'
-    location: location
+    location: foundryLocation
     tags: tags
     uamiPrincipalId: uami.outputs.principalId
     deployerPrincipalId: principalId
@@ -109,6 +111,10 @@ module foundry 'modules/foundry.bicep' = if (createFoundry) {
     modelDeploymentName: modelDeploymentName
     modelSkuName: modelSkuName
     modelCapacity: modelCapacity
+    searchServiceName: createSearch ? search!.outputs.name : ''
+    searchEndpoint: createSearch ? search!.outputs.endpoint : ''
+    searchResourceId: createSearch ? search!.outputs.id : ''
+    searchConnectionName: createSearch ? searchConnectionName : ''
   }
 }
 
@@ -129,6 +135,7 @@ module search 'modules/aiSearch.bicep' = if (createSearch) {
     location: location
     tags: tags
     uamiPrincipalId: uami.outputs.principalId
+    deployerPrincipalId: principalId
   }
 }
 
@@ -138,6 +145,24 @@ module searchByoRoles 'modules/roleAssignmentsForeignSearch.bicep' = if (!create
   params: {
     searchServiceName: existingSearchServiceName
     uamiPrincipalId: uami.outputs.principalId
+  }
+}
+
+// Grant Foundry project SMI Search RBAC for the agents azure_ai_search tool (greenfield search only).
+module searchRoleForProject 'modules/searchRoleForProject.bicep' = if (createSearch && createFoundry) {
+  name: 'search-role-for-foundry-project'
+  params: {
+    searchServiceName: search!.outputs.name
+    foundryProjectPrincipalId: foundry!.outputs.projectPrincipalId
+  }
+}
+
+// Grant Search service SMI Cognitive Services OpenAI User on Foundry account (vectorizer query-time embeddings).
+module foundryRoleForSearch 'modules/foundryRoleForSearch.bicep' = if (createSearch && createFoundry) {
+  name: 'foundry-role-for-search'
+  params: {
+    foundryAccountName: foundry!.outputs.accountName
+    searchPrincipalId: search!.outputs.principalId
   }
 }
 
@@ -160,7 +185,7 @@ module app 'modules/containerApp.bicep' = {
     voiceliveEndpoint: foundryEndpointEffective
     projectEndpoint: foundryProjectEndpointEffective
     agentName: agentName
-    agentProjectName: agentProjectName
+    agentProjectName: createFoundry ? 'proj-${environmentName}' : agentProjectName
     searchConnectionName: searchConnectionName
     searchIndexName: searchIndexNameEffective
     searchEndpoint: searchEndpointEffective
@@ -188,3 +213,5 @@ output foundryEndpoint string = foundryEndpointEffective
 output foundryProjectEndpoint string = foundryProjectEndpointEffective
 output searchEndpoint string = searchEndpointEffective
 output appInsightsConnectionString string = appInsights.outputs.connectionString
+output effectiveAgentProjectName string = createFoundry ? 'proj-${environmentName}' : agentProjectName
+

@@ -10,6 +10,9 @@ param environmentName string
 @description('Azure region for all resources.')
 param location string
 
+@description('Region for the Foundry account+project. Leave empty to reuse location. Use a Voice Live supported region (eastus2, swedencentral, southeastasia, centralindia, westus2) if location is not one.')
+param foundryLocation string = ''
+
 @minLength(1)
 @maxLength(90)
 @description('Name of the resource group to create / deploy into.')
@@ -73,6 +76,7 @@ module resources 'resources.bicep' = {
   scope: rg
   params: {
     location: location
+    foundryLocation: empty(foundryLocation) ? location : foundryLocation
     environmentName: environmentName
     resourceToken: resourceToken
     tags: tags
@@ -121,9 +125,10 @@ output SERVICE_APP_IDENTITY_PRINCIPAL_ID string = resources.outputs.uamiPrincipa
 
 output AZURE_VOICELIVE_ENDPOINT string = resources.outputs.foundryEndpoint
 output PROJECT_ENDPOINT string = resources.outputs.foundryProjectEndpoint
+output AZURE_AI_PROJECT_ENDPOINT string = resources.outputs.foundryProjectEndpoint
 output AZURE_SEARCH_ENDPOINT string = resources.outputs.searchEndpoint
 output AGENT_NAME string = agentName
-output AGENT_PROJECT_NAME string = agentProjectName
+output AGENT_PROJECT_NAME string = resources.outputs.effectiveAgentProjectName
 output SEARCH_CONNECTION_NAME string = searchConnectionName
 output SEARCH_INDEX_NAME string = searchIndexName
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = resources.outputs.appInsightsConnectionString

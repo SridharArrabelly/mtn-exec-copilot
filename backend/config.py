@@ -79,7 +79,7 @@ def get_ui_defaults() -> dict:
         "enableProactive": _bool("ENABLE_PROACTIVE", False),
         # Voice
         "voiceType": _str("VOICE_TYPE", "standard"),
-        "voiceName": _str("VOICELIVE_VOICE", "en-ZA-LeahNeural"),
+        "voiceName": _str("VOICELIVE_VOICE", "en-US-AvaMultilingualNeural"),
         "voiceSpeed": int(_str("VOICE_SPEED", "100")),
         "voiceTemperature": float(_str("VOICE_TEMPERATURE", "0.9")),
         # Avatar
@@ -88,7 +88,7 @@ def get_ui_defaults() -> dict:
         "isPhotoAvatar": _bool("IS_PHOTO_AVATAR", False),
         "isCustomAvatar": _bool("IS_CUSTOM_AVATAR", False),
         "avatarName": _str("AVATAR_NAME", "Lisa-casual-sitting"),
-        "customAvatarName": _str("CUSTOM_AVATAR_NAME", "Nuru"),
+        "customAvatarName": _str("CUSTOM_AVATAR_NAME", ""),
         "photoAvatarName": _str("PHOTO_AVATAR_NAME", "Anika"),
         "avatarBackgroundImageUrl": _str("AVATAR_BACKGROUND_IMAGE_URL", ""),
     }
