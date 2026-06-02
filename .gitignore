@@ -27,3 +27,7 @@ build/
 
 # Logs
 *.log
+
+# azd local state (per-developer env, deployment plan)
+.azure/
+
