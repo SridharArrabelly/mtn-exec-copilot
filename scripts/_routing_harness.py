@@ -66,6 +66,16 @@ from backend.voice.router import (  # noqa: E402
 
 load_dotenv()
 
+# Console robustness: when stdout is piped (Tee-Object, redirection, CI),
+# Windows falls back to cp1252 which can't encode the box-drawing / math
+# symbols (—, ⊇, →) used in the human-readable output. Force UTF-8 so a
+# print never aborts a multi-minute measurement run.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Test set.
@@ -275,10 +285,18 @@ async def _call_agent_once(
     user_query: str,
     *,
     hint: Optional[str],
-    reasoning_effort: Optional[str],
 ) -> tuple[Optional[str], list[str], float, int, Optional[str]]:
     """Single /responses call. Returns (first_tool, all_tools, elapsed_ms,
-    out_chars, error)."""
+    out_chars, error).
+
+    NOTE: We deliberately do NOT pass ``reasoning`` here. The per-agent
+    ``/responses`` endpoint rejects it with
+    ``400 invalid_payload: "Not allowed when agent is specified."`` —
+    reasoning effort is a property of the *agent version* (set at
+    registration time in setup_foundry_agent.py), not a per-request
+    parameter. To A/B reasoning effort, register a new agent version
+    with a different effort and point the harness at it via AGENT_NAME.
+    """
     inputs: list[dict] = [
         {"type": "message", "role": "system", "content": catalog},
     ]
@@ -292,8 +310,6 @@ async def _call_agent_once(
         input=inputs,
         parallel_tool_calls=True,
     )
-    if reasoning_effort:
-        create_kwargs["reasoning"] = {"effort": reasoning_effort}
 
     t0 = time.monotonic()
     first_tool: Optional[str] = None
@@ -331,14 +347,13 @@ async def one_trial(
     *,
     mode: str,
     router_model: Optional[str],
-    reasoning_effort: Optional[str],
 ) -> TrialResult:
     """Run one trial. In router mode this may include a clarification
     round; in baseline mode it's a single agent call with no hint."""
     if mode == "baseline":
         first, tools, ms, chars, err = await _call_agent_once(
             client, catalog, test.query,
-            hint=None, reasoning_effort=reasoning_effort,
+            hint=None,
         )
         return TrialResult(
             category=test.category, query=test.query,
@@ -397,7 +412,7 @@ async def one_trial(
 
     first, tools, ms, chars, err = await _call_agent_once(
         client, catalog, final_user_query,
-        hint=hint, reasoning_effort=reasoning_effort,
+        hint=hint,
     )
 
     refine_correct = _refine_matches(final_decision.refined_query,
@@ -520,9 +535,15 @@ async def amain() -> int:
                         help="baseline = model decides alone; router = pre-classify and inject directive hint.")
     parser.add_argument("--trials", type=int, default=int(os.getenv("TRIALS", "3")),
                         help="Trials per query (default 3).")
-    parser.add_argument("--reasoning", default=os.getenv("AGENT_REASONING_EFFORT") or None,
+    parser.add_argument("--reasoning", default=None,
                         choices=(None, "minimal", "low", "medium", "high"),
-                        help="reasoning.effort to pass to /responses (gpt-5 / o-series only).")
+                        help="DEPRECATED for the agent endpoint: reasoning effort "
+                             "is baked into the agent VERSION at registration time, "
+                             "and the per-agent /responses endpoint rejects a "
+                             "per-request 'reasoning' param. Kept only to record "
+                             "which agent-reasoning config a run corresponds to in "
+                             "the output JSON. To compare efforts, register agent "
+                             "versions with different efforts and switch AGENT_NAME.")
     parser.add_argument("--out", type=str, default=None,
                         help="Optional JSON file path to write full results.")
     parser.add_argument("--only", type=str, default=None,
@@ -544,14 +565,16 @@ async def amain() -> int:
 
     catalog = fetch_catalog()
     meeting_count = catalog.count("\n- ")
-    print(f"Catalog: {len(catalog)} chars, {meeting_count} meetings.")
-    print(f"Mode: {args.mode}  trials/query: {args.trials}  "
-          f"reasoning: {args.reasoning or '(unset)'}  "
-          f"categories: {sorted({t.category for t in tests})}")
 
     project_endpoint = os.environ["PROJECT_ENDPOINT"].rstrip("/")
     agent_name = os.environ["AGENT_NAME"]
     base_url = f"{project_endpoint}/agents/{agent_name}/endpoint/protocols/openai"
+
+    print(f"Catalog: {len(catalog)} chars, {meeting_count} meetings.")
+    print(f"Mode: {args.mode}  trials/query: {args.trials}  "
+          f"agent: {agent_name} (reasoning baked into agent version)  "
+          f"categories: {sorted({t.category for t in tests})}")
+
     cred = DefaultAzureCredential()
     token = (await cred.get_token("https://ai.azure.com/.default")).token
     client = AsyncOpenAI(
@@ -574,7 +597,6 @@ async def amain() -> int:
                 client, catalog, test,
                 mode=args.mode,
                 router_model=args.router_model if args.mode == "router" else None,
-                reasoning_effort=args.reasoning,
             )
             results.append(r)
             tag = "OK   " if r.correct else "WRONG"
