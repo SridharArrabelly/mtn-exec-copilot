@@ -195,3 +195,5 @@ output foundryEndpoint string = foundryEndpointEffective
 output foundryProjectEndpoint string = foundryProjectEndpointEffective
 output searchEndpoint string = searchEndpointEffective
 output appInsightsConnectionString string = appInsights.outputs.connectionString
+output effectiveAgentProjectName string = createFoundry ? 'proj-${environmentName}' : agentProjectName
+

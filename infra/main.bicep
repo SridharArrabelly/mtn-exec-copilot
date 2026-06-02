@@ -125,9 +125,10 @@ output SERVICE_APP_IDENTITY_PRINCIPAL_ID string = resources.outputs.uamiPrincipa
 
 output AZURE_VOICELIVE_ENDPOINT string = resources.outputs.foundryEndpoint
 output PROJECT_ENDPOINT string = resources.outputs.foundryProjectEndpoint
+output AZURE_AI_PROJECT_ENDPOINT string = resources.outputs.foundryProjectEndpoint
 output AZURE_SEARCH_ENDPOINT string = resources.outputs.searchEndpoint
 output AGENT_NAME string = agentName
-output AGENT_PROJECT_NAME string = agentProjectName
+output AGENT_PROJECT_NAME string = resources.outputs.effectiveAgentProjectName
 output SEARCH_CONNECTION_NAME string = searchConnectionName
 output SEARCH_INDEX_NAME string = searchIndexName
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = resources.outputs.appInsightsConnectionString
