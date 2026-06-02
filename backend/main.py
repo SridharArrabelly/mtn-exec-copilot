@@ -128,7 +128,7 @@ else:
 
 def run() -> None:
     """Console-script entry point (see pyproject [project.scripts])."""
-    uvicorn.run("backend.main:app", host=HOST, port=PORT, reload=True, log_level="info")
+    uvicorn.run("backend.main:app", host=HOST, port=PORT, reload=True, log_level=os.getenv("LOG_LEVEL", "info").lower())
 
 
 if __name__ == "__main__":

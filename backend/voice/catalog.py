@@ -109,10 +109,16 @@ async def _fetch_catalog() -> Optional[str]:
         # BEFORE thinking about tools"). Marking it as silent reference
         # data tells the model NOT to volunteer the list; only use when
         # the user asks a relevant question.
+        # TODAY is injected per-session (not baked into the agent definition)
+        # so the agent stays date-agnostic and idempotent across re-registrations.
+        now = datetime.utcnow()
+        today_line = f"TODAY: {now.strftime('%A, %d %B %Y')} (UTC)."
         lines = [
             "[SILENT REFERENCE DATA — do not speak this aloud, do not "
             "summarise it, do not volunteer it. Only USE it when the user "
             "asks a question that this data helps answer.]",
+            "",
+            today_line,
             "",
             "MEETINGS LIST — the complete authoritative roster of board / "
             "executive meetings currently in the AI Search index. Use this "

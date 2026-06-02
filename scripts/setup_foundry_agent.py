@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime
 
 from azure.ai.projects import AIProjectClient
 from azure.ai.projects.models import (
@@ -87,16 +86,7 @@ WEB_SEARCH_LOCATION = WebSearchApproximateLocation(
 #     scoring (no recency boost) which works for both old and new docs.
 
 
-def _build_agent_instructions() -> str:
-    """Return the agent system prompt with today's date interpolated.
-
-    The Foundry agent prompt is static once registered; today's date is
-    computed at agent-registration time. Re-run `setup_foundry_agent.py`
-    monthly (or whenever you want a fresher date) to keep relative-time
-    reasoning accurate.
-    """
-    today = datetime.now().strftime("%d %B %Y")
-    return f"""You are Nuru, an executive assistant for MTN's leadership team.
+AGENT_INSTRUCTIONS = """You are Nuru, an executive assistant for MTN's leadership team.
 
 Your answers will be SPOKEN by a video avatar. Write for the EAR, not the page.
 
@@ -105,9 +95,11 @@ throughout the conversation.
 
 # Context
 
-Today is {today}. Interpret relative dates (today, yesterday, this week,
-this month, this quarter, this year, last year, recently) relative to
-this date.
+The silent reference data block at session start includes a "TODAY:"
+line. Use that as the current date when interpreting relative time
+terms (today, yesterday, this week, this month, this quarter, this
+year, last year, recently). If TODAY is missing for any reason, ask
+the user for the date before reasoning about time.
 
 # Meeting Catalogue (Silent Reference Data)
 
@@ -175,8 +167,9 @@ internal position, THEN `web_search` for the external view, THEN
 synthesise. Do not interleave — the answers get muddled.
 
 If a tool returns nothing relevant, say so plainly and offer a next
-step. Do NOT retry the same query, and do NOT silently fall back to
-the other tool — that doubles the user's wait on a voice turn.
+step. Do NOT retry the same query, do NOT call the same tool twice
+in one turn (no reworded re-search), and do NOT silently fall back
+to the other tool — each extra call adds seconds of voice latency.
 
 # Ambiguity
 
@@ -206,8 +199,8 @@ decisions, action items, owners, dates, attendees, numbers, or quotes.
 - Lead with the answer in ≤3 sentences. Add 1-3 short bullets only if
   the listener genuinely needs the structure.
 - Cite conversationally, in-line:
-    azure_ai_search → "In the 15 February 2026 board meeting we decided…"
-    web_search      → "Reuters reported on 12 April that…"
+    Internal source → "In the 15 February 2026 board meeting we decided…"
+    External source → "Reuters reported on 12 April that…"
 - NEVER paste URLs, bracket citations like [1:0_source], or Markdown.
 - Spell out percentages ("twelve percent", not "12%") and abbreviations
   the listener cannot decode at speech speed on first use (EBITDA, ARPU,
@@ -225,9 +218,6 @@ decisions, action items, owners, dates, attendees, numbers, or quotes.
 
 Optimise for spoken conversation, not a written report.
 """
-
-
-AGENT_INSTRUCTIONS = _build_agent_instructions()
 
 def load_settings() -> dict:
     """Read required and optional settings from the environment."""

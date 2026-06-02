@@ -34,7 +34,9 @@ class ColorFormatter(logging.Formatter):
         )
 
 
-def configure_logging(level: int = logging.INFO) -> None:
+def configure_logging(level: int | str | None = None) -> None:
+    if level is None:
+        level = os.getenv("LOG_LEVEL", "INFO").upper()
     handler = logging.StreamHandler()
     handler.setFormatter(ColorFormatter())
     logging.basicConfig(level=level, handlers=[handler])
