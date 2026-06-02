@@ -103,11 +103,13 @@ async function fetchServerConfig() {
         // Refresh any cascaded visibility now that values are in place.
         if (typeof updateConditionalFields === 'function') updateConditionalFields();
 
-        if (config.developerMode === false) {
-            // Production: hide entire sidebar (settings + Connect button),
-            // hide the dev-mode toggle + mobile menu, then auto-start.
+        // Sidebar is hidden by default in markup to avoid a flash on load.
+        // Reveal it only when developer mode is on; otherwise leave it hidden
+        // and tidy auxiliary dev-only controls, then auto-connect.
+        if (config.developerMode === true) {
             const sidebar = document.getElementById('sidebar');
-            if (sidebar) sidebar.style.display = 'none';
+            if (sidebar) sidebar.hidden = false;
+        } else {
             const devToggle = document.getElementById('developerMode');
             if (devToggle) {
                 const label = devToggle.closest('label');
@@ -116,7 +118,6 @@ async function fetchServerConfig() {
             document.querySelectorAll('.mobile-menu').forEach(el => { el.style.display = 'none'; });
             const clearBtn = document.getElementById('clearChatBtn');
             if (clearBtn) clearBtn.style.display = 'none';
-            // Auto-connect with the env-configured defaults.
             try { await connectSession(); }
             catch (err) { console.error('Auto-connect failed', err); }
         }

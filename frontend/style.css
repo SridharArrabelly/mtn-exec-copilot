@@ -24,6 +24,9 @@
     --sound-wave-color: #5765CA;
 }
 
+/* Prevent FOUC: HTML hidden attr is overridden by explicit display rules, force it. */
+[hidden] { display: none !important; }
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
 body {
