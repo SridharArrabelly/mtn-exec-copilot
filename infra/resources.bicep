@@ -148,6 +148,15 @@ module searchByoRoles 'modules/roleAssignmentsForeignSearch.bicep' = if (!create
   }
 }
 
+// Grant Foundry project SMI Search RBAC for the agents azure_ai_search tool (greenfield search only).
+module searchRoleForProject 'modules/searchRoleForProject.bicep' = if (createSearch && createFoundry) {
+  name: 'search-role-for-foundry-project'
+  params: {
+    searchServiceName: search!.outputs.name
+    foundryProjectPrincipalId: foundry!.outputs.projectPrincipalId
+  }
+}
+
 // ───────── Container App ─────────
 var foundryEndpointEffective = createFoundry ? foundry!.outputs.accountEndpoint : 'https://${existingFoundryAccountName}.services.ai.azure.com/'
 var foundryProjectEndpointEffective = createFoundry ? foundry!.outputs.projectEndpoint : existingFoundryProjectEndpoint

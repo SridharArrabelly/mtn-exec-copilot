@@ -134,6 +134,7 @@ resource deployerAiDev 'Microsoft.Authorization/roleAssignments@2022-04-01' = if
   }
 }
 
+output projectPrincipalId string = project.identity.principalId
 output accountId string = account.id
 output accountName string = account.name
 output accountEndpoint string = 'https://${account.name}.services.ai.azure.com/'
