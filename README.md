@@ -5,18 +5,25 @@ This sample demonstrates the usage of Azure Voice Live API with avatar, implemen
 ## Architecture
 
 ```
-┌─────────────────────────┐         ┌─────────────────────────┐         ┌──────────────────┐         ┌─────────────────────────┐
-│    Browser (Frontend)   │◄──WS───►│  Python Server (FastAPI)│◄──SDK──►│ Azure Voice Live │◄───────►│  Foundry Agent Service  │
-│                         │         │                         │         │     Service      │ agent_  │  (mtn-execu-bot agent)  │
-│  • Audio capture (mic)  │         │  • Session management   │         └──────────────────┘ config  │   • Instructions/prompt │
-│  • Audio playback       │         │  • Voice Live SDK calls │                  │                   │   • Azure AI Search tool│
-│  • Avatar video         │◄──WebRTC (peer-to-peer video)────────────────────────┘                   │   • Web Search tool     │
-│  • Settings UI          │         │  • Event relay          │                                      └─────────────────────────┘
-│  • Chat messages        │         │  • Avatar SDP relay     │
-└─────────────────────────┘         └─────────────────────────┘
+┌─────────────────────────┐         ┌─────────────────────────────┐         ┌──────────────────┐         ┌──────────────────────────────┐
+│    Browser (Frontend)   │◄──WS───►│   Python Server (FastAPI)   │◄──SDK──►│ Azure Voice Live │◄───────►│    Foundry Agent Service     │
+│                         │         │                             │         │     Service      │ agent_  │     (mtn-execu-bot agent)    │
+│  • Audio capture (mic)  │         │  • Session management       │         └──────────────────┘ config  │  • Instructions/prompt       │
+│  • Audio playback       │         │  • Voice Live SDK calls     │                  │                   │  • gpt-4.1-mini deployment   │
+│  • Avatar video         │◄─WebRTC (peer-to-peer video)──────────────────────────────┘                  │  • Azure AI Search tool      │
+│  • Settings UI          │         │  • Event relay              │                                      │  • Grounding with Bing tool  │
+│  • Chat messages        │         │  • Meeting catalogue inject │                                      └──────────────────────────────┘
+└─────────────────────────┘         │  • Pre-router (shadow)──────┼──┐                                                   ▲
+                                     └─────────────────────────────┘  │  gpt-4.1-mini planner (Responses API,             │
+                                                                       └─ model-inference surface of same Foundry resource)┘
 ```
 
-**Key design:** The Python backend acts as a bridge between the browser and Azure Voice Live service. Voice Live binds the session to an existing **Microsoft Foundry agent** via `agent_config = { agent_name, project_name }`. The agent (created once with [`scripts/setup_foundry_agent.py`](scripts/setup_foundry_agent.py)) owns the system prompt, model selection, and tool wiring (Azure AI Search index + Web Search). Voice Live handles speech-in/speech-out and routes turns through the agent so tool calls resolve server-side in Foundry.
+**Key design:** The Python backend acts as a bridge between the browser and Azure Voice Live service. Voice Live binds the session to an existing **Microsoft Foundry agent** via `agent_config = { agent_name, project_name }`. The agent (created once with [`scripts/setup_foundry_agent.py`](scripts/setup_foundry_agent.py)) owns the system prompt, model selection, and tool wiring (Azure AI Search index over board-meeting minutes + **Grounding with Bing Search** for live web facts). Voice Live handles speech-in/speech-out and routes turns through the agent so tool calls resolve server-side in Foundry.
+
+Two backend features improve tool-calling accuracy for this voice workload:
+
+- **Meeting catalogue injection** — at session start the backend fetches a compact catalogue of every indexed meeting (date + title) from AI Search and injects it as a system message. This lets the agent answer "how many meetings / first / last / list them" with **no** search call, and lets it phrase precise content searches using exact dates. See [`backend/voice/catalog.py`](backend/voice/catalog.py).
+- **Pre-router** — a small `gpt-4.1-mini` planner that runs *before* the agent sees each turn, classifies intent (internal minutes vs. live web vs. both), and refines vague references ("the 2019 one" → "Board Meeting 5 March 2019") against the catalogue. It currently runs in **shadow mode** (decision logged, behaviour unchanged). See [Tool Routing](#tool-routing-pre-router).
 
 All SDK operations (session creation, configuration, audio forwarding, event processing) happen in Python. The browser only handles:
 - Microphone capture → sends PCM16 audio via WebSocket
@@ -24,6 +31,44 @@ All SDK operations (session creation, configuration, audio forwarding, event pro
 - WebRTC signaling relay for avatar video (SDP offer/answer exchanged through Python backend)
 - Avatar video rendering via direct WebRTC peer connection to Azure
 - WebSocket video mode: receives fMP4 video chunks via WebSocket for MediaSource Extensions playback
+
+## Tool Routing (pre-router)
+
+The avatar's usefulness hinges on calling the **right tool** for each question: the Azure AI Search index (board-meeting minutes) for internal questions, **Grounding with Bing Search** for live external facts (share price, competitor news), or **both** for comparisons ("how does our revenue compare to what analysts expected?"). Letting the agent's model decide unaided was the weak link.
+
+### Why the design changed
+
+The original agent ran on `gpt-5.4-mini` and decided tools on its own. In offline measurement it reached only **~70%** first-tool accuracy and frequently **fanned out** multiple `web_search` calls (≈45% of web turns), which inflated latency and token cost. Swapping to **`gpt-4.1-mini` + Grounding with Bing Search** (a single hosted Bing tool instead of `web_search`) lifted first-tool accuracy to **~93.5%** on its own and cut fan-out to ≈3%. Adding the pre-router in front took first-tool accuracy to **~98.9%** in the harness.
+
+> **Note on the web tool:** the agent uses **`bing_grounding`** (Grounding with Bing Search), *not* the `web_search` tool. `web_search` on `gpt-4.1-mini` either fans out into many calls or bloats the context; `bing_grounding` resolves a turn in a single tool call. The web tool is selected by `WEB_TOOL=bing_grounding` + `BING_CONNECTION_NAME` when running `scripts/setup_foundry_agent.py`.
+
+### How the pre-router works
+
+The pre-router ([`backend/voice/router.py`](backend/voice/router.py), live adapter [`backend/voice/routing.py`](backend/voice/routing.py)) is a small conversational planner that runs **before** the agent sees a turn. It never writes the final answer — it only decides the tool and/or rewrites the query; the agent still does the actual search and synthesis. It is a **two-stage** design:
+
+1. **Cheap regex / keyword pre-filter** — handles obvious META catalogue queries ("how many meetings", "list the meetings") and clearly external phrasings ("latest telecom news in X", "what are analysts saying about Y") at zero latency / zero token cost.
+2. **LLM planner** (`gpt-4.1-mini`, ~150–300 ms) — anything else falls through to a planner that sees the meeting catalogue + recent conversation history. It can resolve relative references ("the first meeting" → an exact date), ask **one** precise clarifying question only when genuinely ambiguous, and emit a refined query plus an intent label.
+
+It produces one of two actions:
+
+- **`dispatch`** — the intent is clear; emit the (possibly refined) query + a directive hint (e.g. `USE azure_ai_search …`).
+- **`clarify`** — ambiguous; ask one short question, then re-route next turn with the extended history. The loop bottoms out at `dispatch`.
+
+The planner runs `gpt-4.1-mini` via the **Responses API on the model-inference surface of the same Foundry resource** (`PROJECT_ENDPOINT` host `/openai/v1/`) — *not* the agent endpoint, which forbids a per-request `model=`. It requires **token-credential auth** (managed identity / `az login`); with API-key auth there is no token to mint for that endpoint, so the router stays disabled.
+
+### `ROUTER_MODE` — off / shadow / active
+
+Controlled by the `ROUTER_MODE` env var (see [`backend/config.py`](backend/config.py)):
+
+| Mode | What it does | Behaviour change |
+|---|---|---|
+| `off` *(default)* | Pre-router disabled; the agent decides tools on its own. | — |
+| `shadow` | Router runs on **every** user turn; its decision (`action` / `intent` / refined query / latency) is **logged** as `[ROUTER shadow] …` lines. Response creation is **not** touched. | **None** — used to validate auth, latency, token refresh, catalogue availability, and event ordering against live traffic with zero regression risk. |
+| `active` | *(not yet wired)* The router will gate response creation and inject its refined query / clarification before the agent responds. Currently **falls back to shadow** behaviour. | Planned. |
+
+Because Azure Voice Live's `RequestSession` only accepts `"auto" | "none" | "required"` for `tool_choice` (it can't force a *specific* hosted tool), the router's lever is a **directive system-message hint**, not a hard `tool_choice` override — the strongest mechanism that works in both the offline harness and the live runtime.
+
+The routing logic was validated offline by [`scripts/_routing_harness.py`](scripts/_routing_harness.py) before being wired into the live runtime in shadow mode.
 
 ## Getting Started
 
@@ -61,11 +106,17 @@ The avatar feature is currently available in the following service regions: Sout
    - `AGENT_NAME` - **Required.** Name of the Foundry agent to bind the session to (created via [`scripts/setup_foundry_agent.py`](scripts/setup_foundry_agent.py))
    - `AGENT_PROJECT_NAME` - **Required.** Foundry project that owns the agent
    - `VOICELIVE_VOICE` - Voice name (default: `en-US-AvaMultilingualNeural`)
+   - `ROUTER_MODE` - Pre-router mode: `off` (default), `shadow`, or `active`. See [Tool Routing](#tool-routing-pre-router). Requires token-credential auth + `PROJECT_ENDPOINT`.
+   - `ROUTER_MODEL` - Planner model deployment (default: `gpt-4.1-mini`)
 
    Agent provisioning (only needed when running [`scripts/setup_foundry_agent.py`](scripts/setup_foundry_agent.py)):
    - `PROJECT_ENDPOINT` - **Required.** Foundry project endpoint, e.g. `https://<resource>.services.ai.azure.com/api/projects/<project-name>`
    - `SEARCH_CONNECTION_NAME` - **Required.** Name of the Azure AI Search connection in the Foundry project
    - `SEARCH_INDEX_NAME` - **Required.** Azure AI Search index to expose to the agent
+   - `AGENT_MODEL` - Foundry model deployment the agent runs on (default: `gpt-5.4-mini`; the validated voice config is `gpt-4.1-mini`). Must match a deployment in your project.
+   - `WEB_TOOL` - Web tool to wire: `bing_grounding` (recommended — single Bing call) or `web_search`. Use `bing_grounding` to avoid `web_search` fan-out / token bloat.
+   - `BING_CONNECTION_NAME` - **Required when `WEB_TOOL=bing_grounding`.** Name of the Grounding-with-Bing connection in the Foundry project.
+   - `AGENT_REASONING_EFFORT` - *Only* set for reasoning models (o-series, gpt-5 family). Leave **unset** for `gpt-4.x` / `gpt-4o` — they reject `reasoning.effort` with a 400 on every response, which manifests as a silently non-speaking avatar.
 
    Search index build/test (only needed when running [`scripts/setup_aisearch_index.py`](scripts/setup_aisearch_index.py) or [`scripts/test_aisearch_query.py`](scripts/test_aisearch_query.py)):
    - `AZURE_SEARCH_ENDPOINT` - **Required.** `https://<service>.search.windows.net`
@@ -345,7 +396,7 @@ The Bicep template accepts overrides via azd environment variables — set any o
 For **greenfield** deployments (template provisions Foundry + Search) the `postprovision` hook in [azure.yaml](azure.yaml) runs both setup scripts automatically:
 
 - `scripts/setup_aisearch_index.py` - chunks + embeds every `data/*.docx` and builds the AI Search index. **Drop your documents into `data/` BEFORE running `azd up`** - otherwise the hook prints a warning and you must run it manually after adding files.
-- `scripts/setup_foundry_agent.py` - registers the Foundry agent (`AGENT_NAME`) with the AI Search + web-search tools.
+- `scripts/setup_foundry_agent.py` - registers the Foundry agent (`AGENT_NAME`) with the AI Search + Grounding-with-Bing tools.
 
 For **brownfield** (BYO Foundry / Search) the hook skips both - your existing agent and index are reused as-is.
 
@@ -380,9 +431,12 @@ mtn-exec-copilot/
 │   │   └── websocket.py           # /ws/{client_id} endpoint, session lifecycle
 │   └── voice/                     # Voice Live SDK integration
 │       ├── __init__.py            # exports VoiceSessionHandler
-│       ├── handler.py             # VoiceSessionHandler: session lifecycle, audio I/O, avatar
+│       ├── handler.py             # VoiceSessionHandler: session lifecycle, audio I/O, avatar, router wiring
 │       ├── builders.py            # build_voice_config / build_avatar_config / build_turn_detection
 │       ├── event_handlers.py      # SDK event -> frontend message translation
+│       ├── catalog.py             # Meeting catalogue fetch from AI Search (injected at session start)
+│       ├── router.py              # Pre-router logic: regex pre-filter + gpt-4.1-mini planner (pure)
+│       ├── routing.py             # LiveRouter: live-runtime adapter around router.py (token cache, client)
 │       ├── functions.py           # Built-in tool implementations (get_time, get_weather, calculate)
 │       └── auth.py                # AzureKeyCredential or DefaultAzureCredential
 │
@@ -392,9 +446,12 @@ mtn-exec-copilot/
 │   └── app.js                     # Audio capture/playback, WebRTC, WebSocket, UI logic
 │
 ├── scripts/                       # Utility / one-off scripts (not part of the server)
-│   ├── setup_foundry_agent.py     # Creates a Foundry agent with AI Search + Web Search tools
+│   ├── setup_foundry_agent.py     # Creates the Foundry agent with AI Search + Grounding-with-Bing tools
 │   ├── setup_aisearch_index.py    # Creates/updates the AI Search index and ingests data/ (docx/pdf/md/txt)
-│   └── test_aisearch_query.py     # Smoke-tests the index with a hybrid + semantic query
+│   ├── test_aisearch_query.py     # Smoke-tests the index with a hybrid + semantic query
+│   ├── test_foundry_agent.py      # Smoke-tests the live agent end-to-end (tool calls + answer)
+│   ├── _routing_harness.py        # Offline accuracy/latency harness that validated the pre-router
+│   └── preflight.py               # Region/capability checks (Voice Live + Avatar) before azd up
 │
 ├── assets/                        # Non-code, non-corpus assets (not consumed at runtime)
 │   └── avatar/                    # Source photo(s) used to train custom photo avatars in Speech Studio
