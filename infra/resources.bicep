@@ -157,6 +157,28 @@ module searchRoleForProject 'modules/searchRoleForProject.bicep' = if (createSea
   }
 }
 
+// Brownfield symmetry: when both Foundry AND Search are BYO, look up the existing
+// project SMI and grant it the same Search RBAC on the existing search service.
+// (Skipped if either side is greenfield — those cases are covered above or by the
+// in-RG searchRoleForProject path.)
+module foreignFoundryProjectLookup 'modules/lookupForeignFoundryProject.bicep' = if (!createFoundry && !createSearch) {
+  name: 'foreign-foundry-project-lookup'
+  scope: resourceGroup(existingFoundryResourceGroup)
+  params: {
+    foundryAccountName: existingFoundryAccountName
+    projectName: agentProjectName
+  }
+}
+
+module searchRoleForForeignProject 'modules/searchRoleForProject.bicep' = if (!createFoundry && !createSearch) {
+  name: 'search-role-for-foreign-foundry-project'
+  scope: resourceGroup(existingSearchResourceGroup)
+  params: {
+    searchServiceName: existingSearchServiceName
+    foundryProjectPrincipalId: foreignFoundryProjectLookup!.outputs.principalId
+  }
+}
+
 // Grant Search service SMI Cognitive Services OpenAI User on Foundry account (vectorizer query-time embeddings).
 module foundryRoleForSearch 'modules/foundryRoleForSearch.bicep' = if (createSearch && createFoundry) {
   name: 'foundry-role-for-search'
