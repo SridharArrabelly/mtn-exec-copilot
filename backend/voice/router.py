@@ -222,6 +222,12 @@ Output ONLY a single JSON object — no prose, no markdown. The schema:
   "reason": "<one short sentence>"
 }
 
+`action` is ALWAYS exactly "dispatch" or "clarify" — never an intent
+label. The intent label ("internal" / "external" / "both" / "catalogue")
+goes in the `intent` field. For a comparison that needs internal AND
+external, emit {"action":"dispatch","intent":"both",...} — do NOT put
+"both" in `action`.
+
 Rules
 -----
 
@@ -380,6 +386,15 @@ async def plan_llm(
         refined = payload.get("refined_query") or None
         clarify_q = payload.get("clarify_question") or None
         reason = payload.get("reason") or None
+
+        # Coerce a common literal-model mistake: the planner sometimes puts the
+        # intent label ("both", "internal", …) in the `action` field instead of
+        # "dispatch". Recover it as a dispatch with that intent rather than
+        # discarding an otherwise-correct decision.
+        if action in DISPATCH_INTENTS:
+            if intent not in DISPATCH_INTENTS:
+                intent = action
+            action = ACTION_DISPATCH
 
         if action == ACTION_CLARIFY and clarify_q:
             return RouterDecision(

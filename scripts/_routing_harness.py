@@ -96,7 +96,11 @@ for _stream in (sys.stdout, sys.stderr):
 # ---------------------------------------------------------------------------
 
 TOOL_INTERNAL = "azure_ai_search_call"
-TOOL_EXTERNAL = "web_search_call"
+# External tool call item type as it appears in the /responses stream.
+# WebSearchTool emits "web_search_call"; BingGroundingTool emits a different
+# type (e.g. "bing_grounding_call"). Override via EXTERNAL_TOOL_CALL when
+# grading a Bing-grounding variant agent so external/both cases grade right.
+TOOL_EXTERNAL = (os.getenv("EXTERNAL_TOOL_CALL") or "web_search_call").strip()
 TOOL_NONE = None  # No tool expected.
 
 
@@ -616,6 +620,32 @@ async def amain() -> int:
         print(f"Router planner: model={args.router_model} @ {model_base_url}")
 
     results: list[TrialResult] = []
+    # Token refresh: the agent/router clients hold a static bearer token in
+    # ``api_key``. A long run (esp. --mode router, which is slow due to planner
+    # calls + clarify double-routes + 429 backoffs) can outlive a token's
+    # ~60-90min lifetime, causing a cascade of 401s on every remaining trial.
+    # The async AzureCliCredential does NOT cache in-memory — every get_token
+    # shells out to ``az account get-access-token``, which is slow and flaky on
+    # Windows (one invocation timing out aborts the whole run). So we cache the
+    # token ourselves per scope and only refresh within 5min of expiry.
+    _token_cache: dict[str, tuple[str, float]] = {}
+
+    async def _scoped_token(scope: str) -> str:
+        cached = _token_cache.get(scope)
+        now = time.time()
+        if cached and cached[1] - now > 300:
+            return cached[0]
+        tok = await cred.get_token(scope)
+        _token_cache[scope] = (tok.token, float(tok.expires_on))
+        return tok.token
+
+    async def refresh_tokens() -> None:
+        client.api_key = await _scoped_token("https://ai.azure.com/.default")
+        if router_client is not None:
+            router_client.api_key = await _scoped_token(
+                "https://cognitiveservices.azure.com/.default"
+            )
+
     for ti, test in enumerate(tests, start=1):
         print(f"\n[{ti}/{len(tests)}] [{test.category}] {test.query}")
         print(f"   expected first tool: {_fmt_tool(test.expected_first_tool)}"
@@ -626,6 +656,7 @@ async def amain() -> int:
         for i in range(args.trials):
             if i > 0 or ti > 1:
                 await asyncio.sleep(args.sleep)
+            await refresh_tokens()
             r = await one_trial(
                 client, catalog, test,
                 mode=args.mode,

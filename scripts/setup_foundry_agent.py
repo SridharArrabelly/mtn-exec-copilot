@@ -30,6 +30,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 from azure.ai.projects import AIProjectClient
@@ -38,6 +39,9 @@ from azure.ai.projects.models import (
     AzureAISearchQueryType,
     AzureAISearchTool,
     AzureAISearchToolResource,
+    BingGroundingSearchConfiguration,
+    BingGroundingSearchToolParameters,
+    BingGroundingTool,
     PromptAgentDefinition,
     Reasoning,
     WebSearchApproximateLocation,
@@ -157,14 +161,25 @@ African / MENA outlets).
 # Tool Selection (one rule, then examples)
 
 Default heuristic: anything about MTN's own decisions, people, numbers,
-or plans → `azure_ai_search`. Anything about the outside world →
-`web_search`.
+plans, strategy, vision, ambitions, or targets → `azure_ai_search`.
+Anything about the outside world → `web_search`.
+
+HARD ANTI-RULE: MTN's OWN strategy, vision, ambition, goals, targets,
+roadmap or plans are INTERNAL — they live in MTN's board and exec
+minutes, NOT on the public web. A future year in the question (2025,
+2030, etc.) does NOT make it external. NEVER call `web_search` for
+"MTN's ambition / vision / strategy / plan / targets / roadmap for
+<year>". Use `azure_ai_search`.
 
 User: "Summarise the last board meeting."         → azure_ai_search
 User: "What did we decide about dividends?"       → azure_ai_search
 User: "What were the action items from February?" → azure_ai_search
 User: "What is MTN's fintech strategy?"           → azure_ai_search
 User: "How are we performing in enterprise?"      → azure_ai_search
+User: "What is MTN's ambition 2030?"              → azure_ai_search
+User: "What is our 2025 strategy / vision?"        → azure_ai_search
+User: "What are MTN's strategic priorities?"       → azure_ai_search
+User: "What is our digital / fintech roadmap?"     → azure_ai_search
 
 User: "What are analysts saying about MTN?"       → web_search
 User: "Reuters coverage of MTN earnings."         → web_search
@@ -255,6 +270,96 @@ syntax. Compose silently, then output ONLY the final spoken answer.
 Optimise for spoken conversation, not a written report.
 """
 
+
+# ---------------------------------------------------------------------------
+# gpt-4.1-mini + Grounding-with-Bing variant
+# ---------------------------------------------------------------------------
+# The prod prompt above is tuned for gpt-5.4-mini, a reasoning model that we
+# can trust to weigh ambiguity. The variant agent is gpt-4.1-mini — fast,
+# non-reasoning, and LITERAL. It does what the prompt says, no more, no less,
+# so the tool-selection contract must be stated as hard rules rather than
+# "use judgement". It also pairs with Grounding-with-Bing instead of
+# WebSearchTool: a single grounded round-trip, never an iterative web crawl,
+# which is exactly why we picked it (the reasoning model + WebSearchTool fans
+# out into many calls; gpt-4.1-mini + bing_grounding does not).
+#
+# This header is prepended to the shared body; the body's `web_search`
+# references are rewritten to `bing_grounding`, and the external-tool
+# description is replaced to describe single-shot grounded search.
+
+_VARIANT_HEADER = """You are Nuru, an executive assistant for MTN's leadership team.
+
+Your answers will be SPOKEN by a video avatar. Write for the EAR, not the page.
+
+# How you operate (read first)
+
+You are a FAST assistant. You do NOT deliberate out loud, re-plan, or
+second-guess. For each user turn you make ONE decision: answer directly
+from the catalogue, ask ONE clarifying question, or call a tool. For a
+simple ask call EXACTLY ONE tool. Only a genuinely compound ask (an
+explicit internal-vs-external comparison) may use two tools — at most
+ONE call to `azure_ai_search` and ONE to `bing_grounding`, in that
+order. Never call the SAME tool twice and never chain to the other tool
+as a silent fallback. If a tool returns nothing useful, say so plainly;
+do not retry or switch tools.
+
+Your external tool is `bing_grounding` — a single grounded web lookup
+that returns curated snippets with one call. Treat it as one shot: phrase
+the best possible query once, call it once, then answer from what comes
+back. Never issue multiple bing_grounding calls in a turn.
+
+# Spoken output — NEVER read citations or URLs (critical)
+
+`bing_grounding` returns source URLs and citation markers alongside the
+facts — for example `(https://www.jse.co.za/...)`, `[reuters.com]`,
+`【3:0†source】`, `citeturn0`. These are REFERENCE METADATA, not part of
+your answer. NEVER repeat, read, or include them in your reply. The
+avatar pronounces every character literally, so a URL is spoken as
+"h-t-t-p-s colon slash slash w-w-w dot…", which is unacceptable.
+State the fact in plain words. If attribution genuinely helps, name the
+publisher only ("per the JSE", "Reuters reported"). Output ONLY clean,
+speakable prose: no URLs, no domains, no brackets, no citation tokens of
+any kind.
+
+"""
+
+_BING_TOOL_DESC = """## bing_grounding
+CURRENT external information — telecom news, competitors, regulators,
+spectrum, M&A, analyst commentary, public earnings — fetched in a SINGLE
+grounded web lookup that returns curated snippets. Phrase one precise
+query, call it once. Prefer recent, reputable sources (Reuters, Bloomberg,
+FT, GSMA, Light Reading, regional African / MENA outlets)."""
+
+_WEB_TOOL_DESC = """## web_search
+CURRENT external information — telecom news, competitors, regulators,
+spectrum, M&A, analyst commentary, public earnings. Prefer recent and
+reputable sources (Reuters, Bloomberg, FT, GSMA, Light Reading, regional
+African / MENA outlets)."""
+
+
+def build_instructions(web_tool: str) -> str:
+    """Return agent instructions tuned to the chosen web grounding tool.
+
+    * ``web_search`` → the validated prod prompt, unchanged (gpt-5.4-mini).
+    * ``bing_grounding`` → a non-reasoning, single-grounded-call variant for
+      gpt-4.1-mini: a fast-operation header replaces the prod intro, every
+      ``web_search`` tool reference becomes ``bing_grounding``, and the
+      external-tool description is swapped for the single-shot Bing version.
+    """
+    if web_tool != "bing_grounding":
+        return AGENT_INSTRUCTIONS
+
+    # Drop the prod intro (first two lines up to and including the
+    # "Write for the EAR" line) — the variant header restates it — then keep
+    # the rest of the shared body from the "If asked who you are" line on.
+    anchor = "If asked who you are or what your name is"
+    idx = AGENT_INSTRUCTIONS.index(anchor)
+    body = AGENT_INSTRUCTIONS[idx:]
+    body = body.replace(_WEB_TOOL_DESC, _BING_TOOL_DESC)
+    body = body.replace("web_search", "bing_grounding")
+    return _VARIANT_HEADER + body
+
+
 def load_settings() -> dict:
     """Read required and optional settings from the environment."""
     load_dotenv()
@@ -267,6 +372,12 @@ def load_settings() -> dict:
         # Optional. Only set for reasoning models (o-series, gpt-5 family).
         # gpt-4.x / gpt-4o reject `reasoning.effort` at /responses time.
         "agent_reasoning_effort": (os.getenv("AGENT_REASONING_EFFORT") or "").strip() or None,
+        # Web grounding tool selection: "web_search" (default, prod) or
+        # "bing_grounding". The Bing variant avoids the WebSearchTool fan-out /
+        # token-bloat that a reasoning agent (or even gpt-4.1-mini) exhibits and
+        # returns a single grounded round-trip. Requires BING_CONNECTION_NAME.
+        "web_tool": (os.getenv("WEB_TOOL") or "web_search").strip().lower(),
+        "bing_connection_name": (os.getenv("BING_CONNECTION_NAME") or "").strip() or None,
     }
     missing = [k for k in ("project_endpoint", "search_connection_name", "search_index_name", "agent_name", "agent_model") if not settings[k]]
     if missing:
@@ -274,10 +385,53 @@ def load_settings() -> dict:
             f"Missing required environment variables: {', '.join(m.upper() for m in missing)}. "
             "See .env.example."
         )
+    if settings["web_tool"] not in ("web_search", "bing_grounding"):
+        raise EnvironmentError(
+            f"WEB_TOOL must be 'web_search' or 'bing_grounding', got {settings['web_tool']!r}."
+        )
+    if settings["web_tool"] == "bing_grounding" and not settings["bing_connection_name"]:
+        raise EnvironmentError(
+            "WEB_TOOL=bing_grounding requires BING_CONNECTION_NAME (the Foundry "
+            "Grounding-with-Bing connection name). See .env.example."
+        )
     return settings
 
 
-def build_tools(search_connection_id: str, search_index_name: str) -> list:
+def build_bing_tool(bing_connection_id: str) -> BingGroundingTool:
+    """Grounding-with-Bing tool — single grounded round-trip per turn.
+
+    Used in the gpt-4.1-mini variant in place of WebSearchTool. A reasoning
+    agent + WebSearchTool fans out into many web_search calls (measured: 121+
+    extra calls across the harness); even gpt-4.1-mini + WebSearchTool fans out
+    and bloats tokens. Grounding-with-Bing returns curated snippets in one shot.
+
+    count=5 keeps the snippet budget tight for voice answers; market/set_lang
+    pin South-Africa-first English. freshness is intentionally left unset —
+    forcing recency would drop legitimate non-news lookups.
+
+    Compliance: the formulated query leaves the Azure compliance/Geo boundary
+    (per the Bing tool docs). Internal minutes never do — they stay in AI Search.
+    """
+    return BingGroundingTool(
+        bing_grounding=BingGroundingSearchToolParameters(
+            search_configurations=[
+                BingGroundingSearchConfiguration(
+                    project_connection_id=bing_connection_id,
+                    market="en-ZA",
+                    set_lang="en",
+                    count=5,
+                ),
+            ]
+        )
+    )
+
+
+def build_tools(
+    search_connection_id: str,
+    search_index_name: str,
+    web_tool: str = "web_search",
+    bing_connection_id: str | None = None,
+) -> list:
     """Build the tool list for the agent.
 
     AI Search uses VECTOR_SIMPLE_HYBRID — vector ANN + BM25 keyword.
@@ -292,30 +446,58 @@ def build_tools(search_connection_id: str, search_index_name: str) -> list:
     same meeting. top_k=3 broke summary queries in earlier rounds (only
     one chunk from the right meeting reached the model).
 
-    Web search uses `low` context to keep tool latency down — `medium`
-    (the default) pulls back significantly more snippet text per source,
-    which is overkill for exec-summary style answers.
+    Web grounding is selectable via ``web_tool``:
+      * "web_search"     — WebSearchTool, `low` context (prod default).
+      * "bing_grounding" — BingGroundingTool, single-shot grounded answer.
     """
     # Tool ORDER matters: gpt-5.4-mini at reasoning.effort=none biases hard
     # toward the first tool. Put azure_ai_search first so MTN-meeting questions
-    # ground in the index instead of falling through to web_search.
+    # ground in the index instead of falling through to the web tool.
+    ai_search = AzureAISearchTool(
+        azure_ai_search=AzureAISearchToolResource(
+            indexes=[
+                AISearchIndexResource(
+                    project_connection_id=search_connection_id,
+                    index_name=search_index_name,
+                    query_type=AzureAISearchQueryType.VECTOR_SIMPLE_HYBRID,
+                    top_k=5,
+                ),
+            ]
+        )
+    )
+
+    if web_tool == "bing_grounding":
+        if not bing_connection_id:
+            raise ValueError("bing_connection_id is required when web_tool='bing_grounding'")
+        return [ai_search, build_bing_tool(bing_connection_id)]
+
     return [
-        AzureAISearchTool(
-            azure_ai_search=AzureAISearchToolResource(
-                indexes=[
-                    AISearchIndexResource(
-                        project_connection_id=search_connection_id,
-                        index_name=search_index_name,
-                        query_type=AzureAISearchQueryType.VECTOR_SIMPLE_HYBRID,
-                        top_k=5,
-                    ),
-                ]
-            )
-        ),
+        ai_search,
         WebSearchTool(user_location=WEB_SEARCH_LOCATION,
                       search_context_size='low',
                       ),
     ]
+
+
+def _model_supports_reasoning(model: str) -> bool:
+    """Whether a model deployment accepts the ``reasoning.effort`` parameter.
+
+    Reasoning models (o-series, gpt-5 family) accept it. The gpt-4.x / gpt-4o
+    families reject it at /responses time with a 400 ``unsupported_parameter``
+    — and because the agent bakes the parameter into its definition, that 400
+    fires on EVERY turn, leaving the Voice Live avatar silent with no
+    backend-visible error. Guard against that footgun here.
+    """
+    m = (model or "").strip().lower()
+    if not m:
+        return False
+    # o1 / o3 / o4(-mini) and the gpt-5 family are reasoning-capable.
+    if re.match(r"^o[134](-|\d|$)", m):
+        return True
+    if m.startswith("gpt-5"):
+        return True
+    # Everything else (gpt-4.1, gpt-4o, gpt-4, …) does not.
+    return False
 
 
 def create_agent(project: AIProjectClient, settings: dict):
@@ -331,20 +513,45 @@ def create_agent(project: AIProjectClient, settings: dict):
     `low`, `medium`, `high`. Leave UNSET for any non-reasoning model.
     """
     azs_connection = project.connections.get(settings["search_connection_name"])
-    tools = build_tools(azs_connection.id, settings["search_index_name"])
+
+    bing_connection_id = None
+    if settings["web_tool"] == "bing_grounding":
+        bing_connection = project.connections.get(settings["bing_connection_name"])
+        bing_connection_id = bing_connection.id
+        print(
+            f"Web tool: bing_grounding (connection {settings['bing_connection_name']!r})."
+        )
+    else:
+        print("Web tool: web_search (WebSearchTool).")
+
+    tools = build_tools(
+        azs_connection.id,
+        settings["search_index_name"],
+        web_tool=settings["web_tool"],
+        bing_connection_id=bing_connection_id,
+    )
 
     definition_kwargs = {
         "model": settings["agent_model"],
-        "instructions": AGENT_INSTRUCTIONS,
+        "instructions": build_instructions(settings["web_tool"]),
         "tools": tools,
     }
     effort = settings.get("agent_reasoning_effort")
+    if effort and not _model_supports_reasoning(settings["agent_model"]):
+        print(
+            f"WARNING: AGENT_REASONING_EFFORT={effort!r} is set but model "
+            f"{settings['agent_model']!r} does NOT support reasoning.effort "
+            "(gpt-4.x / gpt-4o reject it with a 400 on every response, which "
+            "makes the avatar go silent). Ignoring reasoning.effort. Unset "
+            "AGENT_REASONING_EFFORT in .env to silence this warning."
+        )
+        effort = None
     if effort:
         definition_kwargs["reasoning"] = Reasoning(effort=effort)
         print(f"Applying reasoning.effort={effort!r} (AGENT_REASONING_EFFORT is set).")
     else:
         print(
-            "Skipping reasoning.effort — AGENT_REASONING_EFFORT not set. "
+            "Skipping reasoning.effort — not set or not supported by this model. "
             "Set it ONLY for reasoning models (o-series, gpt-5 family)."
         )
 

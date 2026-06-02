@@ -52,6 +52,26 @@ AGENT_NAME = os.getenv("AGENT_NAME", "")
 AGENT_PROJECT_NAME = os.getenv("AGENT_PROJECT_NAME", "")
 DEVELOPER_MODE = os.getenv("DEVELOPER_MODE", "false").strip().lower() == "true"
 
+# Pre-router (tool-selection planner) settings.
+#
+# ROUTER_MODE controls how the validated pre-router (backend/voice/router.py)
+# participates in the live Voice Live runtime:
+#   * "off"    — disabled; the agent decides tools on its own (current prod).
+#   * "shadow" — the router runs on every real user turn and its decision is
+#                LOGGED, but response creation is NOT changed. Zero behavioural
+#                regression risk; used to validate auth, latency, token refresh,
+#                catalogue availability and event ordering against live traffic.
+#   * "active" — (future) the router gates response creation and injects its
+#                hint / clarification before the agent responds.
+# The planner runs gpt-4.1-mini via the Responses API on the model-inference
+# surface of the SAME Foundry resource (PROJECT_ENDPOINT host) — NOT the agent
+# endpoint, which forbids a per-request model=.
+ROUTER_MODE = os.getenv("ROUTER_MODE", "off").strip().lower()
+ROUTER_MODEL = os.getenv("ROUTER_MODEL", "gpt-4.1-mini")
+ROUTER_BASE_URL = os.getenv("ROUTER_BASE_URL", "")
+ROUTER_API_VERSION = os.getenv("ROUTER_API_VERSION", "preview")
+PROJECT_ENDPOINT = os.getenv("PROJECT_ENDPOINT", "")
+
 
 def _bool(name: str, default: bool) -> bool:
     return os.getenv(name, str(default)).strip().lower() in ("1", "true", "yes", "on")
