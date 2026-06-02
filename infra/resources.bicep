@@ -157,6 +157,15 @@ module searchRoleForProject 'modules/searchRoleForProject.bicep' = if (createSea
   }
 }
 
+// Grant Search service SMI Cognitive Services OpenAI User on Foundry account (vectorizer query-time embeddings).
+module foundryRoleForSearch 'modules/foundryRoleForSearch.bicep' = if (createSearch && createFoundry) {
+  name: 'foundry-role-for-search'
+  params: {
+    foundryAccountName: foundry!.outputs.accountName
+    searchPrincipalId: search!.outputs.principalId
+  }
+}
+
 // ───────── Container App ─────────
 var foundryEndpointEffective = createFoundry ? foundry!.outputs.accountEndpoint : 'https://${existingFoundryAccountName}.services.ai.azure.com/'
 var foundryProjectEndpointEffective = createFoundry ? foundry!.outputs.projectEndpoint : existingFoundryProjectEndpoint
