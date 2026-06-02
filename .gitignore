@@ -31,3 +31,6 @@ build/
 # azd local state (per-developer env, deployment plan)
 .azure/
 
+# Routing harness artifacts (scripts/_routing_harness.py output)
+phase0_*.json
+
