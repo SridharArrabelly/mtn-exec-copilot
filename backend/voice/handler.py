@@ -330,6 +330,24 @@ class VoiceSessionHandler:
         to a ``LiveRouter`` when enabled. Any misconfiguration disables the
         router (mode "off") rather than failing the session.
         """
+        # RETIRED: the pre-router experiment (shadow + active) is abandoned —
+        # it added a wasted gpt-4.1-mini call per turn (plus a session pre-warm)
+        # for zero behavioural benefit, and never beat the agent on accuracy or
+        # latency. It is now hard-disabled in the live runtime so no ROUTER_MODE
+        # value — including a stale shell env var that overrides .env — can
+        # resurrect those calls. The router module + offline harness are kept
+        # for reference; they are simply no longer wired into a live session.
+        if ROUTER_MODE != "off":
+            logger.info(
+                "Router: ROUTER_MODE=%r ignored — pre-router is retired and "
+                "force-disabled in the live runtime for client %s",
+                ROUTER_MODE, self.client_id,
+            )
+        self._router = None
+        self._router_mode = "off"
+        return
+
+        # --- unreachable (retained for reference) ---------------------------
         mode = ROUTER_MODE
         if mode not in ("off", "shadow", "active"):
             logger.warning("Router: unknown ROUTER_MODE=%r; treating as off", mode)
