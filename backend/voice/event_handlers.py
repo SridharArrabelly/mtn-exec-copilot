@@ -100,10 +100,6 @@ async def handle_event(handler, event, connection):
                 "role": "assistant",
                 "transcript": transcript,
             })
-            # Feed the assistant turn to the pre-router's rolling history so
-            # multi-turn context (clarify follow-ups, relative refs) is intact.
-            if getattr(handler, "_router_mode", "off") != "off":
-                handler._record_router_turn("assistant", transcript)
 
         # Text delta (for text responses)
         elif event_type == ServerEventType.RESPONSE_TEXT_DELTA:
@@ -167,10 +163,6 @@ async def handle_event(handler, event, connection):
                     "transcript": transcript,
                     "itemId": item_id,
                 })
-                # Shadow-mode pre-router: fire-and-forget so it never blocks or
-                # affects the live response (the agent still auto-responds).
-                if getattr(handler, "_router_mode", "off") == "shadow":
-                    handler._spawn_bg(handler.on_user_turn(transcript, item_id))
 
         # Avatar WebRTC signaling
         elif event_type == ServerEventType.SESSION_AVATAR_CONNECTING:

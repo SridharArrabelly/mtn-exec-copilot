@@ -26,23 +26,12 @@ from azure.ai.voicelive.models import (
 from ..config import (
     AGENT_NAME,
     AGENT_PROJECT_NAME,
-    PROJECT_ENDPOINT,
-    ROUTER_API_VERSION,
-    ROUTER_BASE_URL,
-    ROUTER_MODE,
-    ROUTER_MODEL,
 )
 from .builders import build_avatar_config, build_turn_detection, build_voice_config
 from .catalog import get_meeting_catalog
 from .event_handlers import handle_event
-from .routing import LiveRouter
 
 logger = logging.getLogger(__name__)
-
-# Max conversation turns (user + assistant) kept for the pre-router planner.
-# The planner only needs recent context to resolve relative references
-# ("the last meeting", "the 2019 one") and clarify follow-ups.
-_ROUTER_HISTORY_MAX = 8
 
 
 # Override applied to the proactive opening response only.
@@ -94,24 +83,6 @@ class VoiceSessionHandler:
         self._stopping = False
         self._audio_chunk_count = 0
         self._video_chunk_count = 0
-
-        # Pre-router (shadow mode) state. Resolved once at session setup and
-        # then immutable for the session. ``_router_mode`` is the EFFECTIVE
-        # mode after gating (e.g. forced to "off" if credential is api-key).
-        self._catalog: str = ""
-        self._router: Optional[LiveRouter] = None
-        self._router_mode: str = "off"
-        self._router_history: list[dict] = []
-        self._router_turn_seq = 0
-        # Strong refs to fire-and-forget background tasks (e.g. shadow router)
-        # so they aren't garbage-collected before completion.
-        self._bg_tasks: set = set()
-
-    def _spawn_bg(self, coro) -> None:
-        """Schedule a fire-and-forget coroutine, keeping a strong reference."""
-        task = asyncio.create_task(coro)
-        self._bg_tasks.add(task)
-        task.add_done_callback(self._bg_tasks.discard)
 
     async def start(self):
         """Start the Voice Live session."""
@@ -225,7 +196,6 @@ class VoiceSessionHandler:
         try:
             catalog = await catalog_task
             if catalog:
-                self._catalog = catalog
                 catalog_item = SystemMessageItem(
                     content=[InputTextContentPart(text=catalog)]
                 )
@@ -243,10 +213,6 @@ class VoiceSessionHandler:
             logger.warning(
                 f"Failed to inject meeting catalogue for {self.client_id}: {e}"
             )
-
-        # Resolve the pre-router mode (shadow / off) for this session. Catalogue
-        # is now available, so the planner can resolve relative references.
-        self._init_router()
 
         avatar_output_mode = config.get("avatarOutputMode", "webrtc")
 
@@ -319,155 +285,6 @@ class VoiceSessionHandler:
         else:
             # WebRTC avatar: defer proactive greeting until avatar connect
             self._pending_proactive = config.get("enableProactive", True)
-
-    # ------------------------------------------------------------------
-    # Pre-router (shadow mode)
-    # ------------------------------------------------------------------
-    def _init_router(self) -> None:
-        """Resolve and build the pre-router for this session (once).
-
-        Sets ``self._router_mode`` to the EFFECTIVE mode and ``self._router``
-        to a ``LiveRouter`` when enabled. Any misconfiguration disables the
-        router (mode "off") rather than failing the session.
-        """
-        # RETIRED: the pre-router experiment (shadow + active) is abandoned —
-        # it added a wasted gpt-4.1-mini call per turn (plus a session pre-warm)
-        # for zero behavioural benefit, and never beat the agent on accuracy or
-        # latency. It is now hard-disabled in the live runtime so no ROUTER_MODE
-        # value — including a stale shell env var that overrides .env — can
-        # resurrect those calls. The router module + offline harness are kept
-        # for reference; they are simply no longer wired into a live session.
-        if ROUTER_MODE != "off":
-            logger.info(
-                "Router: ROUTER_MODE=%r ignored — pre-router is retired and "
-                "force-disabled in the live runtime for client %s",
-                ROUTER_MODE, self.client_id,
-            )
-        self._router = None
-        self._router_mode = "off"
-        return
-
-        # --- unreachable (retained for reference) ---------------------------
-        mode = ROUTER_MODE
-        if mode not in ("off", "shadow", "active"):
-            logger.warning("Router: unknown ROUTER_MODE=%r; treating as off", mode)
-            mode = "off"
-
-        if mode == "off":
-            self._router_mode = "off"
-            logger.info("Router: disabled (ROUTER_MODE=off) for client %s", self.client_id)
-            return
-
-        # Active mode is not wired into response creation yet — run it as
-        # shadow so we still collect data without risking the live flow.
-        if mode == "active":
-            logger.warning(
-                "Router: ROUTER_MODE=active not yet wired to response creation; "
-                "running in shadow mode for client %s", self.client_id,
-            )
-            mode = "shadow"
-
-        # The planner needs a token credential to mint a cognitiveservices
-        # token for the model-inference endpoint. API-key auth can't.
-        if not hasattr(self.credential, "get_token"):
-            self._router_mode = "off"
-            logger.warning(
-                "Router: disabled — credential has no get_token (api-key auth) "
-                "for client %s", self.client_id,
-            )
-            return
-
-        try:
-            self._router = LiveRouter(
-                self.credential,
-                model=ROUTER_MODEL,
-                project_endpoint=PROJECT_ENDPOINT,
-                base_url=ROUTER_BASE_URL,
-                api_version=ROUTER_API_VERSION,
-            )
-        except Exception as e:
-            self._router = None
-            self._router_mode = "off"
-            logger.warning("Router: disabled — failed to build LiveRouter: %s", e)
-            return
-
-        self._router_mode = mode
-        logger.info(
-            "Router: %s mode active for client %s (model=%s @ %s)",
-            mode, self.client_id, ROUTER_MODEL, self._router.base_url,
-        )
-
-        # Pre-warm the planner so the first real turn doesn't pay the cold-start
-        # cost (~12s) of the first responses.create round-trip. Fire-and-forget;
-        # warming is best-effort and never blocks or fails the session.
-        self._spawn_bg(self._prewarm_router())
-
-    async def _prewarm_router(self) -> None:
-        """Best-effort planner warm-up; safe to fail."""
-        if self._router is None:
-            return
-        t0 = asyncio.get_event_loop().time()
-        try:
-            await self._router.warm()
-            elapsed_ms = (asyncio.get_event_loop().time() - t0) * 1000.0
-            logger.info(
-                "Router: planner pre-warmed for client %s in %.0fms",
-                self.client_id, elapsed_ms,
-            )
-        except Exception as e:
-            logger.debug("Router: pre-warm failed (ignored): %s", e)
-
-    def _record_router_turn(self, role: str, content: str) -> None:
-        """Append a turn to the capped rolling history for the planner."""
-        content = (content or "").strip()
-        if not content or self._router_mode == "off":
-            return
-        self._router_history.append({"role": role, "content": content})
-        if len(self._router_history) > _ROUTER_HISTORY_MAX:
-            self._router_history = self._router_history[-_ROUTER_HISTORY_MAX:]
-
-    async def on_user_turn(self, transcript: str, item_id: str) -> None:
-        """SHADOW MODE: run the pre-router on a completed user transcript.
-
-        Logs the routing decision + latency for analysis but does NOT change
-        response creation — the agent still auto-responds exactly as before.
-        Fully guarded so the router can never break or stall the live session
-        (it is launched as a fire-and-forget background task by the caller).
-        """
-        if self._router is None or self._router_mode != "shadow":
-            return
-        transcript = (transcript or "").strip()
-        if not transcript:
-            return
-
-        self._router_turn_seq += 1
-        seq = self._router_turn_seq
-        # Snapshot prior history for the planner (excludes this turn), then
-        # record this user turn immediately so its ordering relative to the
-        # assistant reply is correct even if decide() is slow (cold start).
-        history = list(self._router_history)
-        self._record_router_turn("user", transcript)
-        t0 = asyncio.get_event_loop().time()
-        try:
-            decision = await self._router.decide(
-                transcript, history=history, catalog=self._catalog
-            )
-        except Exception as e:
-            logger.warning(
-                "[ROUTER shadow] turn=%d item=%s decide() failed: %s",
-                seq, item_id, e,
-            )
-            return
-
-        elapsed_ms = (asyncio.get_event_loop().time() - t0) * 1000.0
-        refined = (decision.refined_query or "")[:160]
-        clarify = (decision.clarify_question or "")[:160]
-        logger.info(
-            "[ROUTER shadow] turn=%d item=%s action=%s intent=%s source=%s "
-            "latency=%.0fms len=%d refined=%r clarify=%r",
-            seq, item_id, decision.action, decision.intent, decision.source,
-            elapsed_ms, len(transcript), refined, clarify,
-        )
 
     async def _process_events(self, connection):
         """Process incoming events from Voice Live API.

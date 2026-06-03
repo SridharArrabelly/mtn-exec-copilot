@@ -13,9 +13,7 @@ This sample demonstrates the usage of Azure Voice Live API with avatar, implemen
 │  • Avatar video         │◄─WebRTC (peer-to-peer video)──────────────────────────────┘                  │  • Azure AI Search tool      │
 │  • Settings UI          │         │  • Event relay              │                                      │  • Grounding with Bing tool  │
 │  • Chat messages        │         │  • Meeting catalogue inject │                                      └──────────────────────────────┘
-└─────────────────────────┘         │  • Pre-router (shadow)──────┼──┐                                                   ▲
-                                     └─────────────────────────────┘  │  gpt-4.1-mini planner (Responses API,             │
-                                                                       └─ model-inference surface of same Foundry resource)┘
+└─────────────────────────┘         └─────────────────────────────┘
 ```
 
 **Key design:** The Python backend acts as a bridge between the browser and Azure Voice Live service. Voice Live binds the session to an existing **Microsoft Foundry agent** via `agent_config = { agent_name, project_name }`. The agent (created once with [`scripts/setup_foundry_agent.py`](scripts/setup_foundry_agent.py)) owns the system prompt, model selection, and tool wiring (Azure AI Search index over board-meeting minutes + **Grounding with Bing Search** for live web facts). Voice Live handles speech-in/speech-out and routes turns through the agent so tool calls resolve server-side in Foundry.
@@ -23,7 +21,7 @@ This sample demonstrates the usage of Azure Voice Live API with avatar, implemen
 Two backend features improve tool-calling accuracy for this voice workload:
 
 - **Meeting catalogue injection** — at session start the backend fetches a compact catalogue of every indexed meeting (date + title) from AI Search and injects it as a system message. This lets the agent answer "how many meetings / first / last / list them" with **no** search call, and lets it phrase precise content searches using exact dates. See [`backend/voice/catalog.py`](backend/voice/catalog.py).
-- **Pre-router** — a small `gpt-4.1-mini` planner that runs *before* the agent sees each turn, classifies intent (internal minutes vs. live web vs. both), and refines vague references ("the 2019 one" → "Board Meeting 5 March 2019") against the catalogue. It currently runs in **shadow mode** (decision logged, behaviour unchanged). See [Tool Routing](#tool-routing-pre-router).
+- **`gpt-4.1-mini` + Grounding with Bing Search** — the agent's model and external tool were chosen for tool-calling precision. See [Tool Calling Accuracy](#tool-calling-accuracy).
 
 All SDK operations (session creation, configuration, audio forwarding, event processing) happen in Python. The browser only handles:
 - Microphone capture → sends PCM16 audio via WebSocket
@@ -32,43 +30,13 @@ All SDK operations (session creation, configuration, audio forwarding, event pro
 - Avatar video rendering via direct WebRTC peer connection to Azure
 - WebSocket video mode: receives fMP4 video chunks via WebSocket for MediaSource Extensions playback
 
-## Tool Routing (pre-router)
+## Tool Calling Accuracy
 
-The avatar's usefulness hinges on calling the **right tool** for each question: the Azure AI Search index (board-meeting minutes) for internal questions, **Grounding with Bing Search** for live external facts (share price, competitor news), or **both** for comparisons ("how does our revenue compare to what analysts expected?"). Letting the agent's model decide unaided was the weak link.
+The avatar's usefulness hinges on calling the **right tool** for each question: the Azure AI Search index (board-meeting minutes) for internal questions, **Grounding with Bing Search** for live external facts (share price, competitor news), or **both** for comparisons ("how does our revenue compare to what analysts expected?").
 
-### Why the design changed
-
-The original agent decided tools entirely on its own and reached only **~70%** first-tool accuracy, frequently **fanning out** multiple external web calls (≈45% of web turns), which inflated latency and token cost. Switching to **`gpt-4.1-mini` + Grounding with Bing Search** (a single hosted Bing call instead of an open-ended web tool) lifted first-tool accuracy to **~93.5%** on its own and cut fan-out to ≈3%. Adding the pre-router in front took first-tool accuracy to **~98.9%** in the harness.
+The original agent decided tools entirely on its own and reached only **~70%** first-tool accuracy, frequently **fanning out** multiple external web calls (≈45% of web turns), which inflated latency and token cost. Switching to **`gpt-4.1-mini` + Grounding with Bing Search** (a single hosted Bing call instead of an open-ended web tool) lifted first-tool accuracy to **~93.5%** and cut fan-out to ≈3%.
 
 > **Note on the web tool:** the agent's only external tool is **`bing_grounding`** (Grounding with Bing Search) — a single grounded round-trip that returns curated snippets. An open-ended web-search tool on `gpt-4.1-mini` either fans out into many calls or bloats the context; `bing_grounding` resolves a turn in one call. It is wired by setting `BING_CONNECTION_NAME` when running `scripts/setup_foundry_agent.py`.
-
-### How the pre-router works
-
-The pre-router ([`backend/voice/router.py`](backend/voice/router.py), live adapter [`backend/voice/routing.py`](backend/voice/routing.py)) is a small conversational planner that runs **before** the agent sees a turn. It never writes the final answer — it only decides the tool and/or rewrites the query; the agent still does the actual search and synthesis. It is a **two-stage** design:
-
-1. **Cheap regex / keyword pre-filter** — handles obvious META catalogue queries ("how many meetings", "list the meetings") and clearly external phrasings ("latest telecom news in X", "what are analysts saying about Y") at zero latency / zero token cost.
-2. **LLM planner** (`gpt-4.1-mini`, ~150–300 ms) — anything else falls through to a planner that sees the meeting catalogue + recent conversation history. It can resolve relative references ("the first meeting" → an exact date), ask **one** precise clarifying question only when genuinely ambiguous, and emit a refined query plus an intent label.
-
-It produces one of two actions:
-
-- **`dispatch`** — the intent is clear; emit the (possibly refined) query + a directive hint (e.g. `USE azure_ai_search …`).
-- **`clarify`** — ambiguous; ask one short question, then re-route next turn with the extended history. The loop bottoms out at `dispatch`.
-
-The planner runs `gpt-4.1-mini` via the **Responses API on the model-inference surface of the same Foundry resource** (`PROJECT_ENDPOINT` host `/openai/v1/`) — *not* the agent endpoint, which forbids a per-request `model=`. It requires **token-credential auth** (managed identity / `az login`); with API-key auth there is no token to mint for that endpoint, so the router stays disabled.
-
-### `ROUTER_MODE` — off / shadow / active
-
-Controlled by the `ROUTER_MODE` env var (see [`backend/config.py`](backend/config.py)):
-
-| Mode | What it does | Behaviour change |
-|---|---|---|
-| `off` *(default)* | Pre-router disabled; the agent decides tools on its own. | — |
-| `shadow` | Router runs on **every** user turn; its decision (`action` / `intent` / refined query / latency) is **logged** as `[ROUTER shadow] …` lines. Response creation is **not** touched. | **None** — used to validate auth, latency, token refresh, catalogue availability, and event ordering against live traffic with zero regression risk. |
-| `active` | *(not yet wired)* The router will gate response creation and inject its refined query / clarification before the agent responds. Currently **falls back to shadow** behaviour. | Planned. |
-
-Because Azure Voice Live's `RequestSession` only accepts `"auto" | "none" | "required"` for `tool_choice` (it can't force a *specific* hosted tool), the router's lever is a **directive system-message hint**, not a hard `tool_choice` override — the strongest mechanism that works in both the offline harness and the live runtime.
-
-The routing logic was validated offline by [`scripts/_routing_harness.py`](scripts/_routing_harness.py) before being wired into the live runtime in shadow mode.
 
 ## Getting Started
 
@@ -106,8 +74,6 @@ The avatar feature is currently available in the following service regions: Sout
    - `AGENT_NAME` - **Required.** Name of the Foundry agent to bind the session to (created via [`scripts/setup_foundry_agent.py`](scripts/setup_foundry_agent.py))
    - `AGENT_PROJECT_NAME` - **Required.** Foundry project that owns the agent
    - `VOICELIVE_VOICE` - Voice name (default: `en-US-AvaMultilingualNeural`)
-   - `ROUTER_MODE` - Pre-router mode: `off` (default), `shadow`, or `active`. See [Tool Routing](#tool-routing-pre-router). Requires token-credential auth + `PROJECT_ENDPOINT`.
-   - `ROUTER_MODEL` - Planner model deployment (default: `gpt-4.1-mini`)
 
    Agent provisioning (only needed when running [`scripts/setup_foundry_agent.py`](scripts/setup_foundry_agent.py)):
    - `PROJECT_ENDPOINT` - **Required.** Foundry project endpoint, e.g. `https://<resource>.services.ai.azure.com/api/projects/<project-name>`
@@ -430,12 +396,10 @@ mtn-exec-copilot/
 │   │   └── websocket.py           # /ws/{client_id} endpoint, session lifecycle
 │   └── voice/                     # Voice Live SDK integration
 │       ├── __init__.py            # exports VoiceSessionHandler
-│       ├── handler.py             # VoiceSessionHandler: session lifecycle, audio I/O, avatar, router wiring
+│       ├── handler.py             # VoiceSessionHandler: session lifecycle, audio I/O, avatar
 │       ├── builders.py            # build_voice_config / build_avatar_config / build_turn_detection
 │       ├── event_handlers.py      # SDK event -> frontend message translation
 │       ├── catalog.py             # Meeting catalogue fetch from AI Search (injected at session start)
-│       ├── router.py              # Pre-router logic: regex pre-filter + gpt-4.1-mini planner (pure)
-│       ├── routing.py             # LiveRouter: live-runtime adapter around router.py (token cache, client)
 │       ├── functions.py           # Built-in tool implementations (get_time, get_weather, calculate)
 │       └── auth.py                # AzureKeyCredential or DefaultAzureCredential
 │
@@ -449,7 +413,6 @@ mtn-exec-copilot/
 │   ├── setup_aisearch_index.py    # Creates/updates the AI Search index and ingests data/ (docx/pdf/md/txt)
 │   ├── test_aisearch_query.py     # Smoke-tests the index with a hybrid + semantic query
 │   ├── test_foundry_agent.py      # Smoke-tests the live agent end-to-end (tool calls + answer)
-│   ├── _routing_harness.py        # Offline accuracy/latency harness that validated the pre-router
 │   └── preflight.py               # Region/capability checks (Voice Live + Avatar) before azd up
 │
 ├── assets/                        # Non-code, non-corpus assets (not consumed at runtime)
