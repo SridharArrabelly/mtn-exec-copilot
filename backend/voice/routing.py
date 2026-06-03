@@ -102,6 +102,25 @@ class LiveRouter:
             self._client.api_key = token
         return self._client
 
+    async def warm(self) -> None:
+        """Pre-warm the planner so the first real turn isn't a cold start.
+
+        The cold cost on the first decide() is dominated by the initial
+        ``responses.create`` HTTP round-trip to the model-inference endpoint
+        (model spin-up + connection establishment), not just minting a token.
+        We therefore issue one tiny throwaway planner call. ``plan_llm`` is
+        internally guarded (returns a fallback on any error) so this never
+        raises; we still wrap it defensively because warming is best-effort.
+        """
+        client = await self._get_client()
+        await _router.plan_llm(
+            "warm up",
+            history=[],
+            catalog="",
+            client=client,
+            model=self._model,
+        )
+
     async def decide(
         self,
         query: str,

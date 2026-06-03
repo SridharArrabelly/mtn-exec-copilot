@@ -379,6 +379,26 @@ class VoiceSessionHandler:
             mode, self.client_id, ROUTER_MODEL, self._router.base_url,
         )
 
+        # Pre-warm the planner so the first real turn doesn't pay the cold-start
+        # cost (~12s) of the first responses.create round-trip. Fire-and-forget;
+        # warming is best-effort and never blocks or fails the session.
+        self._spawn_bg(self._prewarm_router())
+
+    async def _prewarm_router(self) -> None:
+        """Best-effort planner warm-up; safe to fail."""
+        if self._router is None:
+            return
+        t0 = asyncio.get_event_loop().time()
+        try:
+            await self._router.warm()
+            elapsed_ms = (asyncio.get_event_loop().time() - t0) * 1000.0
+            logger.info(
+                "Router: planner pre-warmed for client %s in %.0fms",
+                self.client_id, elapsed_ms,
+            )
+        except Exception as e:
+            logger.debug("Router: pre-warm failed (ignored): %s", e)
+
     def _record_router_turn(self, role: str, content: str) -> None:
         """Append a turn to the capped rolling history for the planner."""
         content = (content or "").strip()
