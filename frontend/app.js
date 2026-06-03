@@ -18,6 +18,13 @@ let isRecording = false;
 let audioChunksSent = 0;
 let isDeveloperMode = false;
 let avatarEnabled = false;
+// True from the moment connectSession() starts until the avatar video is ready
+// (or the session ends). Lets us show the avatar frame + loading placeholder
+// immediately instead of waiting for session_started, smoothing the startup.
+let avatarConnecting = false;
+let pendingAvatarEnabled = false;
+let avatarLoadingHideTimer = null;
+let micRevealTimer = null;
 let peerConnection = null;
 let avatarVideoElement = null;
 let isSpeaking = false;
@@ -410,6 +417,24 @@ async function connectSession() {
     setConnecting(true);
     addMessage('system', 'Session started, click on the mic button to start conversation! debug id: connecting...');
 
+    // Reveal the avatar frame + a branded loading placeholder right away (t=0)
+    // so the final layout is in place immediately. Without this the screen stays
+    // blank for ~3s (Voice Live handshake) and then the empty avatar box, name and
+    // mic all pop in at once — the staggered reveal that feels awkward.
+    const wantAvatar = document.getElementById('avatarEnabled')?.checked || false;
+    avatarConnecting = wantAvatar;
+    pendingAvatarEnabled = wantAvatar;
+    if (wantAvatar) {
+        // Pin the output mode now so the ice_servers handler (which arrives before
+        // session_started) routes webrtc vs websocket correctly.
+        avatarOutputMode = document.getElementById('avatarOutputMode')?.value || 'webrtc';
+        const isPhotoAvatarSession = document.getElementById('isPhotoAvatar')?.checked || false;
+        const avatarContainer = document.getElementById('avatarVideoContainer');
+        if (avatarContainer) avatarContainer.classList.toggle('photo-avatar', isPhotoAvatarSession);
+        showAvatarLoading('Connecting…');
+        updateDeveloperModeLayout();
+    }
+
     try {
         // Open WebSocket to Python backend
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -465,6 +490,9 @@ function handleDisconnect() {
     isRecording = false;
     audioChunksSent = 0;
     avatarEnabled = false;
+    avatarConnecting = false;
+    pendingAvatarEnabled = false;
+    clearAvatarLoading();
 
     stopAudioCapture();
     stopAudioPlayback();
@@ -484,6 +512,9 @@ function handleDisconnect() {
 
     const lbl = document.getElementById('avatarNameLabel');
     if (lbl) lbl.textContent = '';
+    clearTimeout(micRevealTimer);
+    micRevealTimer = null;
+    document.getElementById('recordContainer')?.classList.add('hidden');
 
     updateConnectionUI();
     updateDeveloperModeLayout();
@@ -500,6 +531,10 @@ function handleServerMessage(msg) {
         case 'session_error':
             addMessage('system', 'Error: ' + (msg.error || 'Unknown error'));
             setConnecting(false);
+            avatarConnecting = false;
+            pendingAvatarEnabled = false;
+            clearAvatarLoading();
+            updateDeveloperModeLayout();
             break;
         case 'ice_servers':
             // Only setup WebRTC when avatar output mode is webrtc
@@ -627,17 +662,10 @@ async function onSessionStarted(msg) {
         avatarContainer.classList.toggle('photo-avatar', isPhotoAvatarSession);
     }
     const labelEl = document.getElementById('avatarNameLabel');
-    if (labelEl) {
-        const isCustomA = document.getElementById('isCustomAvatar')?.checked;
-        const isPhotoA = document.getElementById('isPhotoAvatar')?.checked;
-        const rawName = isCustomA
-            ? (document.getElementById('customAvatarName')?.value || '')
-            : isPhotoA
-                ? (document.getElementById('photoAvatarName')?.value || '')
-                : (document.getElementById('avatarName')?.value || '');
-        // Strip suffixes like '-business', '-casual-sitting' for a friendlier label.
-        const pretty = rawName ? rawName.split('-')[0] : '';
-        labelEl.textContent = avatarEnabled ? pretty : '';
+    if (labelEl && !avatarEnabled) {
+        // Avatar name is revealed together with the video (see revealAvatarVideo);
+        // keep it empty here so it doesn't pop in during the loading spinner.
+        labelEl.textContent = '';
     }
     updateDeveloperModeLayout();
 
@@ -646,8 +674,16 @@ async function onSessionStarted(msg) {
         setupWebSocketVideoPlayback(isPhotoAvatarSession);
     }
 
-    // Show record button for non-dev mode
-    document.getElementById('recordContainer').classList.remove('hidden');
+    // Reveal the mic. With an avatar, wait until the avatar video is on screen so
+    // the controls don't pop in before the face does. A fallback timer guarantees
+    // the mic still appears even if the video frame never fires (so a stalled
+    // avatar can never permanently block the conversation).
+    if (avatarEnabled && avatarConnecting) {
+        clearTimeout(micRevealTimer);
+        micRevealTimer = setTimeout(showMicControls, 8000);
+    } else {
+        showMicControls();
+    }
 
     // Start audio capture but leave mic off by default
     await startAudioCapture();
@@ -655,6 +691,12 @@ async function onSessionStarted(msg) {
     stopRecordAnimation();
     resetVolumeCircle();
     updateMicUI();
+}
+
+function showMicControls() {
+    clearTimeout(micRevealTimer);
+    micRevealTimer = null;
+    document.getElementById('recordContainer').classList.remove('hidden');
 }
 
 // ===== UI State =====
@@ -742,6 +784,70 @@ function updateControlStates() {
     if (recordBtn) recordBtn.disabled = !isConnected;
 }
 
+// Whether the avatar panel (video frame + loading placeholder) should be shown.
+// Once connected we trust the negotiated avatarEnabled; while still connecting we
+// use the snapshot taken at connect time so the frame can appear at t=0.
+function shouldShowAvatarPanel() {
+    return isConnected ? avatarEnabled : (avatarConnecting && pendingAvatarEnabled);
+}
+
+// Set the avatar name label from the current config inputs (known client-side at
+// connect time, so we don't have to wait for session_started to show it).
+function setAvatarNameLabelFromConfig() {
+    const labelEl = document.getElementById('avatarNameLabel');
+    if (!labelEl) return;
+    const isCustomA = document.getElementById('isCustomAvatar')?.checked;
+    const isPhotoA = document.getElementById('isPhotoAvatar')?.checked;
+    const rawName = isCustomA
+        ? (document.getElementById('customAvatarName')?.value || '')
+        : isPhotoA
+            ? (document.getElementById('photoAvatarName')?.value || '')
+            : (document.getElementById('avatarName')?.value || '');
+    // Strip suffixes like '-business', '-casual-sitting' for a friendlier label.
+    labelEl.textContent = rawName ? rawName.split('-')[0] : '';
+}
+
+function showAvatarLoading(text) {
+    if (avatarLoadingHideTimer) { clearTimeout(avatarLoadingHideTimer); avatarLoadingHideTimer = null; }
+    const el = document.getElementById('avatarLoading');
+    if (!el) return;
+    const t = document.getElementById('avatarLoadingText');
+    if (t && text) t.textContent = text;
+    el.classList.remove('hidden', 'fade-out');
+}
+
+// Fade the placeholder out smoothly, then remove it from layout once the CSS
+// transition has finished.
+function hideAvatarLoading() {
+    const el = document.getElementById('avatarLoading');
+    if (!el) return;
+    el.classList.add('fade-out');
+    if (avatarLoadingHideTimer) clearTimeout(avatarLoadingHideTimer);
+    avatarLoadingHideTimer = setTimeout(() => {
+        el.classList.add('hidden');
+        avatarLoadingHideTimer = null;
+    }, 500);
+}
+
+// Hide the placeholder immediately (no fade) and reset it — used on disconnect/error
+// so a later reconnect starts from a clean state.
+function clearAvatarLoading() {
+    if (avatarLoadingHideTimer) { clearTimeout(avatarLoadingHideTimer); avatarLoadingHideTimer = null; }
+    const el = document.getElementById('avatarLoading');
+    if (el) el.classList.add('hidden');
+    if (el) el.classList.remove('fade-out');
+}
+
+// Fade the live avatar video in and the placeholder out. Called on the first
+// 'playing' event from the WebRTC or websocket video element.
+function revealAvatarVideo(mediaPlayer) {
+    if (mediaPlayer) mediaPlayer.classList.add('avatar-video-ready');
+    avatarConnecting = false;
+    setAvatarNameLabelFromConfig();
+    hideAvatarLoading();
+    showMicControls();
+}
+
 function updateDeveloperModeLayout() {
     const contentArea = document.getElementById('contentArea');
     const avatarVideoContainer = document.getElementById('avatarVideoContainer');
@@ -751,14 +857,15 @@ function updateDeveloperModeLayout() {
     const footerArea = document.getElementById('footerArea');
 
     const hide = (el, h) => el.classList.toggle('hidden', h);
+    const showAvatar = shouldShowAvatarPanel();
 
     if (isDeveloperMode) {
         // Developer mode: show input area, hide footer
         hide(inputArea, false);
         hide(footerArea, true);
 
-        if (isConnected && avatarEnabled) {
-            // Avatar + developer: side-by-side layout (avatar + chat)
+        if (showAvatar) {
+            // Avatar (connecting or connected) + developer: side-by-side (avatar + chat)
             contentArea.classList.add('developer-layout');
             hide(avatarVideoContainer, false);
             hide(chatArea, false);
@@ -782,8 +889,8 @@ function updateDeveloperModeLayout() {
         hide(footerArea, false);
         contentArea.classList.remove('developer-layout');
 
-        if (isConnected && avatarEnabled) {
-            // Avatar + normal: only avatar video, no chat
+        if (showAvatar) {
+            // Avatar (connecting or connected) + normal: only avatar video, no chat
             hide(avatarVideoContainer, false);
             hide(chatArea, true);
             hide(volumeAnimation, true);
@@ -1147,6 +1254,7 @@ function setupWebSocketVideoPlayback(isPhotoAvatar) {
     videoElement.addEventListener('canplay', () => {
         videoElement.play().catch(e => console.error('Play error:', e));
     });
+    videoElement.addEventListener('playing', () => revealAvatarVideo(videoElement));
 
     // fMP4 codec: H.264 video + AAC audio
     const FMP4_MIME_CODEC = 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"';
@@ -1264,14 +1372,7 @@ function preparePeerConnection(iceServers) {
         if (container) container.appendChild(mediaPlayer);
         if (event.track.kind === 'video') {
             avatarVideoElement = mediaPlayer;
-            mediaPlayer.style.width = '0.1%';
-            mediaPlayer.style.height = '0.1%';
-            mediaPlayer.onplaying = () => {
-                setTimeout(() => {
-                    mediaPlayer.style.width = '';
-                    mediaPlayer.style.height = '';
-                }, 0);
-            };
+            mediaPlayer.onplaying = () => revealAvatarVideo(mediaPlayer);
         }
     };
 
@@ -1383,14 +1484,7 @@ function setupWebRTC(iceServers) {
         if (container) container.appendChild(mediaPlayer);
         if (event.track.kind === 'video') {
             avatarVideoElement = mediaPlayer;
-            mediaPlayer.style.width = '0.1%';
-            mediaPlayer.style.height = '0.1%';
-            mediaPlayer.onplaying = () => {
-                setTimeout(() => {
-                    mediaPlayer.style.width = '';
-                    mediaPlayer.style.height = '';
-                }, 0);
-            };
+            mediaPlayer.onplaying = () => revealAvatarVideo(mediaPlayer);
         }
     };
 
