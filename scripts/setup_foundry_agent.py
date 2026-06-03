@@ -4,11 +4,15 @@ This script creates a new version of a Microsoft Foundry agent (e.g.
 ``MtnAvatarAgent``) wired with two tools:
 
 * **Azure AI Search** - internal index of past MTN executive meetings.
-* **Web Search** - open-web grounding for current telco / market information.
+* **Grounding with Bing Search** - single-shot open-web grounding for current
+  telco / market information.
 
 The agent's system prompt, model, and tool wiring live here; the runtime
 backend (``backend/``) only references the agent by ``AGENT_NAME`` /
 ``AGENT_PROJECT_NAME`` and lets Foundry resolve the rest server-side.
+
+The agent runs on ``gpt-4.1-mini`` + Grounding-with-Bing: the validated
+voice config (single grounded round-trip, no web_search fan-out).
 
 Run ``scripts/test_foundry_agent.py`` after provisioning to smoke-test the
 agent end-to-end.
@@ -19,7 +23,8 @@ Required environment variables (see ``.env.example``):
     SEARCH_CONNECTION_NAME Name of the Azure AI Search connection in the project
     SEARCH_INDEX_NAME      Azure AI Search index to expose to the agent
     AGENT_NAME             Name of the Foundry agent to create / version (e.g. ``MtnAvatarAgent``)
-    AGENT_MODEL            Model deployment name to bind to the agent (e.g. ``gpt-5.4-mini``)
+    AGENT_MODEL            Model deployment name to bind to the agent (e.g. ``gpt-4.1-mini``)
+    BING_CONNECTION_NAME   Name of the Grounding-with-Bing connection in the project
 
 Auth: uses ``DefaultAzureCredential`` - run ``az login`` first.
 
@@ -44,55 +49,66 @@ from azure.ai.projects.models import (
     BingGroundingTool,
     PromptAgentDefinition,
     Reasoning,
-    WebSearchApproximateLocation,
-    WebSearchTool,
 )
 from azure.identity import DefaultAzureCredential
 from dotenv import load_dotenv
 
 AGENT_DESCRIPTION = "MTN executive assistant grounded in past meetings and live web search."
 
-WEB_SEARCH_LOCATION = WebSearchApproximateLocation(
-    city="Johannesburg", region="Gauteng", country="ZA"
-)
-
-# Agent instructions — voice-first, tuned for gpt-5.4-mini.
+# Agent instructions — voice-first, tuned for gpt-4.1-mini + Grounding-with-Bing.
 #
-# Design principles:
+# gpt-4.1-mini is FAST, non-reasoning, and LITERAL: it does what the prompt
+# says, no more, no less, so the tool-selection contract is stated as hard
+# rules rather than "use judgement". Its external tool is `bing_grounding`
+# (a single grounded round-trip) rather than `web_search` — the latter fans
+# out into many calls and bloats context, which is exactly why we dropped it.
+#
+# Design principles baked into the prompt below:
 #   * The output is SPOKEN by an avatar — no URLs, no bracket citations, no
-#     Markdown links. The TTS layer reads what we send literally. This is the
-#     biggest functional change from earlier versions of this prompt.
-#   * gpt-5.4-mini has solid reasoning for a small model — keep the rules
-#     short and trust its judgement on ambiguity rather than enumerate every
-#     case (a longer prompt was tried and was worse in practice).
-#   * Tool-selection contract stays sharp: one tool per turn unless the ask
-#     is genuinely compound. Never chain tools as a silent fallback — that
-#     doubles the user's latency.
-#   * When a question is genuinely ambiguous (multiple plausible meanings
-#     that would lead to different tool calls / different answers), ask
-#     ONE short, suggestion-style clarifying question BEFORE calling any
-#     tool. Voice users hate open-ended prompts — always include the two
-#     most likely options ("did you mean X or Y?") rather than asking
-#     them to think from scratch. Asking saves the ~4s search round-trip
-#     when the model would otherwise guess wrong.
-#   * Today's date is baked in at agent-registration time so the model can
-#     resolve relative time terms ("recent", "this quarter", "lately"). The
-#     date drifts between re-runs of this script — re-run monthly to keep it
-#     fresh.
+#     Markdown links. The TTS layer reads what we send literally.
+#   * One tool per turn unless the ask is genuinely compound. Never chain
+#     tools as a silent fallback — that doubles the user's latency.
+#   * Ask ONE short, suggestion-style clarifying question BEFORE calling any
+#     tool only when a question is genuinely ambiguous (multiple plausible
+#     meanings that would lead to different tool calls).
 #   * The backend injects a MEETINGS LIST as a system message at session
-#     start (live fetch from AI Search via chunk_index filter — no rebuild
-#     needed when new
-#     minutes are ingested). The prompt below tells the model to answer
-#     first/last/count/listing questions directly from that list rather
-#     than calling AI Search, and to use the list to phrase precise
-#     content searches by exact meeting date. This decouples temporal
-#     awareness from index ranking — the index itself uses neutral hybrid
-#     scoring (no recency boost) which works for both old and new docs.
-
+#     start (live fetch from AI Search). The prompt tells the model to answer
+#     first/last/count/listing questions from that list rather than searching,
+#     and to phrase precise content searches by exact meeting date.
 
 AGENT_INSTRUCTIONS = """You are Nuru, an executive assistant for MTN's leadership team.
 
 Your answers will be SPOKEN by a video avatar. Write for the EAR, not the page.
+
+# How you operate (read first)
+
+You are a FAST assistant. You do NOT deliberate out loud, re-plan, or
+second-guess. For each user turn you make ONE decision: answer directly
+from the catalogue, ask ONE clarifying question, or call a tool. For a
+simple ask call EXACTLY ONE tool. Only a genuinely compound ask (an
+explicit internal-vs-external comparison) may use two tools — at most
+ONE call to `azure_ai_search` and ONE to `bing_grounding`, in that
+order. Never call the SAME tool twice and never chain to the other tool
+as a silent fallback. If a tool returns nothing useful, say so plainly;
+do not retry or switch tools.
+
+Your external tool is `bing_grounding` — a single grounded web lookup
+that returns curated snippets with one call. Treat it as one shot: phrase
+the best possible query once, call it once, then answer from what comes
+back. Never issue multiple bing_grounding calls in a turn.
+
+# Spoken output — NEVER read citations or URLs (critical)
+
+`bing_grounding` returns source URLs and citation markers alongside the
+facts — for example `(https://www.jse.co.za/...)`, `[reuters.com]`,
+`【3:0†source】`, `citeturn0`. These are REFERENCE METADATA, not part of
+your answer. NEVER repeat, read, or include them in your reply. The
+avatar pronounces every character literally, so a URL is spoken as
+"h-t-t-p-s colon slash slash w-w-w dot…", which is unacceptable.
+State the fact in plain words. If attribution genuinely helps, name the
+publisher only ("per the JSE", "Reuters reported"). Output ONLY clean,
+speakable prose: no URLs, no domains, no brackets, no citation tokens of
+any kind.
 
 If asked who you are or what your name is, you are Nuru. Remain consistent
 throughout the conversation.
@@ -178,22 +194,23 @@ source for discussions, decisions, action items, owners, risks, strategy,
 financial and operational reviews. Never answer prior-meeting content
 from memory.
 
-## web_search
+## bing_grounding
 CURRENT external information — telecom news, competitors, regulators,
-spectrum, M&A, analyst commentary, public earnings. Prefer recent and
-reputable sources (Reuters, Bloomberg, FT, GSMA, Light Reading, regional
-African / MENA outlets).
+spectrum, M&A, analyst commentary, public earnings — fetched in a SINGLE
+grounded web lookup that returns curated snippets. Phrase one precise
+query, call it once. Prefer recent, reputable sources (Reuters, Bloomberg,
+FT, GSMA, Light Reading, regional African / MENA outlets).
 
 # Tool Selection (one rule, then examples)
 
 Default heuristic: anything about MTN's own decisions, people, numbers,
 plans, strategy, vision, ambitions, or targets → `azure_ai_search`.
-Anything about the outside world → `web_search`.
+Anything about the outside world → `bing_grounding`.
 
 HARD ANTI-RULE: MTN's OWN strategy, vision, ambition, goals, targets,
 roadmap or plans are INTERNAL — they live in MTN's board and exec
 minutes, NOT on the public web. A future year in the question (2025,
-2030, etc.) does NOT make it external. NEVER call `web_search` for
+2030, etc.) does NOT make it external. NEVER call `bing_grounding` for
 "MTN's ambition / vision / strategy / plan / targets / roadmap for
 <year>". Use `azure_ai_search`.
 
@@ -207,16 +224,16 @@ User: "What is our 2025 strategy / vision?"        → azure_ai_search
 User: "What are MTN's strategic priorities?"       → azure_ai_search
 User: "What is our digital / fintech roadmap?"     → azure_ai_search
 
-User: "What are analysts saying about MTN?"       → web_search
-User: "Reuters coverage of MTN earnings."         → web_search
-User: "Latest telecom news in Africa."            → web_search
-User: "What is Vodacom doing in fintech?"         → web_search
+User: "What are analysts saying about MTN?"       → bing_grounding
+User: "Reuters coverage of MTN earnings."         → bing_grounding
+User: "Latest telecom news in Africa."            → bing_grounding
+User: "What is Vodacom doing in fintech?"         → bing_grounding
 
 User: "Compare our fintech strategy with Airtel." → BOTH
 User: "Compare our AI plans with competitors."    → BOTH
 
 When BOTH are needed: call `azure_ai_search` FIRST to ground the
-internal position, THEN `web_search` for the external view, THEN
+internal position, THEN `bing_grounding` for the external view, THEN
 synthesise. Do not interleave — the answers get muddled.
 
 If a tool returns nothing relevant, say so plainly and offer a next
@@ -297,95 +314,6 @@ Optimise for spoken conversation, not a written report.
 """
 
 
-# ---------------------------------------------------------------------------
-# gpt-4.1-mini + Grounding-with-Bing variant
-# ---------------------------------------------------------------------------
-# The prod prompt above is tuned for gpt-5.4-mini, a reasoning model that we
-# can trust to weigh ambiguity. The variant agent is gpt-4.1-mini — fast,
-# non-reasoning, and LITERAL. It does what the prompt says, no more, no less,
-# so the tool-selection contract must be stated as hard rules rather than
-# "use judgement". It also pairs with Grounding-with-Bing instead of
-# WebSearchTool: a single grounded round-trip, never an iterative web crawl,
-# which is exactly why we picked it (the reasoning model + WebSearchTool fans
-# out into many calls; gpt-4.1-mini + bing_grounding does not).
-#
-# This header is prepended to the shared body; the body's `web_search`
-# references are rewritten to `bing_grounding`, and the external-tool
-# description is replaced to describe single-shot grounded search.
-
-_VARIANT_HEADER = """You are Nuru, an executive assistant for MTN's leadership team.
-
-Your answers will be SPOKEN by a video avatar. Write for the EAR, not the page.
-
-# How you operate (read first)
-
-You are a FAST assistant. You do NOT deliberate out loud, re-plan, or
-second-guess. For each user turn you make ONE decision: answer directly
-from the catalogue, ask ONE clarifying question, or call a tool. For a
-simple ask call EXACTLY ONE tool. Only a genuinely compound ask (an
-explicit internal-vs-external comparison) may use two tools — at most
-ONE call to `azure_ai_search` and ONE to `bing_grounding`, in that
-order. Never call the SAME tool twice and never chain to the other tool
-as a silent fallback. If a tool returns nothing useful, say so plainly;
-do not retry or switch tools.
-
-Your external tool is `bing_grounding` — a single grounded web lookup
-that returns curated snippets with one call. Treat it as one shot: phrase
-the best possible query once, call it once, then answer from what comes
-back. Never issue multiple bing_grounding calls in a turn.
-
-# Spoken output — NEVER read citations or URLs (critical)
-
-`bing_grounding` returns source URLs and citation markers alongside the
-facts — for example `(https://www.jse.co.za/...)`, `[reuters.com]`,
-`【3:0†source】`, `citeturn0`. These are REFERENCE METADATA, not part of
-your answer. NEVER repeat, read, or include them in your reply. The
-avatar pronounces every character literally, so a URL is spoken as
-"h-t-t-p-s colon slash slash w-w-w dot…", which is unacceptable.
-State the fact in plain words. If attribution genuinely helps, name the
-publisher only ("per the JSE", "Reuters reported"). Output ONLY clean,
-speakable prose: no URLs, no domains, no brackets, no citation tokens of
-any kind.
-
-"""
-
-_BING_TOOL_DESC = """## bing_grounding
-CURRENT external information — telecom news, competitors, regulators,
-spectrum, M&A, analyst commentary, public earnings — fetched in a SINGLE
-grounded web lookup that returns curated snippets. Phrase one precise
-query, call it once. Prefer recent, reputable sources (Reuters, Bloomberg,
-FT, GSMA, Light Reading, regional African / MENA outlets)."""
-
-_WEB_TOOL_DESC = """## web_search
-CURRENT external information — telecom news, competitors, regulators,
-spectrum, M&A, analyst commentary, public earnings. Prefer recent and
-reputable sources (Reuters, Bloomberg, FT, GSMA, Light Reading, regional
-African / MENA outlets)."""
-
-
-def build_instructions(web_tool: str) -> str:
-    """Return agent instructions tuned to the chosen web grounding tool.
-
-    * ``web_search`` → the validated prod prompt, unchanged (gpt-5.4-mini).
-    * ``bing_grounding`` → a non-reasoning, single-grounded-call variant for
-      gpt-4.1-mini: a fast-operation header replaces the prod intro, every
-      ``web_search`` tool reference becomes ``bing_grounding``, and the
-      external-tool description is swapped for the single-shot Bing version.
-    """
-    if web_tool != "bing_grounding":
-        return AGENT_INSTRUCTIONS
-
-    # Drop the prod intro (first two lines up to and including the
-    # "Write for the EAR" line) — the variant header restates it — then keep
-    # the rest of the shared body from the "If asked who you are" line on.
-    anchor = "If asked who you are or what your name is"
-    idx = AGENT_INSTRUCTIONS.index(anchor)
-    body = AGENT_INSTRUCTIONS[idx:]
-    body = body.replace(_WEB_TOOL_DESC, _BING_TOOL_DESC)
-    body = body.replace("web_search", "bing_grounding")
-    return _VARIANT_HEADER + body
-
-
 def load_settings() -> dict:
     """Read required and optional settings from the environment."""
     load_dotenv()
@@ -398,27 +326,22 @@ def load_settings() -> dict:
         # Optional. Only set for reasoning models (o-series, gpt-5 family).
         # gpt-4.x / gpt-4o reject `reasoning.effort` at /responses time.
         "agent_reasoning_effort": (os.getenv("AGENT_REASONING_EFFORT") or "").strip() or None,
-        # Web grounding tool selection: "web_search" (default, prod) or
-        # "bing_grounding". The Bing variant avoids the WebSearchTool fan-out /
-        # token-bloat that a reasoning agent (or even gpt-4.1-mini) exhibits and
-        # returns a single grounded round-trip. Requires BING_CONNECTION_NAME.
-        "web_tool": (os.getenv("WEB_TOOL") or "web_search").strip().lower(),
+        # Grounding-with-Bing connection name (the agent's only web tool).
         "bing_connection_name": (os.getenv("BING_CONNECTION_NAME") or "").strip() or None,
     }
-    missing = [k for k in ("project_endpoint", "search_connection_name", "search_index_name", "agent_name", "agent_model") if not settings[k]]
+    required = (
+        "project_endpoint",
+        "search_connection_name",
+        "search_index_name",
+        "agent_name",
+        "agent_model",
+        "bing_connection_name",
+    )
+    missing = [k for k in required if not settings[k]]
     if missing:
         raise EnvironmentError(
             f"Missing required environment variables: {', '.join(m.upper() for m in missing)}. "
             "See .env.example."
-        )
-    if settings["web_tool"] not in ("web_search", "bing_grounding"):
-        raise EnvironmentError(
-            f"WEB_TOOL must be 'web_search' or 'bing_grounding', got {settings['web_tool']!r}."
-        )
-    if settings["web_tool"] == "bing_grounding" and not settings["bing_connection_name"]:
-        raise EnvironmentError(
-            "WEB_TOOL=bing_grounding requires BING_CONNECTION_NAME (the Foundry "
-            "Grounding-with-Bing connection name). See .env.example."
         )
     return settings
 
@@ -426,10 +349,10 @@ def load_settings() -> dict:
 def build_bing_tool(bing_connection_id: str) -> BingGroundingTool:
     """Grounding-with-Bing tool — single grounded round-trip per turn.
 
-    Used in the gpt-4.1-mini variant in place of WebSearchTool. A reasoning
-    agent + WebSearchTool fans out into many web_search calls (measured: 121+
-    extra calls across the harness); even gpt-4.1-mini + WebSearchTool fans out
-    and bloats tokens. Grounding-with-Bing returns curated snippets in one shot.
+    A reasoning agent + WebSearchTool fans out into many web_search calls
+    (measured: 121+ extra calls across the harness); even gpt-4.1-mini +
+    WebSearchTool fans out and bloats tokens. Grounding-with-Bing returns
+    curated snippets in one shot, which is why it is the agent's only web tool.
 
     count=5 keeps the snippet budget tight for voice answers; market/set_lang
     pin South-Africa-first English. freshness is intentionally left unset —
@@ -455,30 +378,24 @@ def build_bing_tool(bing_connection_id: str) -> BingGroundingTool:
 def build_tools(
     search_connection_id: str,
     search_index_name: str,
-    web_tool: str = "web_search",
-    bing_connection_id: str | None = None,
+    bing_connection_id: str,
 ) -> list:
-    """Build the tool list for the agent.
+    """Build the tool list for the agent: AI Search + Grounding-with-Bing.
 
     AI Search uses VECTOR_SIMPLE_HYBRID — vector ANN + BM25 keyword.
     The semantic re-ranker (VECTOR_SEMANTIC_HYBRID) would lift recall on
     summary queries, but the current azure-ai-projects SDK's
     AISearchIndexResource has no `semantic_configuration` field, so the
-    server rejects that query type for this tool and the agent silently
-    falls through to web_search. Stick with SIMPLE_HYBRID until the SDK
-    exposes the field; recall on this small corpus is already strong.
+    server rejects that query type for this tool. Stick with SIMPLE_HYBRID
+    until the SDK exposes the field; recall on this small corpus is strong.
 
     top_k=5: enough chunks to summarise from when several come from the
     same meeting. top_k=3 broke summary queries in earlier rounds (only
     one chunk from the right meeting reached the model).
-
-    Web grounding is selectable via ``web_tool``:
-      * "web_search"     — WebSearchTool, `low` context (prod default).
-      * "bing_grounding" — BingGroundingTool, single-shot grounded answer.
     """
-    # Tool ORDER matters: gpt-5.4-mini at reasoning.effort=none biases hard
-    # toward the first tool. Put azure_ai_search first so MTN-meeting questions
-    # ground in the index instead of falling through to the web tool.
+    # Tool ORDER matters: gpt-4.1-mini biases hard toward the first tool. Put
+    # azure_ai_search first so MTN-meeting questions ground in the index
+    # instead of falling through to the web tool.
     ai_search = AzureAISearchTool(
         azure_ai_search=AzureAISearchToolResource(
             indexes=[
@@ -491,18 +408,7 @@ def build_tools(
             ]
         )
     )
-
-    if web_tool == "bing_grounding":
-        if not bing_connection_id:
-            raise ValueError("bing_connection_id is required when web_tool='bing_grounding'")
-        return [ai_search, build_bing_tool(bing_connection_id)]
-
-    return [
-        ai_search,
-        WebSearchTool(user_location=WEB_SEARCH_LOCATION,
-                      search_context_size='low',
-                      ),
-    ]
+    return [ai_search, build_bing_tool(bing_connection_id)]
 
 
 def _model_supports_reasoning(model: str) -> bool:
@@ -530,36 +436,26 @@ def create_agent(project: AIProjectClient, settings: dict):
     """Create a new version of the Foundry agent.
 
     Reasoning effort (`AGENT_REASONING_EFFORT`) is OPTIONAL and only
-    applied when the env var is set. Reasoning models (o1, o3, o4-mini,
-    gpt-5 family) accept it; gpt-4.x and gpt-4o models reject it at
-    /responses time with `unsupported_parameter`. To use a reasoning
-    model on voice-first turns, set `AGENT_REASONING_EFFORT=low` in
-    `.env` — `low` keeps enough judgement for tool selection but cuts
-    the multi-second "thinking" overhead. Valid values: `minimal`,
-    `low`, `medium`, `high`. Leave UNSET for any non-reasoning model.
+    applied when the env var is set. The agent runs on gpt-4.1-mini by
+    default, which does NOT support reasoning.effort — set it ONLY if you
+    bind a reasoning model (o-series, gpt-5 family). Leave UNSET otherwise.
     """
     azs_connection = project.connections.get(settings["search_connection_name"])
 
-    bing_connection_id = None
-    if settings["web_tool"] == "bing_grounding":
-        bing_connection = project.connections.get(settings["bing_connection_name"])
-        bing_connection_id = bing_connection.id
-        print(
-            f"Web tool: bing_grounding (connection {settings['bing_connection_name']!r})."
-        )
-    else:
-        print("Web tool: web_search (WebSearchTool).")
+    bing_connection = project.connections.get(settings["bing_connection_name"])
+    print(
+        f"Web tool: bing_grounding (connection {settings['bing_connection_name']!r})."
+    )
 
     tools = build_tools(
         azs_connection.id,
         settings["search_index_name"],
-        web_tool=settings["web_tool"],
-        bing_connection_id=bing_connection_id,
+        bing_connection.id,
     )
 
     definition_kwargs = {
         "model": settings["agent_model"],
-        "instructions": build_instructions(settings["web_tool"]),
+        "instructions": AGENT_INSTRUCTIONS,
         "tools": tools,
     }
     effort = settings.get("agent_reasoning_effort")

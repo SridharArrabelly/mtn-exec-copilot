@@ -38,9 +38,9 @@ The avatar's usefulness hinges on calling the **right tool** for each question: 
 
 ### Why the design changed
 
-The original agent ran on `gpt-5.4-mini` and decided tools on its own. In offline measurement it reached only **~70%** first-tool accuracy and frequently **fanned out** multiple `web_search` calls (≈45% of web turns), which inflated latency and token cost. Swapping to **`gpt-4.1-mini` + Grounding with Bing Search** (a single hosted Bing tool instead of `web_search`) lifted first-tool accuracy to **~93.5%** on its own and cut fan-out to ≈3%. Adding the pre-router in front took first-tool accuracy to **~98.9%** in the harness.
+The original agent decided tools entirely on its own and reached only **~70%** first-tool accuracy, frequently **fanning out** multiple external web calls (≈45% of web turns), which inflated latency and token cost. Switching to **`gpt-4.1-mini` + Grounding with Bing Search** (a single hosted Bing call instead of an open-ended web tool) lifted first-tool accuracy to **~93.5%** on its own and cut fan-out to ≈3%. Adding the pre-router in front took first-tool accuracy to **~98.9%** in the harness.
 
-> **Note on the web tool:** the agent uses **`bing_grounding`** (Grounding with Bing Search), *not* the `web_search` tool. `web_search` on `gpt-4.1-mini` either fans out into many calls or bloats the context; `bing_grounding` resolves a turn in a single tool call. The web tool is selected by `WEB_TOOL=bing_grounding` + `BING_CONNECTION_NAME` when running `scripts/setup_foundry_agent.py`.
+> **Note on the web tool:** the agent's only external tool is **`bing_grounding`** (Grounding with Bing Search) — a single grounded round-trip that returns curated snippets. An open-ended web-search tool on `gpt-4.1-mini` either fans out into many calls or bloats the context; `bing_grounding` resolves a turn in one call. It is wired by setting `BING_CONNECTION_NAME` when running `scripts/setup_foundry_agent.py`.
 
 ### How the pre-router works
 
@@ -113,9 +113,8 @@ The avatar feature is currently available in the following service regions: Sout
    - `PROJECT_ENDPOINT` - **Required.** Foundry project endpoint, e.g. `https://<resource>.services.ai.azure.com/api/projects/<project-name>`
    - `SEARCH_CONNECTION_NAME` - **Required.** Name of the Azure AI Search connection in the Foundry project
    - `SEARCH_INDEX_NAME` - **Required.** Azure AI Search index to expose to the agent
-   - `AGENT_MODEL` - Foundry model deployment the agent runs on (default: `gpt-5.4-mini`; the validated voice config is `gpt-4.1-mini`). Must match a deployment in your project.
-   - `WEB_TOOL` - Web tool to wire: `bing_grounding` (recommended — single Bing call) or `web_search`. Use `bing_grounding` to avoid `web_search` fan-out / token bloat.
-   - `BING_CONNECTION_NAME` - **Required when `WEB_TOOL=bing_grounding`.** Name of the Grounding-with-Bing connection in the Foundry project.
+   - `AGENT_MODEL` - Foundry model deployment the agent runs on (default: `gpt-4.1-mini`, the validated voice config). Must match a deployment in your project.
+   - `BING_CONNECTION_NAME` - **Required.** Name of the Grounding-with-Bing connection in the Foundry project (the agent's only external tool).
    - `AGENT_REASONING_EFFORT` - *Only* set for reasoning models (o-series, gpt-5 family). Leave **unset** for `gpt-4.x` / `gpt-4o` — they reject `reasoning.effort` with a 400 on every response, which manifests as a silently non-speaking avatar.
 
    Search index build/test (only needed when running [`scripts/setup_aisearch_index.py`](scripts/setup_aisearch_index.py) or [`scripts/test_aisearch_query.py`](scripts/test_aisearch_query.py)):
@@ -385,9 +384,9 @@ The Bicep template accepts overrides via azd environment variables — set any o
 | `SEARCH_CONNECTION_NAME`  | `aisearch-mtn`                   | Foundry AI Search connection name        |
 | `SEARCH_INDEX_NAME`       | `mtn-board-index`                | AI Search index name                     |
 | `VOICELIVE_VOICE`         | `en-US-AvaMultilingualNeural`    | Default avatar voice                     |
-| `MODEL_NAME`              | `gpt-5.4-mini`                   | OpenAI model to deploy in Foundry        |
+| `MODEL_NAME`              | `gpt-4.1-mini`                   | OpenAI model to deploy in Foundry        |
 | `MODEL_VERSION`           | `2025-04-14`                     | Model version                            |
-| `MODEL_DEPLOYMENT_NAME`   | `gpt-5.4-mini`                   | Deployment name (used by the agent)      |
+| `MODEL_DEPLOYMENT_NAME`   | `gpt-4.1-mini`                   | Deployment name (used by the agent)      |
 | `MODEL_SKU_NAME`          | `GlobalStandard`                 | Deployment SKU                           |
 | `MODEL_CAPACITY`          | `50`                             | TPM (thousands) capacity                 |
 

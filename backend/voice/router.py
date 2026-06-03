@@ -1,10 +1,10 @@
 """Conversational pre-router for tool selection.
 
 The Foundry agent decides which hosted tool to call (azure_ai_search /
-web_search) on its own. On gpt-5.4-mini at low/no reasoning, this
+bing_grounding) on its own. On gpt-4.1-mini at low/no reasoning, this
 decision is sometimes wrong — typically because the model treats
 "MTN" as an internal keyword and over-fires azure_ai_search, or fires
-web_search for an internal question that happens to mention an
+bing_grounding for an internal question that happens to mention an
 external entity (e.g. a competitor).
 
 This router runs BEFORE the agent sees the turn. It is a *small*
@@ -30,7 +30,7 @@ Why a soft hint and not a hard ``tool_choice`` override
 -------------------------------------------------------
 The production runtime is Azure Voice Live, whose ``RequestSession``
 only accepts ``"auto" | "none" | "required"`` for ``tool_choice``.
-Forcing a specific hosted tool (azure_ai_search vs web_search) is not
+Forcing a specific hosted tool (azure_ai_search vs bing_grounding) is not
 exposed there. A directive system message is the strongest lever we
 have that works in both the harness and the live runtime, so we
 standardise on that.
@@ -68,7 +68,7 @@ logger = logging.getLogger(__name__)
 # pre-filter and the LLM planner prompt.
 # ---------------------------------------------------------------------------
 INTENT_INTERNAL = "internal"      # MTN board/exec content → azure_ai_search
-INTENT_EXTERNAL = "external"      # telecom news / competitors → web_search
+INTENT_EXTERNAL = "external"      # telecom news / competitors → bing_grounding
 INTENT_BOTH = "both"              # compare MTN vs competitor → both, internal first
 INTENT_CATALOGUE = "catalogue"    # list/count/first/last META → no tool
 
@@ -80,24 +80,24 @@ ACTION_CLARIFY = "clarify"
 
 # Hint strings injected as a system message ahead of the user turn on
 # dispatch. Phrasing is directive ("USE …", "DO NOT call …") because
-# gpt-5.4-mini consistently weights imperative tool-selection
+# gpt-4.1-mini consistently weights imperative tool-selection
 # instructions more than descriptive ones.
 HINTS = {
     INTENT_INTERNAL: (
         "[ROUTER HINT] This question is about MTN's own internal "
         "decisions / people / numbers / strategy. USE azure_ai_search "
-        "for this turn. DO NOT call web_search."
+        "for this turn. DO NOT call bing_grounding."
     ),
     INTENT_EXTERNAL: (
         "[ROUTER HINT] This question is about the OUTSIDE world "
         "(telecom industry news, competitors, regulators, public "
-        "market data). USE web_search for this turn. DO NOT call "
+        "market data). USE bing_grounding for this turn. DO NOT call "
         "azure_ai_search."
     ),
     INTENT_BOTH: (
         "[ROUTER HINT] This is a compound question requiring BOTH "
         "internal grounding and external context. CALL azure_ai_search "
-        "FIRST to ground the MTN position, THEN call web_search for the "
+        "FIRST to ground the MTN position, THEN call bing_grounding for the "
         "external view, THEN synthesise. Do not interleave."
     ),
     INTENT_CATALOGUE: (
@@ -240,7 +240,7 @@ one tool (or both) and produce a useful answer.
   - "external"  → about the outside world: telecom industry news,
                   competitors (Vodacom, Airtel, Orange, Safaricom, …),
                   regulators, spectrum auctions, public market commentary,
-                  analyst reports, industry trends. Tool: web_search.
+                  analyst reports, industry trends. Tool: bing_grounding.
   - "both"      → comparison/context questions needing BOTH MTN internal
                   position AND external information.
   - "catalogue" → META questions about the roster itself

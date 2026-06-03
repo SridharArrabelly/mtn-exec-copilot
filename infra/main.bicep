@@ -39,7 +39,7 @@ param searchIndexName string = 'mtn-board-index'
 param voiceLiveVoice string = 'en-US-AvaMultilingualNeural'
 
 // App runtime extras
-param agentModel string = 'gpt-5.4-mini'
+param agentModel string = 'gpt-4.1-mini'
 param embeddingDeployment string = 'text-embedding-3-small'
 param avatarName string = 'Lisa-casual-sitting'
 param customAvatarName string = ''
@@ -49,9 +49,9 @@ param isCustomAvatar string = 'false'
 param avatarBackgroundImageUrl string = ''
 
 // ───────── Model deployment (used only when creating Foundry) ─────────
-param modelName string = 'gpt-5.4-mini'
+param modelName string = 'gpt-4.1-mini'
 param modelVersion string = '2025-04-14'
-param modelDeploymentName string = 'gpt-5.4-mini'
+param modelDeploymentName string = 'gpt-4.1-mini'
 @allowed([ 'GlobalStandard', 'Standard', 'DataZoneStandard' ])
 param modelSkuName string = 'GlobalStandard'
 param modelCapacity int = 50
