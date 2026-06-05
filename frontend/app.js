@@ -1,5 +1,5 @@
 /**
- * MTN Exec Copilot - Client-side JavaScript
+ * Avatar Forge - Client-side JavaScript
  * Handles audio capture (AudioWorklet 24kHz PCM16), WebSocket communication,
  * WebRTC avatar video, and UI state management.
  */

@@ -1,4 +1,4 @@
-"""Create (or update) the Azure AI Search index used by the MTN Foundry agent.
+"""Create (or update) the Azure AI Search index used by the Foundry agent.
 
 Reads .docx, .pdf, .md, .txt files from ``data/`` (recursively), chunks them, embeds each chunk with the
 embedding model deployed on the Foundry project (``text-embedding-3-small`` by
@@ -25,7 +25,7 @@ embedding models you MUST also set ``RECREATE_INDEX=true`` for one run, because
 
 Required environment variables (see ``.env.example``):
     AZURE_SEARCH_ENDPOINT      https://<svc>.search.windows.net
-    SEARCH_INDEX_NAME          e.g. mtn-meetings
+    SEARCH_INDEX_NAME          e.g. meeting-index
     PROJECT_ENDPOINT           https://<resource>.services.ai.azure.com/api/projects/<project>
     EMBEDDING_DEPLOYMENT       Foundry-deployed embedding model
                                (default: text-embedding-3-small)
@@ -90,10 +90,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(me
 log = logging.getLogger("setup-aisearch")
 
 EMBED_DIM_DEFAULT = 1536  # text-embedding-3-small; auto-detected at runtime
-VECTOR_PROFILE = "mtn-vector-profile"
-HNSW_ALGO = "mtn-hnsw"
-SEMANTIC_CONFIG = "mtn-semantic"
-VECTORIZER_NAME = "mtn-vectorizer"
+VECTOR_PROFILE = "default-vector-profile"
+HNSW_ALGO = "default-hnsw"
+SEMANTIC_CONFIG = "default-semantic"
+VECTORIZER_NAME = "default-vectorizer"
 
 
 # ---------- settings ----------

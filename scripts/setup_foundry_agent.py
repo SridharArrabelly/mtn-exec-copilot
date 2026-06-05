@@ -1,9 +1,9 @@
-"""Provision (or update) the MTN Foundry agent used by the Voice Live backend.
+"""Provision (or update) the Foundry agent used by the Voice Live backend.
 
 This script creates a new version of a Microsoft Foundry agent (e.g.
-``MtnAvatarAgent``) wired with two tools:
+``AvatarAgent``) wired with two tools:
 
-* **Azure AI Search** - internal index of past MTN executive meetings.
+* **Azure AI Search** - internal index of past meeting minutes / documents.
 * **Grounding with Bing Search** - single-shot open-web grounding for current
   telco / market information.
 
@@ -22,7 +22,7 @@ Required environment variables (see ``.env.example``):
                            (https://<resource>.services.ai.azure.com/api/projects/<project>)
     SEARCH_CONNECTION_NAME Name of the Azure AI Search connection in the project
     SEARCH_INDEX_NAME      Azure AI Search index to expose to the agent
-    AGENT_NAME             Name of the Foundry agent to create / version (e.g. ``MtnAvatarAgent``)
+    AGENT_NAME             Name of the Foundry agent to create / version (e.g. ``AvatarAgent``)
     AGENT_MODEL            Model deployment name to bind to the agent (e.g. ``gpt-4.1-mini``)
     BING_CONNECTION_NAME   Name of the Grounding-with-Bing connection in the project
 

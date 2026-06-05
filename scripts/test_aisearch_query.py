@@ -36,7 +36,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SEMANTIC_CONFIG = "mtn-semantic"
+SEMANTIC_CONFIG = "default-semantic"
 
 
 def _require(name: str) -> str:

@@ -71,7 +71,7 @@ async def _prewarm_startup() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown hook: pre-warms credentials, closes outstanding sessions on shutdown."""
-    logger.info("MTN Exec Copilot server starting...")
+    logger.info("Avatar Forge server starting...")
     # Fire-and-forget sequenced pre-warm so startup is not blocked but the
     # catalogue fetch benefits from a hot token cache.
     asyncio.create_task(_prewarm_startup())
@@ -81,11 +81,11 @@ async def lifespan(app: FastAPI):
     # credential's underlying aiohttp.ClientSession.
     await ws.shutdown_all()
     await close_credential()
-    logger.info("MTN Exec Copilot server stopped.")
+    logger.info("Avatar Forge server stopped.")
 
 
 app = FastAPI(
-    title="MTN Exec Copilot",
+    title="Avatar Forge",
     description="Python backend for Azure Voice Live with Avatar support",
     version="1.0.0",
     lifespan=lifespan,
@@ -123,7 +123,7 @@ else:
     @app.get("/")
     async def root():
         """Fallback when frontend/ is missing."""
-        return {"message": "MTN Exec Copilot — frontend/ directory not found."}
+        return {"message": "Avatar Forge — frontend/ directory not found."}
 
 
 def run() -> None:

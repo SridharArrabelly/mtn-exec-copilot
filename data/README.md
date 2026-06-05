@@ -1,7 +1,7 @@
 # data/
 
 Source corpus for the Azure AI Search index. The agent answers from these
-documents at runtime via the `mtn-meetings` index (see top-level README →
+documents at runtime via the AI Search index (see top-level README →
 "Build the Azure AI Search index").
 
 ## What goes here

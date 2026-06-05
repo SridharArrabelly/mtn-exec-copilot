@@ -16,10 +16,10 @@
     "existingSearchResourceGroup": { "value": "${EXISTING_SEARCH_RESOURCE_GROUP=}" },
     "existingSearchIndexName":     { "value": "${EXISTING_SEARCH_INDEX_NAME=}" },
 
-    "agentName":           { "value": "${AGENT_NAME=MtnAvatarAgent}" },
-    "agentProjectName":    { "value": "${AGENT_PROJECT_NAME=mtn-execu-bot}" },
-    "searchConnectionName":{ "value": "${SEARCH_CONNECTION_NAME=aisearch-mtn}" },
-    "searchIndexName":     { "value": "${SEARCH_INDEX_NAME=mtn-board-index}" },
+    "agentName":           { "value": "${AGENT_NAME=AvatarAgent}" },
+    "agentProjectName":    { "value": "${AGENT_PROJECT_NAME=avatar-forge}" },
+    "searchConnectionName":{ "value": "${SEARCH_CONNECTION_NAME=aisearch-connection}" },
+    "searchIndexName":     { "value": "${SEARCH_INDEX_NAME=meeting-index}" },
     "voiceLiveVoice":      { "value": "${VOICELIVE_VOICE=en-US-AvaMultilingualNeural}" },
 
     "agentModel":             { "value": "${AGENT_MODEL=gpt-4.1-mini}" },

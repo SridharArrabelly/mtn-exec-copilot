@@ -10,7 +10,7 @@ router = APIRouter()
 @router.get("/health")
 async def health_check():
     """Liveness probe."""
-    return {"status": "healthy", "service": "mtn-exec-copilot"}
+    return {"status": "healthy", "service": "avatar-forge"}
 
 
 @router.get("/api/config")

@@ -1,5 +1,5 @@
 [project]
-name = "mtn-exec-copilot"
+name = "avatar-forge"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
@@ -23,7 +23,7 @@ prerelease = "allow"
 package = true
 
 [project.scripts]
-mtn-exec-copilot = "backend.main:run"
+avatar-forge = "backend.main:run"
 
 [build-system]
 requires = ["setuptools>=68"]

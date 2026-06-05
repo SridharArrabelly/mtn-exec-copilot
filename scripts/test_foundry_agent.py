@@ -1,4 +1,4 @@
-"""Smoke test harness for the MTN Foundry agent.
+"""Smoke test harness for the Foundry agent.
 
 Streams a single response from an already-provisioned Foundry agent to
 verify it works end-to-end. Mirrors the live Voice Live runtime by
