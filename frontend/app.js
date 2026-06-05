@@ -25,6 +25,30 @@ let avatarConnecting = false;
 let pendingAvatarEnabled = false;
 let avatarLoadingHideTimer = null;
 let micRevealTimer = null;
+// Avatar "thinking" indicator: shown while the agent works (response_created ->
+// first token) so the user isn't staring at a silent face during the 2-3s
+// grounding gap. Purely visual — never touches the audio/avatar pipeline.
+let thinkingShowTimer = null;
+let thinkingRotateTimer = null;
+let thinkingSlowTimer = null;
+let thinkingMaxTimer = null;
+let thinkingActive = false;
+let thinkingCaptionIndex = 0;
+// Monotonic generation token. Bumped every time a new turn arms the indicator,
+// so a late event from a previous (e.g. cancelled) response can't show or
+// cancel the current turn's pill.
+let thinkingGen = 0;
+const THINKING_CAPTIONS = [
+    'Looking through the records…',
+    'Checking the latest information…',
+    'Pulling the details together…',
+];
+const THINKING_SLOW_CAPTION = 'Just a moment — getting you a reliable answer…';
+const THINKING_SHOW_DELAY_MS = 700;
+const THINKING_ROTATE_MS = 2200;
+const THINKING_SLOW_MS = 3500;
+// Hard ceiling so the pill can never get stuck if response_done never arrives.
+const THINKING_MAX_MS = 25000;
 let peerConnection = null;
 let avatarVideoElement = null;
 let isSpeaking = false;
@@ -116,6 +140,8 @@ async function fetchServerConfig() {
         if (config.developerMode === true) {
             const sidebar = document.getElementById('sidebar');
             if (sidebar) sidebar.hidden = false;
+            const headerBar = document.getElementById('headerBar');
+            if (headerBar) headerBar.hidden = false;
         } else {
             const devToggle = document.getElementById('developerMode');
             if (devToggle) {
@@ -262,8 +288,8 @@ function updateConditionalFields() {
     const turnDetectionType = document.getElementById('turnDetectionType').value;
     const srModel = document.getElementById('srModel').value;
 
-    // Recognition language hidden when SR model is mai-transcribe-1
-    show('recognitionLanguageField', srModel !== 'mai-transcribe-1');
+    // Recognition language hidden for MAI Transcribe models (auto multilingual)
+    show('recognitionLanguageField', !srModel.startsWith('mai-transcribe'));
 
     // Filler words (semantic VAD)
     show('fillerWordsField', turnDetectionType === 'azure_semantic_vad');
@@ -514,6 +540,7 @@ function handleDisconnect() {
     if (lbl) lbl.textContent = '';
     clearTimeout(micRevealTimer);
     micRevealTimer = null;
+    stopThinking();
     document.getElementById('recordContainer')?.classList.add('hidden');
 
     updateConnectionUI();
@@ -594,9 +621,11 @@ function handleServerMessage(msg) {
             currentAssistantContentEl = null;
             addMessage('assistant', '');
             isSpeaking = true;
+            startThinking();
             break;
         case 'response_done':
             isSpeaking = false;
+            stopThinking();
             // Don't stop play-chunk animation here - the animation loop
             // will self-terminate when all buffered audio finishes playing
             break;
@@ -622,6 +651,8 @@ let pendingAssistantText = '';
 let currentAssistantContentEl = null;
 
 function onAssistantDelta(text) {
+    // First token of the answer has arrived — tear down the thinking indicator.
+    if (thinkingActive || thinkingShowTimer) stopThinking();
     pendingAssistantText += text;
     // Cache the DOM ref instead of running querySelectorAll on every delta token.
     if (!currentAssistantContentEl || !currentAssistantContentEl.isConnected) {
@@ -846,6 +877,58 @@ function revealAvatarVideo(mediaPlayer) {
     setAvatarNameLabelFromConfig();
     hideAvatarLoading();
     showMicControls();
+}
+
+// ===== Avatar "thinking" indicator =====
+// Scheduled on response_created; only actually shown if the first answer token
+// hasn't arrived within THINKING_SHOW_DELAY_MS, so fast turns never flash it.
+function startThinking() {
+    stopThinking();
+    // Suppress while the avatar itself is still loading in (greeting turn) or
+    // when there's no avatar on screen.
+    if (!(isConnected && avatarEnabled) || avatarConnecting) return;
+    const gen = ++thinkingGen;
+    thinkingCaptionIndex = 0;
+    thinkingShowTimer = setTimeout(() => showThinking(gen), THINKING_SHOW_DELAY_MS);
+}
+
+function showThinking(gen) {
+    thinkingShowTimer = null;
+    // A newer turn (or a teardown) superseded this scheduled show — abort.
+    if (gen !== thinkingGen) return;
+    if (!(isConnected && avatarEnabled) || avatarConnecting) return;
+    const el = document.getElementById('avatarThinking');
+    if (!el) return;
+    thinkingActive = true;
+    setThinkingCaption(THINKING_CAPTIONS[0]);
+    el.classList.add('visible');
+    thinkingRotateTimer = setInterval(() => {
+        thinkingCaptionIndex = (thinkingCaptionIndex + 1) % THINKING_CAPTIONS.length;
+        setThinkingCaption(THINKING_CAPTIONS[thinkingCaptionIndex]);
+    }, THINKING_ROTATE_MS);
+    thinkingSlowTimer = setTimeout(() => {
+        if (thinkingRotateTimer) { clearInterval(thinkingRotateTimer); thinkingRotateTimer = null; }
+        setThinkingCaption(THINKING_SLOW_CAPTION);
+    }, THINKING_SLOW_MS);
+    // Failsafe: force-clear if the answer/response_done never arrives.
+    thinkingMaxTimer = setTimeout(stopThinking, THINKING_MAX_MS);
+}
+
+function setThinkingCaption(text) {
+    const t = document.getElementById('avatarThinkingText');
+    if (t) t.textContent = text;
+}
+
+function stopThinking() {
+    // Invalidate any in-flight scheduled show so it can't fire after teardown.
+    thinkingGen++;
+    if (thinkingShowTimer) { clearTimeout(thinkingShowTimer); thinkingShowTimer = null; }
+    if (thinkingRotateTimer) { clearInterval(thinkingRotateTimer); thinkingRotateTimer = null; }
+    if (thinkingSlowTimer) { clearTimeout(thinkingSlowTimer); thinkingSlowTimer = null; }
+    if (thinkingMaxTimer) { clearTimeout(thinkingMaxTimer); thinkingMaxTimer = null; }
+    thinkingActive = false;
+    const el = document.getElementById('avatarThinking');
+    if (el) el.classList.remove('visible');
 }
 
 function updateDeveloperModeLayout() {
@@ -1633,6 +1716,10 @@ function sendTextMessage() {
 // ===== Speech Events (sound wave animation) =====
 function onSpeechStarted(itemId) {
     isSpeaking = true;
+    // NOTE: deliberately do NOT tear down the thinking pill here. A stray VAD
+    // speech_started during the grounding gap would otherwise cancel a
+    // legitimate pill. Real barge-in is handled by response_done (status
+    // CANCELLED), which calls stopThinking().
     // Stop assistant audio playback (barge-in) in speech-only mode
     stopAudioPlayback();
     // Add user placeholder message (will be updated when transcription completes)

@@ -40,10 +40,13 @@
                                 <select id="srModel">
                                     <option value="azure-speech">Azure Speech</option>
                                     <option value="mai-transcribe-1" selected>MAI Transcribe 1</option>
+                                    <!-- 1.5 is currently LLM Speech (batch) only; not yet on the
+                                         Voice Live realtime allow-list. Ready to enable when it is. -->
+                                    <option value="mai-transcribe-1.5" disabled>MAI Transcribe 1.5 (not yet on realtime)</option>
                                 </select>
                             </label>
                         </div>
-                        <!-- Recognition Language (cascaded only, not mai-transcribe-1) -->
+                        <!-- Recognition Language (cascaded only, not MAI Transcribe) -->
                         <div class="hidden" id="recognitionLanguageField">
                             <label>Recognition Language
                                 <select id="recognitionLanguage">
@@ -347,8 +350,8 @@
 
         <!-- Main Content -->
         <main class="main-content">
-            <!-- Header -->
-            <div class="header-bar">
+            <!-- Header (developer-only; revealed in fetchServerConfig when developerMode=true) -->
+            <div class="header-bar" id="headerBar" hidden>
                 <button class="btn btn-icon mobile-menu" onclick="toggleSidebar()" aria-label="Toggle menu" title="Toggle menu">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
                 </button>
@@ -368,12 +371,18 @@
             <div class="content-area" id="contentArea">
                 <!-- Avatar video (WebRTC) -->
                 <div id="avatarVideoContainer" class="avatar-container hidden">
-                    <div id="avatarVideo" class="avatar-video"></div>
+                    <div class="avatar-stage">
+                        <div id="avatarVideo" class="avatar-video"></div>
+                        <div id="avatarThinking" class="avatar-thinking">
+                            <div class="avatar-thinking-dots"><span></span><span></span><span></span></div>
+                            <div id="avatarThinkingText" class="avatar-thinking-text">Looking through the records…</div>
+                        </div>
+                        <div id="avatarNameLabel" class="avatar-name-label"></div>
+                    </div>
                     <div id="avatarLoading" class="avatar-loading hidden">
                         <div class="avatar-loading-spinner"></div>
                         <div id="avatarLoadingText" class="avatar-loading-text">Connecting…</div>
                     </div>
-                    <div id="avatarNameLabel" class="avatar-name-label"></div>
                 </div>
 
                 <!-- Volume animation (no avatar) -->
