@@ -26,6 +26,7 @@ from azure.ai.voicelive.models import (
 from ..config import (
     AGENT_NAME,
     AGENT_PROJECT_NAME,
+    VOICELIVE_API_VERSION,
 )
 from .builders import build_avatar_config, build_turn_detection, build_voice_config
 from .catalog import get_meeting_catalog
@@ -96,12 +97,16 @@ class VoiceSessionHandler:
             connect_kwargs = {
                 "endpoint": self.endpoint,
                 "credential": self.credential,
+                "api_version": VOICELIVE_API_VERSION,
                 "agent_config": {
                     "agent_name": agent_name,
                     "project_name": project_name,
                 },
             }
-            logger.info(f"Connecting to Voice Live with agent: {agent_name} (project={project_name})")
+            logger.info(
+                f"Connecting to Voice Live with agent: {agent_name} "
+                f"(project={project_name}, api_version={VOICELIVE_API_VERSION})"
+            )
 
             async with connect(**connect_kwargs) as connection:
                 self.connection = connection
@@ -146,11 +151,11 @@ class VoiceSessionHandler:
         modalities = [Modality.TEXT, Modality.AUDIO]
 
         # Build SR options
-        sr_model = config.get("srModel", "azure-speech")
+        sr_model = config.get("srModel", "mai-transcribe-1")
         recognition_language = config.get("recognitionLanguage", "auto")
         input_audio_transcription = AudioInputTranscriptionOptions(
             model=sr_model,
-            language=None if (sr_model == "mai-transcribe-1" or recognition_language == "auto")
+            language=None if (sr_model.startswith("mai-transcribe") or recognition_language == "auto")
             else recognition_language,
         )
 

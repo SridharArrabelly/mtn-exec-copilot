@@ -136,6 +136,50 @@ async def handle_event(handler, event, connection):
             })
 
         elif event_type == ServerEventType.RESPONSE_DONE:
+            # Surface WHY a response ended — critical for diagnosing empty/cut-off
+            # turns (the "awkward silence"). The realtime response carries a
+            # status ("completed"/"cancelled"/"failed"/"incomplete") and, when it
+            # is not "completed", a status_details object with the reason. We also
+            # enumerate the output item types so we can tell a normal internal
+            # tool-call turn (output contains a function_call, no audio) apart
+            # from a barge-in cancellation (status=cancelled, empty output) or an
+            # agent error (status=failed).
+            resp = getattr(event, "response", None)
+            status = getattr(resp, "status", None) if resp else None
+            details = getattr(resp, "status_details", None) if resp else None
+            rid = getattr(resp, "id", "") if resp else ""
+
+            output = getattr(resp, "output", None) if resp else None
+            out_types = []
+            if output:
+                for it in output:
+                    t = getattr(it, "type", None)
+                    out_types.append(str(t) if t is not None else "?")
+
+            produced_audio = getattr(handler, "_first_audio_logged", False)
+            produced_text = getattr(handler, "_first_text_logged", False)
+            empty_turn = not produced_audio and not produced_text
+
+            # Pull a human-readable reason out of status_details, which may be a
+            # model object or a dict depending on the event.
+            reason = getattr(details, "reason", None)
+            err = getattr(details, "error", None)
+            if reason is None and isinstance(details, dict):
+                reason = details.get("reason")
+                err = details.get("error")
+
+            if status and status != "completed":
+                logger.warning(
+                    f"[RESPONSE_DONE] non-completed status='{status}' "
+                    f"reason='{reason}' error='{err}' empty_turn={empty_turn} "
+                    f"output={out_types} id={rid}"
+                )
+            elif empty_turn:
+                logger.warning(
+                    f"[RESPONSE_DONE] completed but EMPTY (no audio, no text) — "
+                    f"output={out_types} status='{status}' id={rid}"
+                )
+
             await handler.send_message({"type": "response_done"})
 
         # Speech detection

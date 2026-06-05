@@ -50,6 +50,11 @@ DEFAULT_ENDPOINT = os.getenv("AZURE_VOICELIVE_ENDPOINT", "")
 DEFAULT_API_KEY = os.getenv("AZURE_VOICELIVE_API_KEY", "")
 AGENT_NAME = os.getenv("AGENT_NAME", "")
 AGENT_PROJECT_NAME = os.getenv("AGENT_PROJECT_NAME", "")
+# Voice Live REST/WebSocket API version. The set of accepted speech-recognition
+# models is gated server-side by this version. NOTE: mai-transcribe-1.5 is
+# currently only available via the separate LLM Speech (batch) API, NOT the
+# Voice Live realtime API used here — bumping this does not unlock it yet.
+VOICELIVE_API_VERSION = os.getenv("VOICELIVE_API_VERSION", "2026-01-01-preview")
 DEVELOPER_MODE = os.getenv("DEVELOPER_MODE", "false").strip().lower() == "true"
 
 PROJECT_ENDPOINT = os.getenv("PROJECT_ENDPOINT", "")
