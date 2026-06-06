@@ -197,3 +197,28 @@ async def prewarm_catalog() -> None:
     except Exception as e:
         # Never block startup on this.
         logger.warning("Catalog: pre-warm failed (will retry on first session): %s", e)
+
+
+async def close_search_client() -> None:
+    """Close the process-wide SearchClient, if it was created.
+
+    `azure.search.documents.aio.SearchClient` holds an internal
+    `aiohttp.ClientSession`. If we don't await its `close()` on shutdown,
+    the asyncio loop logs:
+
+        ERROR asyncio Unclosed client session
+        client_session: <aiohttp.client.ClientSession object at 0x...>
+
+    Call this from the FastAPI lifespan shutdown phase BEFORE
+    `close_credential()`, since SearchClient uses the credential.
+    """
+    global _search_client
+    if _search_client is None:
+        return
+    client = _search_client
+    _search_client = None
+    try:
+        await client.close()
+        logger.info("Catalog: SearchClient closed")
+    except Exception as e:
+        logger.warning("Catalog: error closing SearchClient (ignored): %s", e)
