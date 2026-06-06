@@ -521,11 +521,12 @@ input[type="range"]::-webkit-slider-thumb {
        into the caption strip below it. Clipping here (not on .avatar-stage)
        keeps the docked mic's volume glow and the speaking halo unclipped. */
     overflow: hidden;
-    /* Smoothly cross-fade the frame background between the idle (white)
-       and speaking (MTN-yellow) states. The avatar's WebRTC video has a
-       transparent background, so this color shows through behind Nuru
-       (and inside the rounded corners of the video frame). */
-    background-color: #fff;
+    /* Smoothly cross-fade the frame background between the idle (light
+       gray, matching the grayscale avatar) and speaking (MTN-yellow)
+       states. The avatar's WebRTC video has a transparent background,
+       so this color shows through behind Nuru (and inside the rounded
+       corners of the video frame). */
+    background-color: #ececec;
     transition: background-color 450ms ease;
 }
 
