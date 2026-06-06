@@ -1,4 +1,4 @@
-# MTN Exec Copilot
+# Avatar Forge
 
 This sample demonstrates the usage of Azure Voice Live API with avatar, implemented in Python. The **Voice Live SDK logic runs entirely on the server side** (Python/FastAPI), while the browser handles UI, audio capture/playback, and avatar video rendering.
 
@@ -7,7 +7,7 @@ This sample demonstrates the usage of Azure Voice Live API with avatar, implemen
 ```
 ┌─────────────────────────┐         ┌─────────────────────────────┐         ┌──────────────────┐         ┌──────────────────────────────┐
 │    Browser (Frontend)   │◄──WS───►│   Python Server (FastAPI)   │◄──SDK──►│ Azure Voice Live │◄───────►│    Foundry Agent Service     │
-│                         │         │                             │         │     Service      │ agent_  │     (mtn-execu-bot agent)    │
+│                         │         │                             │         │     Service      │ agent_  │     (your Foundry agent)     │
 │  • Audio capture (mic)  │         │  • Session management       │         └──────────────────┘ config  │  • Instructions/prompt       │
 │  • Audio playback       │         │  • Voice Live SDK calls     │                  │                   │  • gpt-4.1-mini deployment   │
 │  • Avatar video         │◄─WebRTC (peer-to-peer video)──────────────────────────────┘                  │  • Azure AI Search tool      │
@@ -85,7 +85,7 @@ The avatar feature is currently available in the following service regions: Sout
 
    Search index build/test (only needed when running [`scripts/setup_aisearch_index.py`](scripts/setup_aisearch_index.py) or [`scripts/test_aisearch_query.py`](scripts/test_aisearch_query.py)):
    - `AZURE_SEARCH_ENDPOINT` - **Required.** `https://<service>.search.windows.net`
-   - `SEARCH_INDEX_NAME` - **Required.** Index name to create/update (e.g. `mtn-meetings`)
+   - `SEARCH_INDEX_NAME` - **Required.** Index name to create/update (e.g. `knowledge-index`)
    - `PROJECT_ENDPOINT` - **Required.** Same Foundry project endpoint as above; embeddings are called through it
    - `EMBEDDING_DEPLOYMENT` - Foundry-deployed embedding model (default: `text-embedding-3-small`, 1536 dims)
    - `AZURE_OPENAI_API_VERSION` - default: `2024-10-21`
@@ -102,7 +102,7 @@ The avatar feature is currently available in the following service regions: Sout
 3. **Run the server:**
 
    ```bash
-   uv run mtn-exec-copilot
+   uv run avatar-forge
    ```
 
    Or with uvicorn directly:
@@ -131,7 +131,7 @@ Supported file types (auto-detected by extension, recursive): **`.docx`, `.pdf`,
 2. **Read** — extracts plain text per file type (`python-docx` for `.docx`, `pypdf` for `.pdf`, raw read for `.md`/`.txt`).
 3. **Chunk** — splits each document into overlapping windows of `CHUNK_SIZE` chars with `CHUNK_OVERLAP` chars of overlap.
 4. **Embed** — sends chunks to the Foundry resource's Azure OpenAI route (`text-embedding-3-small` by default, 1536 dims).
-5. **Upload** — pushes the chunks + vectors into the index, which is configured for **hybrid search** (BM25 + HNSW/cosine) with a **semantic configuration** (`mtn-semantic`) for L2 re-ranking.
+5. **Upload** — pushes the chunks + vectors into the index, which is configured for **hybrid search** (BM25 + HNSW/cosine) with a **semantic configuration** (`default-semantic`, overridable via `SEARCH_SEMANTIC_CONFIG`) for L2 re-ranking.
 
 This is a one-off bootstrap step — the running app never re-ingests; it only queries the index at request time.
 
@@ -214,8 +214,8 @@ azd init
 #    azd will interactively prompt for:
 #      - Azure Subscription
 #      - Azure Location (region)
-#      - Environment name (azd env name, e.g. "mtn-dev")
-#      - Resource Group name (the RG that will be created, e.g. "rg-mtn-dev")
+#      - Environment name (azd env name, e.g. "demo-dev")
+#      - Resource Group name (the RG that will be created, e.g. "rg-demo-dev")
 azd up
 ```
 
@@ -241,22 +241,22 @@ az login
 azd auth login
 
 # 2. Initialise the azd environment
-azd init     # prompts for env name (e.g. mtn-dev) and picks template files
+azd init     # prompts for env name (e.g. demo-dev) and picks template files
 
 # 3. Tell azd which subscription / region / RG to use
 azd env set AZURE_SUBSCRIPTION_ID     <sub-guid>
 azd env set AZURE_LOCATION            eastus2
-azd env set AZURE_RESOURCE_GROUP_NAME rg-mtn-dev
+azd env set AZURE_RESOURCE_GROUP_NAME rg-demo-dev
 
 # 4. Point at the EXISTING Foundry account + project
-azd env set EXISTING_FOUNDRY_ACCOUNT_NAME     mtn-foundry-prod
+azd env set EXISTING_FOUNDRY_ACCOUNT_NAME     your-foundry-prod
 azd env set EXISTING_FOUNDRY_RESOURCE_GROUP   rg-shared-ai
-azd env set EXISTING_FOUNDRY_PROJECT_ENDPOINT https://mtn-foundry-prod.services.ai.azure.com/api/projects/mtn-execu-bot
+azd env set EXISTING_FOUNDRY_PROJECT_ENDPOINT https://your-foundry-prod.services.ai.azure.com/api/projects/avatar-forge
 
 # 5. Point at the EXISTING AI Search service + index
-azd env set EXISTING_SEARCH_SERVICE_NAME   mtn-search-prod
+azd env set EXISTING_SEARCH_SERVICE_NAME   your-search-prod
 azd env set EXISTING_SEARCH_RESOURCE_GROUP rg-shared-ai
-azd env set EXISTING_SEARCH_INDEX_NAME     mtn-board-index
+azd env set EXISTING_SEARCH_INDEX_NAME     knowledge-index
 
 # 6. Provision + deploy
 azd up
@@ -266,7 +266,7 @@ azd up
 
 | Resource | Created? | Notes |
 |---|---|---|
-| Resource Group (`rg-mtn-dev`) | ✅ Created | From your `AZURE_RESOURCE_GROUP_NAME` |
+| Resource Group (`rg-demo-dev`) | ✅ Created | From your `AZURE_RESOURCE_GROUP_NAME` |
 | User-Assigned Managed Identity | ✅ Created | App-scoped identity |
 | Log Analytics + App Insights | ✅ Created | Per-app observability |
 | Azure Container Registry | ✅ Created | App's own ACR for image push |
@@ -316,9 +316,9 @@ Just make sure your `AGENT_NAME` / `AGENT_PROJECT_NAME` / `SEARCH_CONNECTION_NAM
 Same flow, just only set one of the two `EXISTING_*` triplets. Example — BYO Foundry, fresh Search:
 
 ```bash
-azd env set EXISTING_FOUNDRY_ACCOUNT_NAME     mtn-foundry-prod
+azd env set EXISTING_FOUNDRY_ACCOUNT_NAME     your-foundry-prod
 azd env set EXISTING_FOUNDRY_RESOURCE_GROUP   rg-shared-ai
-azd env set EXISTING_FOUNDRY_PROJECT_ENDPOINT https://mtn-foundry-prod.services.ai.azure.com/api/projects/mtn-execu-bot
+azd env set EXISTING_FOUNDRY_PROJECT_ENDPOINT https://your-foundry-prod.services.ai.azure.com/api/projects/avatar-forge
 # (no EXISTING_SEARCH_* — template creates a fresh Search service)
 azd up
 # Then populate the new index:
@@ -345,10 +345,10 @@ The Bicep template accepts overrides via azd environment variables — set any o
 
 | Variable                  | Default                          | Purpose                                  |
 |---------------------------|----------------------------------|------------------------------------------|
-| `AGENT_NAME`              | `MtnAvatarAgent`                 | Foundry agent name the app calls         |
-| `AGENT_PROJECT_NAME`      | `mtn-execu-bot`                  | Foundry project name                     |
-| `SEARCH_CONNECTION_NAME`  | `aisearch-mtn`                   | Foundry AI Search connection name        |
-| `SEARCH_INDEX_NAME`       | `mtn-board-index`                | AI Search index name                     |
+| `AGENT_NAME`              | `AvatarAgent`                    | Foundry agent name the app calls         |
+| `AGENT_PROJECT_NAME`      | `avatar-forge`                   | Foundry project name                     |
+| `SEARCH_CONNECTION_NAME`  | `aisearch-connection`            | Foundry AI Search connection name        |
+| `SEARCH_INDEX_NAME`       | `knowledge-index`                | AI Search index name                     |
 | `VOICELIVE_VOICE`         | `en-US-AvaMultilingualNeural`    | Default avatar voice                     |
 | `MODEL_NAME`              | `gpt-4.1-mini`                   | OpenAI model to deploy in Foundry        |
 | `MODEL_VERSION`           | `2025-04-14`                     | Model version                            |
@@ -385,7 +385,7 @@ A ready-to-use OIDC-based workflow lives at [.github/workflows/azure-dev.yml](.g
 ## Project Structure
 
 ```
-mtn-exec-copilot/
+avatar-forge/
 ├── backend/                       # FastAPI server (Python)
 │   ├── __init__.py
 │   ├── main.py                    # App factory, lifespan, middleware, static mount, run()

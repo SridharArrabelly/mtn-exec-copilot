@@ -1,5 +1,5 @@
 /**
- * MTN Exec Copilot - Client-side JavaScript
+ * Avatar Forge - Client-side JavaScript
  * Handles audio capture (AudioWorklet 24kHz PCM16), WebSocket communication,
  * WebRTC avatar video, and UI state management.
  */
@@ -344,6 +344,20 @@ function addMessage(role, text, isDev = false) {
     messagesEl.appendChild(msgDiv);
     scrollChatToBottom();
     updateClearChatButton();
+
+    if (role === 'system' && text) {
+        let type = 'info';
+        const lowerText = text.toLowerCase();
+        if (lowerText.includes('error') || lowerText.includes('failed') || lowerText.includes('denied')) {
+            type = 'error';
+        } else if (lowerText.includes('dropped') || lowerText.includes('disconnected') || lowerText.includes('closed') || lowerText.includes('websocket error')) {
+            type = 'warning';
+        } else if (lowerText.includes('started') || lowerText.includes('success')) {
+            type = 'success';
+        }
+        showToast(text, type);
+    }
+
     return contentDiv;
 }
 
@@ -406,6 +420,8 @@ function gatherConfig() {
         useNS: document.getElementById('useNS').checked,
         useEC: document.getElementById('useEC').checked,
         turnDetectionType: document.getElementById('turnDetectionType').value,
+        turnDetectionSilenceMs: parseInt(document.getElementById('turnDetectionSilenceMs').value),
+        enableBargeIn: document.getElementById('enableBargeIn').checked,
         removeFillerWords: document.getElementById('removeFillerWords').checked,
         srModel: document.getElementById('srModel').value,
         recognitionLanguage: document.getElementById('recognitionLanguage').value,
@@ -616,6 +632,9 @@ function handleServerMessage(msg) {
         case 'speech_stopped':
             onSpeechStopped();
             break;
+        case 'transcript_empty':
+            onTranscriptEmpty(msg.itemId);
+            break;
         case 'response_created':
             pendingAssistantText = '';
             currentAssistantContentEl = null;
@@ -772,7 +791,7 @@ function updateConnectionUI() {
 const SETTINGS_CONTROLS = [
     // Conversation Settings
     'srModel', 'recognitionLanguage',
-    'useNS', 'useEC', 'turnDetectionType', 'removeFillerWords',
+    'useNS', 'useEC', 'turnDetectionType', 'turnDetectionSilenceMs', 'enableBargeIn', 'removeFillerWords',
     'eouDetectionType', 'enableProactive',
     'voiceTemperature', 'voiceSpeed',
     // Voice Configuration
@@ -1020,15 +1039,29 @@ function updateSoundWaveAnimation() {
         // Start animation
         if (!soundWaveIntervalId) {
             soundWaveIntervalId = setInterval(() => {
-                for (let i = 0; i < 20; i++) {
-                    const ele = document.getElementById(`item-${i}`);
-                    const height = 50 * Math.sin((Math.PI / 20) * i) * Math.random();
-                    if (ele) {
-                        ele.style.transition = 'height 0.15s ease';
-                        ele.style.height = `${Math.max(2, height)}px`;
+                if (micAnalyserNode && micAnalyserDataArray) {
+                    micAnalyserNode.getByteFrequencyData(micAnalyserDataArray);
+                    for (let i = 0; i < 20; i++) {
+                        const ele = document.getElementById(`item-${i}`);
+                        if (ele) {
+                            // Map the 20 bars to different frequency bins for a real spectral visualizer
+                            const binIndex = Math.floor((micAnalyserDataArray.length / 40) * (i + 2)); // focus on speech frequencies
+                            const binValue = micAnalyserDataArray[binIndex] || 0;
+                            // Scale value (0-255) to height (2px - 50px)
+                            const height = 2 + (binValue / 255) * 48;
+                            ele.style.transition = 'height 0.08s ease';
+                            ele.style.height = `${height}px`;
+                        }
+                    }
+                } else {
+                    for (let i = 0; i < 20; i++) {
+                        const ele = document.getElementById(`item-${i}`);
+                        if (ele) {
+                            ele.style.height = '2px';
+                        }
                     }
                 }
-            }, 150);
+            }, 80); // faster update rate for responsive spectral visualizer
         }
         if (leftWave) leftWave.style.display = '';
         if (rightWave) rightWave.style.display = '';
@@ -1131,6 +1164,14 @@ registerProcessor('pcm16-processor', PCM16Processor);
 
         workletNode.port.onmessage = (e) => {
             if (!isConnected || !isRecording || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+            // Stream mic audio continuously. We intentionally do NOT gate the
+            // mic on playback state: doing so is fragile (a single missed
+            // response_done leaves the gate stuck and drops the mic permanently,
+            // breaking every turn after the first). Echo-driven false turns are
+            // instead prevented by keeping client barge-in (stopAudioPlayback on
+            // speech_started) and the server's interrupt_response in lock-step,
+            // plus the browser's echo cancellation on the mic capture.
             audioChunksSent++;
             if (audioChunksSent <= 3 || audioChunksSent % 100 === 0) {
                 console.log(`[Audio] Sending chunk #${audioChunksSent}, bytes=${e.data.byteLength}`);
@@ -1716,12 +1757,16 @@ function sendTextMessage() {
 // ===== Speech Events (sound wave animation) =====
 function onSpeechStarted(itemId) {
     isSpeaking = true;
+    console.log(`[Turn] speech_started item=${itemId} | mic chunks sent so far=${audioChunksSent} | isRecording=${isRecording}`);
     // NOTE: deliberately do NOT tear down the thinking pill here. A stray VAD
     // speech_started during the grounding gap would otherwise cancel a
     // legitimate pill. Real barge-in is handled by response_done (status
     // CANCELLED), which calls stopThinking().
-    // Stop assistant audio playback (barge-in) in speech-only mode
-    stopAudioPlayback();
+    // Stop assistant audio playback (barge-in) in speech-only mode if barge-in is enabled
+    const bargeInEnabled = document.getElementById('enableBargeIn')?.checked || false;
+    if (bargeInEnabled) {
+        stopAudioPlayback();
+    }
     // Add user placeholder message (will be updated when transcription completes)
     if (itemId) {
         const contentDiv = addMessage('user', '...');
@@ -1732,8 +1777,21 @@ function onSpeechStarted(itemId) {
 }
 
 function onSpeechStopped() {
+    console.log(`[Turn] speech_stopped | mic chunks sent so far=${audioChunksSent}`);
     pendingAssistantText = '';
     isSpeaking = false;
+}
+
+// A speech segment produced no recognized words (empty transcript). Remove the
+// dangling "..." placeholder so the user doesn't perceive it as the avatar
+// going silent. Surface a brief toast so the failure is visible, not mysterious.
+function onTranscriptEmpty(itemId) {
+    console.warn(`[Turn] transcript EMPTY item=${itemId} | mic chunks sent so far=${audioChunksSent}`);
+    if (itemId) {
+        const msg = document.querySelector(`.message.user[data-item-id="${itemId}"]`);
+        if (msg) msg.remove();
+    }
+    showToast("Didn't catch that — please try again.", 'warning', 2500);
 }
 
 // ===== Utilities =====
@@ -1754,6 +1812,34 @@ function base64ToArrayBuffer(base64) {
         bytes[i] = binary.charCodeAt(i);
     }
     return bytes.buffer;
+}
+
+// ===== Toast Notification System =====
+function showToast(message, type = 'info', duration = 5000) {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    
+    // Icon selection
+    let icon = '';
+    if (type === 'success') icon = '✅';
+    else if (type === 'error') icon = '❌';
+    else if (type === 'warning') icon = '⚠️';
+    else icon = 'ℹ️';
+
+    toast.innerHTML = `<span style="flex-shrink: 0;">${icon}</span> <span style="line-height: 1.4;">${message}</span>`;
+    container.appendChild(toast);
+
+    // Force reflow and add visible class
+    setTimeout(() => toast.classList.add('visible'), 10);
+
+    // Auto remove
+    setTimeout(() => {
+        toast.classList.remove('visible');
+        setTimeout(() => toast.remove(), 400);
+    }, duration);
 }
 
 // Note: we used to pre-warm an RTCPeerConnection against Google's public STUN

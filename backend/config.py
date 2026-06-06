@@ -5,7 +5,7 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 class ColorFormatter(logging.Formatter):
@@ -57,6 +57,14 @@ AGENT_PROJECT_NAME = os.getenv("AGENT_PROJECT_NAME", "")
 VOICELIVE_API_VERSION = os.getenv("VOICELIVE_API_VERSION", "2026-01-01-preview")
 DEVELOPER_MODE = os.getenv("DEVELOPER_MODE", "false").strip().lower() == "true"
 
+# Verbatim opening line spoken by the avatar when proactive greeting is enabled.
+# Client-specific persona/wording lives in the environment, keeping this code
+# generic and reusable. Falls back to a neutral greeting when unset.
+PROACTIVE_GREETING = os.getenv(
+    "PROACTIVE_GREETING",
+    "Hello! How can I help you today?",
+)
+
 PROJECT_ENDPOINT = os.getenv("PROJECT_ENDPOINT", "")
 
 
@@ -83,6 +91,8 @@ def get_ui_defaults() -> dict:
         "useNS": _bool("USE_NOISE_SUPPRESSION", True),
         "useEC": _bool("USE_ECHO_CANCELLATION", True),
         "turnDetectionType": _str("TURN_DETECTION_TYPE", "azure_semantic_vad"),
+        "turnDetectionSilenceMs": int(_str("TURN_DETECTION_SILENCE_MS", "500")),
+        "enableBargeIn": _bool("ENABLE_BARGE_IN", True),
         "removeFillerWords": _bool("REMOVE_FILLER_WORDS", False),
         "eouDetectionType": _str("EOU_DETECTION_TYPE", "semantic_detection_v1"),
         "enableProactive": _bool("ENABLE_PROACTIVE", False),

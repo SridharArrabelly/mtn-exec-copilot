@@ -26,6 +26,7 @@ from azure.ai.voicelive.models import (
 from ..config import (
     AGENT_NAME,
     AGENT_PROJECT_NAME,
+    PROACTIVE_GREETING,
     VOICELIVE_API_VERSION,
 )
 from .builders import build_avatar_config, build_turn_detection, build_voice_config
@@ -49,12 +50,13 @@ logger = logging.getLogger(__name__)
 # freedom on the first turn (good for a deterministic, branded opener)
 # without touching the agent's behaviour on any subsequent turn.
 # Applied via response.create(additional_instructions=...).
+# The greeting text itself is client-configurable via the PROACTIVE_GREETING
+# environment variable so this backend stays generic and reusable.
 PROACTIVE_GREETING_INSTRUCTIONS = (
     "This is the opening of the session and the user has not spoken yet. "
     "Output EXACTLY the following text and absolutely nothing else — no "
     "additions, no list of meetings, no date, no internal data: "
-    '"Hello, I am Nuru, your executive assistant. '
-    'I hope you are doing well today. How can I help you?"'
+    f'"{PROACTIVE_GREETING}"'
 )
 
 

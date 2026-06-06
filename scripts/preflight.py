@@ -1,4 +1,4 @@
-"""Pre-deployment region & capability checks for mtn-exec-copilot.
+"""Pre-deployment region & capability checks for avatar-forge.
 
 Run BEFORE `azd up` to catch the silent failures we have hit before:
 
