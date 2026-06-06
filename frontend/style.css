@@ -521,21 +521,32 @@ input[type="range"]::-webkit-slider-thumb {
        into the caption strip below it. Clipping here (not on .avatar-stage)
        keeps the docked mic's volume glow and the speaking halo unclipped. */
     overflow: hidden;
-    /* Smoothly cross-fade the frame background between the idle (light
-       gray, matching the grayscale avatar) and speaking (MTN-yellow)
-       states. The avatar's WebRTC video has a transparent background,
-       so this color shows through behind Nuru (and inside the rounded
-       corners of the video frame). */
-    background-color: #ececec;
+    /* Anchor the ::after tint overlay below. */
+    position: relative;
+}
+
+/* Tint overlay sitting ON TOP of the video. The Azure avatar service
+   streams the avatar over an OPAQUE white background, so a plain
+   background-color on .avatar-video would be hidden behind the video.
+   `mix-blend-mode: multiply` blends this overlay's color INTO the video
+   pixels: white areas of the video adopt the overlay color (this is
+   what makes the "background tint" visible), while Nuru's colored
+   pixels get a subtle wash of the same tint. */
+.avatar-video::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-color: #ececec; /* idle: gray wash, reads as "muted/listening" */
+    mix-blend-mode: multiply;
+    pointer-events: none;
+    border-radius: inherit;
     transition: background-color 450ms ease;
 }
 
-/* Speaking state: tint the avatar's frame background with MTN brand
-   yellow (#FFCC00). Sits BEHIND the transparent avatar video so the
-   color appears inside the rounded video frame, not on the outer
-   panel. Uses a bright tint so it's clearly visible against the small
-   exposed background area (and the cool blue speaking glow). */
-.avatar-stage.speaking .avatar-video {
+/* Speaking state: swap the multiply overlay to MTN brand yellow. White
+   pixels in the avatar's video background become yellow; Nuru picks up
+   a subtle warm wash. */
+.avatar-stage.speaking .avatar-video::after {
     background-color: #ffe066;
 }
 
