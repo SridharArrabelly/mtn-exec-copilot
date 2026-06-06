@@ -57,7 +57,7 @@ Everything the end user sees is anchored to the avatar:
 - **Speaking glow** *(optional)* — a soft halo around the avatar while it is actually speaking. It is driven by real-playback signals — the avatar's WebRTC data-channel `EVENT_TYPE_SWITCH_TO_SPEAKING` / `EVENT_TYPE_SWITCH_TO_IDLE` events plus an `AnalyserNode` tapping the live audio track — rather than the response lifecycle, so it persists for the avatar's whole spoken turn (a watchdog failsafe guarantees it never sticks on).
 - **Suggested prompts + onboarding hint** *(optional)* — on first load, a one-line hint and 2–3 tappable example-question chips (below the avatar). Tapping a chip sends that question through the normal text path; the hint and chips fade out after the first interaction and don't reappear for the rest of the session.
 
-The captions, glow, and suggested-prompt features are additive, on by sensible defaults, and individually configurable via env — see [Avatar UX (frontend)](#avatar-ux-frontend). The new animations respect `prefers-reduced-motion`.
+The captions, glow, and suggested-prompt features are additive and individually configurable via env (captions default off, suggested prompts default on) — see [Avatar UX (frontend)](#avatar-ux-frontend). The new animations respect `prefers-reduced-motion`.
 
 ## Getting Started
 
@@ -122,9 +122,9 @@ The avatar feature is currently available in the following service regions: Sout
 
    #### Avatar UX (frontend)
 
-   Optional, additive UI features — all **on by default**, delivered to the browser via `/api/config` (`defaults`) and applied in both normal and developer mode. Disable or tune as needed; documented in `.env.example` under *Avatar UX*:
-   - `ENABLE_CAPTIONS` (default `true`) — show the live caption band under the avatar.
-   - `CAPTIONS_SHOW_USER` (default `true`) — also briefly show the user's last utterance in the caption band (only applies when `ENABLE_CAPTIONS=true`).
+   Optional, additive UI features delivered to the browser via `/api/config` (`defaults`) and applied in both normal and developer mode. Live captions are **off** by default; suggested prompts are **on**. Tune as needed; documented in `.env.example` under *Avatar UX*:
+   - `ENABLE_CAPTIONS` (default `false`) — show the live caption band under the avatar.
+   - `CAPTIONS_SHOW_USER` (default `false`) — also briefly show the user's last utterance in the caption band (only applies when `ENABLE_CAPTIONS=true`).
    - `ENABLE_SUGGESTED_PROMPTS` (default `true`) — show the first-load onboarding hint + example chips.
    - `ONBOARDING_HINT` (default `Tap the mic and ask me anything`) — the one-line hint shown above the chips.
    - `SUGGESTED_PROMPTS` — pipe-separated list of tappable example questions (2–3 recommended), e.g. `What can you help me with?|Tell me about your services|How do I get started?`.
