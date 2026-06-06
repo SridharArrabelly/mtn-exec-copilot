@@ -882,6 +882,57 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .avatar-name-label:empty { display: none; }
 
+/* ===== Docked avatar mic button ===== */
+.avatar-mic-btn {
+    position: absolute;
+    bottom: 14px;
+    right: 18px;
+    width: 56px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.72);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+    cursor: pointer;
+    z-index: 2;
+    /* Driven by JS from the mic analyser (0..1) to size the listening ring. */
+    --mic-level: 0;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.12s ease;
+    animation: avatar-name-in 0.5s ease both;
+}
+.avatar-mic-btn:hover { background: rgba(255, 255, 255, 0.92); }
+.avatar-mic-btn:active { transform: scale(0.94); }
+.avatar-mic-btn:disabled { opacity: 0.5; cursor: default; }
+.avatar-mic-btn.recording {
+    background: rgba(254, 226, 226, 0.85);
+    border-color: rgba(168, 0, 0, 0.5);
+}
+
+/* Volume-reactive listening ring (only visible while recording). */
+.avatar-mic-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    pointer-events: none;
+    box-shadow: 0 0 0 2px rgba(168, 0, 0, 0.55);
+    opacity: 0;
+    transform: scale(1);
+    transition: opacity 0.2s ease;
+}
+.avatar-mic-btn.recording .avatar-mic-ring {
+    opacity: calc(0.35 + 0.65 * var(--mic-level));
+    transform: scale(calc(1 + 0.5 * var(--mic-level)));
+    box-shadow:
+        0 0 0 2px rgba(168, 0, 0, 0.65),
+        0 0 calc(6px + 22px * var(--mic-level)) calc(2px + 7px * var(--mic-level)) rgba(168, 0, 0, 0.45);
+}
+
 /* ===== Toast Alerts ===== */
 .toast-container {
     position: absolute;
