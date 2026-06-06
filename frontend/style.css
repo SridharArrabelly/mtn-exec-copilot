@@ -457,6 +457,17 @@ input[type="range"]::-webkit-slider-thumb {
     position: relative;
     background: #fff;
     overflow: hidden;
+    /* Smoothly cross-fade the panel background between the idle (white)
+       and speaking (MTN-yellow) states. */
+    transition: background-color 450ms ease;
+}
+
+/* When the avatar is speaking, tint the panel with a soft MTN brand
+   yellow (#FFCC00). The speaking class lives on .avatar-stage; we use a
+   :has() selector so the tint travels up to the panel without any JS
+   changes. */
+.avatar-container:has(.avatar-stage.speaking) {
+    background-color: #fff8d6;
 }
 
 .avatar-container.photo-avatar {
@@ -533,7 +544,18 @@ input[type="range"]::-webkit-slider-thumb {
     transform: scale(1.15);
     transform-origin: center center;
     opacity: 0;
-    transition: opacity 0.45s ease;
+    /* Idle state: full grayscale. Switches to color via the
+       `.avatar-stage.speaking` rule below. The 450ms ease matches the
+       background-color transition on .avatar-container, so the
+       grayscale->color shift and the white->yellow tint move together. */
+    filter: grayscale(100%);
+    transition: opacity 0.45s ease, filter 450ms ease;
+}
+
+/* Speaking state: drop grayscale so the avatar pops back to full color
+   in sync with the yellow panel tint. */
+.avatar-stage.speaking .avatar-video video {
+    filter: grayscale(0%);
 }
 
 .avatar-video video.avatar-video-ready {
