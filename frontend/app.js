@@ -59,8 +59,8 @@ let peerConnectionQueue = [];
 // ===== Avatar UX features (captions, speaking glow, suggested prompts) =====
 // Populated from /api/config.defaults in fetchServerConfig(); defaults here are
 // safe fallbacks if config is unavailable.
-let captionsEnabled = true;
-let captionsShowUser = true;
+let captionsEnabled = false;
+let captionsShowUser = false;
 let suggestedPromptsEnabled = true;
 let onboardingHintText = 'Tap the mic and ask me anything';
 let suggestedPrompts = [];
@@ -173,8 +173,8 @@ async function fetchServerConfig() {
         // Avatar UX flags have no matching DOM controls, so read them directly.
         // Nullish coalescing (not ||) so an env value of false is honored.
         const d = config.defaults || {};
-        captionsEnabled = d.enableCaptions ?? true;
-        captionsShowUser = d.captionsShowUser ?? true;
+        captionsEnabled = d.enableCaptions ?? false;
+        captionsShowUser = d.captionsShowUser ?? false;
         suggestedPromptsEnabled = d.enableSuggestedPrompts ?? true;
         onboardingHintText = d.onboardingHint ?? onboardingHintText;
         suggestedPrompts = Array.isArray(d.suggestedPrompts) ? d.suggestedPrompts : [];
