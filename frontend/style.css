@@ -530,12 +530,13 @@ input[type="range"]::-webkit-slider-thumb {
     transition: background-color 450ms ease;
 }
 
-/* Speaking state: tint the avatar's frame background with a soft MTN
-   brand yellow (#FFCC00). Sits BEHIND the transparent avatar video so
-   the color appears inside the rounded video frame, not on the outer
-   panel. */
+/* Speaking state: tint the avatar's frame background with MTN brand
+   yellow (#FFCC00). Sits BEHIND the transparent avatar video so the
+   color appears inside the rounded video frame, not on the outer
+   panel. Uses a bright tint so it's clearly visible against the small
+   exposed background area (and the cool blue speaking glow). */
 .avatar-stage.speaking .avatar-video {
-    background-color: #fff8d6;
+    background-color: #ffe066;
 }
 
 .avatar-video video {
