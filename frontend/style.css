@@ -460,12 +460,12 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .avatar-container.photo-avatar {
-    border-radius: 10%;
+    border-radius: 0;
 }
 
 .avatar-container.photo-avatar .avatar-video,
 .avatar-container.photo-avatar .avatar-video video {
-    border-radius: 10%;
+    border-radius: 0;
 }
 
 /* Column sized to the avatar's intrinsic width: the video on top and the
