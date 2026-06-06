@@ -38,6 +38,27 @@ The original agent decided tools entirely on its own and reached only **~70%** f
 
 > **Note on the web tool:** the agent's only external tool is **`bing_grounding`** (Grounding with Bing Search) — a single grounded round-trip that returns curated snippets. An open-ended web-search tool on `gpt-4.1-mini` either fans out into many calls or bloats the context; `bing_grounding` resolves a turn in one call. It is wired by setting `BING_CONNECTION_NAME` when running `scripts/setup_foundry_agent.py`.
 
+## Frontend UX
+
+The browser UI has two modes, selected by `DEVELOPER_MODE` and delivered to the client through [`/api/config`](backend/api/routes.py):
+
+- **Normal mode** (production default, `DEVELOPER_MODE=false`) — a clean, avatar-only experience. The session auto-starts and the screen shows just the avatar; the settings/transcript side panel is hidden.
+- **Developer mode** (`DEVELOPER_MODE=true`) — exposes the settings panel, the live chat transcript, and per-event debug logging alongside the avatar.
+
+### The avatar stage (normal mode)
+
+Everything the end user sees is anchored to the avatar:
+
+- **Avatar video** — the WebRTC (or WebSocket/MSE) photo or standard avatar.
+- **Name pill** — a frosted-glass label (bottom-left) showing the avatar's name.
+- **Docked mic button** — a circular mic (bottom-right) with a volume-reactive ring; tap to talk. Barge-in is supported (start speaking to interrupt the avatar).
+- **Thinking indicator** — shows between the user's turn and the avatar's first words, with rotating status captions and a failsafe timeout so it can never get stuck.
+- **Live captions** *(optional)* — a frosted subtitle band **below** the avatar (aligned to its width) that mirrors the streamed transcript of what the avatar is saying, and optionally the user's last utterance. Reuses the existing transcript stream — no extra model calls.
+- **Speaking glow** *(optional)* — a soft halo around the avatar while it is actually speaking. It is driven by real-playback signals — the avatar's WebRTC data-channel `EVENT_TYPE_SWITCH_TO_SPEAKING` / `EVENT_TYPE_SWITCH_TO_IDLE` events plus an `AnalyserNode` tapping the live audio track — rather than the response lifecycle, so it persists for the avatar's whole spoken turn (a watchdog failsafe guarantees it never sticks on).
+- **Suggested prompts + onboarding hint** *(optional)* — on first load, a one-line hint and 2–3 tappable example-question chips (below the avatar). Tapping a chip sends that question through the normal text path; the hint and chips fade out after the first interaction and don't reappear for the rest of the session.
+
+The captions, glow, and suggested-prompt features are additive, on by sensible defaults, and individually configurable via env — see [Avatar UX (frontend)](#avatar-ux-frontend). The new animations respect `prefers-reduced-motion`.
+
 ## Getting Started
 
 ### Prerequisites
@@ -98,6 +119,15 @@ The avatar feature is currently available in the following service regions: Sout
 
    Optional dev-only knobs:
    - `AUTH_EXCLUDE_MANAGED_IDENTITY=true` — on a developer laptop, set this to skip the IMDS managed-identity probe that `DefaultAzureCredential` otherwise waits ~5s for at startup. Cuts the cold-start credential pre-warm from ~7s to ~1.5s. **Leave UNSET in Azure** (Container Apps / App Service / AKS workload identity all need the managed-identity path enabled). See the [Authentication](#authentication) section for details.
+
+   #### Avatar UX (frontend)
+
+   Optional, additive UI features — all **on by default**, delivered to the browser via `/api/config` (`defaults`) and applied in both normal and developer mode. Disable or tune as needed; documented in `.env.example` under *Avatar UX*:
+   - `ENABLE_CAPTIONS` (default `true`) — show the live caption band under the avatar.
+   - `CAPTIONS_SHOW_USER` (default `true`) — also briefly show the user's last utterance in the caption band (only applies when `ENABLE_CAPTIONS=true`).
+   - `ENABLE_SUGGESTED_PROMPTS` (default `true`) — show the first-load onboarding hint + example chips.
+   - `ONBOARDING_HINT` (default `Tap the mic and ask me anything`) — the one-line hint shown above the chips.
+   - `SUGGESTED_PROMPTS` — pipe-separated list of tappable example questions (2–3 recommended), e.g. `What can you help me with?|Tell me about your services|How do I get started?`.
 
 3. **Run the server:**
 
@@ -389,7 +419,7 @@ avatar-forge/
 ├── backend/                       # FastAPI server (Python)
 │   ├── __init__.py
 │   ├── main.py                    # App factory, lifespan, middleware, static mount, run()
-│   ├── config.py                  # .env loading, logging, defaults (HOST/PORT/VOICE)
+│   ├── config.py                  # .env loading, logging, UI defaults (incl. Avatar UX flags via get_ui_defaults)
 │   ├── api/
 │   │   ├── __init__.py
 │   │   ├── routes.py              # HTTP routes: /health, /api/config
@@ -404,9 +434,9 @@ avatar-forge/
 │       └── auth.py                # AzureKeyCredential or DefaultAzureCredential
 │
 ├── frontend/                      # Static client assets (served at /)
-│   ├── index.html                 # UI page
-│   ├── style.css                  # Styles
-│   └── app.js                     # Audio capture/playback, WebRTC, WebSocket, UI logic
+│   ├── index.html                 # UI page (avatar stage: video, name pill, docked mic, thinking, captions, onboarding)
+│   ├── style.css                  # Styles (incl. speaking glow, caption band, suggested-prompt chips)
+│   └── app.js                     # Audio capture/playback, WebRTC, WebSocket, UI logic (captions, glow, onboarding)
 │
 ├── scripts/                       # Utility / one-off scripts (not part of the server)
 │   ├── setup_foundry_agent.py     # Creates the Foundry agent with AI Search + Grounding-with-Bing tools
@@ -487,10 +517,12 @@ Audio uses **binary WebSocket frames** for the hot path in both directions (raw 
 | `video_data` | Avatar video chunk (base64 fMP4, WebSocket mode) |
 | `transcript_delta` | Streaming transcript text |
 | `transcript_done` | Completed transcript |
+| `transcript_empty` | User turn produced no recognized speech — UI drops the dangling placeholder (and restores the onboarding hint) |
 | `text_delta` | Streaming text response |
 | `text_done` | Text response completed |
 | `response_created` | New response started |
-| `response_done` | Response completed |
+| `response_done` | Response completed (end of generation — in WebRTC avatar mode the avatar keeps speaking after this) |
+| `audio_done` | Assistant audio generation finished |
 | `speech_started` | User started speaking (barge-in) |
 | `speech_stopped` | User stopped speaking |
 | `avatar_connecting` | Avatar WebRTC connection in progress |
