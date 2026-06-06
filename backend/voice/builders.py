@@ -154,6 +154,14 @@ def build_turn_detection(config: dict):
     td_type = config.get("turnDetectionType", "server_vad")
     eou_type = config.get("eouDetectionType", "none")
     remove_filler = config.get("removeFillerWords", False)
+    silence_duration_ms = config.get("turnDetectionSilenceMs", 500)
+    # interrupt_response MUST mirror the client-side barge-in behaviour. If the
+    # server is allowed to interrupt on speech_started while the client keeps
+    # playing the avatar audio (barge-in off), the avatar's own voice echoing
+    # into the always-on mic re-triggers the VAD, cancelling/reopening turns and
+    # leaving an orphaned "You: ..." segment that never commits. Keeping them in
+    # lock-step prevents that runaway feedback loop.
+    interrupt_response = config.get("enableBargeIn", True)
 
     # Tuned for lower turn-taking latency. EOU timeout dropped from 500ms to
     # 300ms to shave ~200ms off every turn. Raise back to 500 if you start
@@ -174,15 +182,15 @@ def build_turn_detection(config: dict):
             threshold=0.5,
             prefix_padding_ms=300,
             speech_duration_ms=80,
-            silence_duration_ms=500,
+            silence_duration_ms=silence_duration_ms,
             remove_filler_words=remove_filler,
-            interrupt_response=True,
+            interrupt_response=interrupt_response,
             end_of_utterance_detection=eou_detection,
         )
     else:
         return ServerVad(
             threshold=0.5,
             prefix_padding_ms=300,
-            silence_duration_ms=500,
+            silence_duration_ms=silence_duration_ms,
         )
 

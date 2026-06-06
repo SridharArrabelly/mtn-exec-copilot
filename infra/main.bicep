@@ -32,10 +32,10 @@ param existingSearchResourceGroup string = ''
 param existingSearchIndexName string = ''
 
 // ───────── Application runtime config ─────────
-param agentName string = 'MtnAvatarAgent'
-param agentProjectName string = 'mtn-execu-bot'
-param searchConnectionName string = 'aisearch-mtn'
-param searchIndexName string = 'mtn-board-index'
+param agentName string = 'AvatarAgent'
+param agentProjectName string = 'avatar-forge'
+param searchConnectionName string = 'aisearch-connection'
+param searchIndexName string = 'knowledge-index'
 param voiceLiveVoice string = 'en-US-AvaMultilingualNeural'
 
 // App runtime extras
@@ -59,7 +59,7 @@ param modelCapacity int = 50
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = {
   'azd-env-name': environmentName
-  workload: 'mtn-exec-copilot'
+  workload: 'avatar-forge'
 }
 
 var createFoundry = empty(existingFoundryAccountName) || empty(existingFoundryResourceGroup) || empty(existingFoundryProjectEndpoint)

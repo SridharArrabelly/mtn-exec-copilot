@@ -185,12 +185,14 @@ async def handle_event(handler, event, connection):
         # Speech detection
         elif event_type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
             item_id = getattr(event, "item_id", "") or getattr(event, "itemId", "")
+            logger.info(f"User speech STARTED (item={item_id})")
             await handler.send_message({
                 "type": "speech_started",
                 "itemId": item_id,
             })
 
         elif event_type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STOPPED:
+            logger.info("User speech STOPPED")
             await handler.send_message({
                 "type": "speech_stopped",
             })
@@ -198,13 +200,28 @@ async def handle_event(handler, event, connection):
         # User transcription
         elif event_type == ServerEventType.CONVERSATION_ITEM_INPUT_AUDIO_TRANSCRIPTION_COMPLETED:
             handler._t_user_done_ms = _now_ms()
-            transcript = getattr(event, "transcript", "")
+            transcript = getattr(event, "transcript", "") or ""
             item_id = getattr(event, "item_id", "") or getattr(event, "itemId", "")
-            if transcript:
+            if transcript.strip():
+                logger.info(f"User transcript (item={item_id}): {transcript!r}")
                 await handler.send_message({
                     "type": "transcript_done",
                     "role": "user",
                     "transcript": transcript,
+                    "itemId": item_id,
+                })
+            else:
+                # Segment produced no recognized words (silence / noise / clipped
+                # audio). The server will NOT generate a response, so tell the
+                # browser to drop the dangling "..." placeholder instead of
+                # leaving it hanging as if the avatar went silent.
+                logger.warning(
+                    f"User transcript EMPTY (item={item_id}) — no recognized "
+                    f"speech; no response will be generated"
+                )
+                await handler.send_message({
+                    "type": "transcript_empty",
+                    "role": "user",
                     "itemId": item_id,
                 })
 
