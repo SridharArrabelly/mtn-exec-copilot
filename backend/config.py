@@ -77,6 +77,20 @@ def _str(name: str, default: str) -> str:
     return v if v not in (None, "") else default
 
 
+def _list(name: str, default: list[str]) -> list[str]:
+    """Parse a pipe-separated env var into a list of trimmed, non-empty strings.
+
+    Returns ``default`` when the var is unset or empty so callers always get a
+    usable list (e.g. SUGGESTED_PROMPTS="Ask me X | Ask me Y").
+    """
+    raw = os.getenv(name)
+    if raw in (None, ""):
+        return default
+    items = [part.strip() for part in raw.split("|")]
+    items = [part for part in items if part]
+    return items or default
+
+
 def get_ui_defaults() -> dict:
     """Settings sent to the frontend on /api/config.
 
@@ -110,4 +124,17 @@ def get_ui_defaults() -> dict:
         "customAvatarName": _str("CUSTOM_AVATAR_NAME", ""),
         "photoAvatarName": _str("PHOTO_AVATAR_NAME", "Anika"),
         "avatarBackgroundImageUrl": _str("AVATAR_BACKGROUND_IMAGE_URL", ""),
+        # Avatar UX (additive, env-gated)
+        "enableCaptions": _bool("ENABLE_CAPTIONS", True),
+        "captionsShowUser": _bool("CAPTIONS_SHOW_USER", True),
+        "enableSuggestedPrompts": _bool("ENABLE_SUGGESTED_PROMPTS", True),
+        "onboardingHint": _str("ONBOARDING_HINT", "Tap the mic and ask me anything"),
+        "suggestedPrompts": _list(
+            "SUGGESTED_PROMPTS",
+            [
+                "What can you help me with?",
+                "Tell me about your services",
+                "How do I get started?",
+            ],
+        ),
     }

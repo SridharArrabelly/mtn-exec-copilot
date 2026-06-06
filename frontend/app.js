@@ -56,6 +56,51 @@ let avatarOutputMode = 'webrtc';
 let cachedIceServers = null;
 let peerConnectionQueue = [];
 
+// ===== Avatar UX features (captions, speaking glow, suggested prompts) =====
+// Populated from /api/config.defaults in fetchServerConfig(); defaults here are
+// safe fallbacks if config is unavailable.
+let captionsEnabled = true;
+let captionsShowUser = true;
+let suggestedPromptsEnabled = true;
+let onboardingHintText = 'Tap the mic and ask me anything';
+let suggestedPrompts = [];
+// Onboarding lifecycle: dismissed permanently after the first real user action;
+// hidden temporarily while the avatar speaks (e.g. the proactive greeting).
+let onboardingDismissed = false;
+// Speaking glow: driven by actual audio playback, not the response lifecycle
+// (buffered audio keeps playing after response_done). A per-chunk watchdog
+// guarantees the glow can never get stuck on.
+let avatarSpeaking = false;
+let speakingWatchdogTimer = null;
+const SPEAKING_WATCHDOG_MS = 4000;
+let captionClearTimer = null;
+
+// WebRTC avatar speaking detection. The avatar's audio rides a WebRTC media
+// track (not _playAudioPCM16), and the response lifecycle (response_done) fires
+// when generation finishes — long before the avatar stops talking. So we detect
+// REAL speech from two playback-tied signals, either of which keeps the glow +
+// caption alive for the full spoken duration:
+//   1. The avatar service's data-channel speaking events
+//      (EVENT_TYPE_SWITCH_TO_SPEAKING / EVENT_TYPE_SWITCH_TO_IDLE).
+//   2. An AnalyserNode tapping the live remote audio track (real audio energy).
+// The watchdog remains the final backstop so the glow can never stick on.
+let avatarAudioCtx = null;
+let avatarAudioAnalyser = null;
+let avatarAudioData = null;
+let avatarAudioRafId = null;
+let avatarLastAudibleTs = 0;
+// Latched by the data-channel SPEAKING/IDLE events. While a speaking turn is
+// active we keep the glow lit through short between-sentence pauses (the events
+// bracket the whole turn, so we don't blink on every silent gap).
+let avatarSpeechTurnActive = false;
+// Once the analyser has actually observed audio energy we trust it to drive the
+// OFF transition too. Until proven it only confirms ON, so a silent/blocked
+// AnalyserNode (e.g. an autoplay-suspended context) can never wrongly kill the
+// glow.
+let avatarAnalyserProven = false;
+const AVATAR_SPEAK_RMS_ON = 0.015;
+const AVATAR_SPEAK_HANGOVER_MS = 600;
+
 // Volume animation state
 let analyserNode = null;
 let analyserDataArray = null;
@@ -124,6 +169,16 @@ async function fetchServerConfig() {
 
         // Apply env-driven defaults to all matching controls.
         applyServerDefaults(config.defaults);
+
+        // Avatar UX flags have no matching DOM controls, so read them directly.
+        // Nullish coalescing (not ||) so an env value of false is honored.
+        const d = config.defaults || {};
+        captionsEnabled = d.enableCaptions ?? true;
+        captionsShowUser = d.captionsShowUser ?? true;
+        suggestedPromptsEnabled = d.enableSuggestedPrompts ?? true;
+        onboardingHintText = d.onboardingHint ?? onboardingHintText;
+        suggestedPrompts = Array.isArray(d.suggestedPrompts) ? d.suggestedPrompts : [];
+        buildOnboarding();
 
         // Back-compat: top-level voice (older /api/config shape).
         if (config.voice) {
@@ -323,7 +378,7 @@ function toggleSidebar() {
 }
 
 // ===== Chat =====
-function addMessage(role, text, isDev = false) {
+function addMessage(role, text, isDev = false, suppressToast = false) {
     if (isDev && !isDeveloperMode) return;
     const messagesEl = document.getElementById('messages');
     const msgDiv = document.createElement('div');
@@ -345,7 +400,7 @@ function addMessage(role, text, isDev = false) {
     scrollChatToBottom();
     updateClearChatButton();
 
-    if (role === 'system' && text) {
+    if (role === 'system' && text && !suppressToast) {
         let type = 'info';
         const lowerText = text.toLowerCase();
         if (lowerText.includes('error') || lowerText.includes('failed') || lowerText.includes('denied')) {
@@ -457,7 +512,9 @@ async function toggleConnection() {
 
 async function connectSession() {
     setConnecting(true);
-    addMessage('system', 'Session started, click on the mic button to start conversation! debug id: connecting...');
+    // Logged to the (dev-only) chat as a status line, but no toast — the avatar
+    // spinner already signals "connecting", so the top-right toast was redundant.
+    addMessage('system', 'Session started, click on the mic button to start conversation! debug id: connecting...', false, true);
 
     // Reveal the avatar frame + a branded loading placeholder right away (t=0)
     // so the final layout is in place immediately. Without this the screen stays
@@ -557,6 +614,8 @@ function handleDisconnect() {
     clearTimeout(micRevealTimer);
     micRevealTimer = null;
     stopThinking();
+    setAvatarSpeaking(false);
+    clearAvatarCaption();
     document.getElementById('recordContainer')?.classList.add('hidden');
 
     updateConnectionUI();
@@ -593,6 +652,11 @@ function handleServerMessage(msg) {
             break;
         case 'transcript_done':
             if (msg.role === 'user') {
+                // A real (non-empty) user turn permanently retires the onboarding hint.
+                if ((msg.transcript || '').trim()) {
+                    dismissOnboarding();
+                    if (captionsShowUser) setAvatarCaption(msg.transcript, 'user');
+                }
                 // Update existing placeholder by itemId, or add new message
                 const itemId = msg.itemId;
                 if (itemId) {
@@ -607,6 +671,9 @@ function handleServerMessage(msg) {
             } else if (msg.role === 'assistant') {
                 // Finalize the streaming assistant message (don't create a new one)
                 if (msg.transcript) {
+                    // Caption fallback: ensures the band is populated even if only
+                    // a final transcript arrived (no streaming deltas).
+                    setAvatarCaption(msg.transcript, 'assistant');
                     const assistantMsgs = document.querySelectorAll('.message.assistant .message-content');
                     if (assistantMsgs.length > 0) {
                         assistantMsgs[assistantMsgs.length - 1].textContent = msg.transcript;
@@ -645,6 +712,12 @@ function handleServerMessage(msg) {
         case 'response_done':
             isSpeaking = false;
             stopThinking();
+            // NB: do NOT drop the speaking glow / caption here. response_done
+            // marks the end of GENERATION, not playback — in WebRTC avatar mode
+            // the avatar keeps talking over the media stream well after this
+            // fires. The OFF transition is owned by the real-playback signals:
+            // the data-channel IDLE event and the audio AnalyserNode (WebRTC),
+            // the play-chunk drain (PCM/websocket), and the watchdog backstop.
             // Don't stop play-chunk animation here - the animation loop
             // will self-terminate when all buffered audio finishes playing
             break;
@@ -672,7 +745,16 @@ let currentAssistantContentEl = null;
 function onAssistantDelta(text) {
     // First token of the answer has arrived — tear down the thinking indicator.
     if (thinkingActive || thinkingShowTimer) stopThinking();
+    // Speaking glow is normally driven by real playback (data-channel events +
+    // audio analyser). This transcript-based ON is only a fallback for before
+    // the analyser has proven itself and when the service isn't sending speaking
+    // events — so the glow still appears. Once real audio is detected, the
+    // analyser / data-channel events own the ON/OFF timing (and clearing it
+    // here would fight them).
+    if (!avatarAnalyserProven && !avatarSpeechTurnActive) setAvatarSpeaking(true);
     pendingAssistantText += text;
+    // Mirror the live assistant transcript into the on-avatar caption band.
+    setAvatarCaption(pendingAssistantText, 'assistant');
     // Cache the DOM ref instead of running querySelectorAll on every delta token.
     if (!currentAssistantContentEl || !currentAssistantContentEl.isConnected) {
         const messages = document.querySelectorAll('.message.assistant .message-content');
@@ -901,6 +983,9 @@ function revealAvatarVideo(mediaPlayer) {
     setAvatarNameLabelFromConfig();
     hideAvatarLoading();
     showMicControls();
+    // Avatar is now on screen — show the onboarding hint + suggested prompts
+    // (unless the user has already interacted or the avatar is mid-greeting).
+    showOnboarding();
     // Avatar is now on screen — refresh layout so the docked mic appears (and
     // the footer mic bar hides) exactly when the video reveals.
     updateDeveloperModeLayout();
@@ -956,6 +1041,219 @@ function stopThinking() {
     thinkingActive = false;
     const el = document.getElementById('avatarThinking');
     if (el) el.classList.remove('visible');
+}
+
+// ===== Live captions =====
+// Reuses the existing transcript stream (no extra model calls). The caption
+// element lives inside .avatar-stage, so it is naturally hidden whenever the
+// avatar panel isn't shown.
+function setAvatarCaption(text, role) {
+    if (!captionsEnabled) return;
+    if (captionClearTimer) { clearTimeout(captionClearTimer); captionClearTimer = null; }
+    const el = document.getElementById('avatarCaption');
+    if (!el) return;
+    el.textContent = text || '';
+    el.classList.toggle('user', role === 'user');
+    el.classList.toggle('visible', !!text);
+    // Rolling subtitle: keep the newest line in view as the transcript streams,
+    // so long answers scroll up instead of freezing on the first two lines.
+    el.scrollTop = el.scrollHeight;
+}
+
+function clearAvatarCaption(delayMs) {
+    const el = document.getElementById('avatarCaption');
+    if (!el) return;
+    if (captionClearTimer) { clearTimeout(captionClearTimer); captionClearTimer = null; }
+    const doClear = () => {
+        el.classList.remove('visible');
+        el.textContent = '';
+        el.classList.remove('user');
+    };
+    if (delayMs && delayMs > 0) {
+        captionClearTimer = setTimeout(doClear, delayMs);
+    } else {
+        doClear();
+    }
+}
+
+// ===== Speaking-state glow (audio-driven) =====
+// Driven by actual audio playback rather than response_done, because buffered
+// audio keeps playing after the response is marked complete. A per-chunk
+// watchdog guarantees the glow can never stick on if a stop path is missed.
+function setAvatarSpeaking(on) {
+    if (on) {
+        armSpeakingWatchdog();
+        if (avatarSpeaking) return;
+        avatarSpeaking = true;
+        const stage = document.querySelector('.avatar-stage');
+        if (stage) stage.classList.add('speaking');
+        // The avatar is talking — tuck the onboarding hint away (temporarily).
+        hideOnboardingTemporarily();
+    } else {
+        if (speakingWatchdogTimer) { clearTimeout(speakingWatchdogTimer); speakingWatchdogTimer = null; }
+        if (!avatarSpeaking) return;
+        avatarSpeaking = false;
+        const stage = document.querySelector('.avatar-stage');
+        if (stage) stage.classList.remove('speaking');
+        // Let the last words linger briefly, then fade the caption out.
+        clearAvatarCaption(900);
+        // Restore onboarding if the user hasn't actually interacted yet.
+        maybeRestoreOnboarding();
+    }
+}
+
+// Reset on every audio chunk; if audio stops arriving for SPEAKING_WATCHDOG_MS
+// the glow force-clears. Resetting per chunk means long answers never get cut.
+function armSpeakingWatchdog() {
+    if (speakingWatchdogTimer) clearTimeout(speakingWatchdogTimer);
+    speakingWatchdogTimer = setTimeout(() => setAvatarSpeaking(false), SPEAKING_WATCHDOG_MS);
+}
+
+// ===== WebRTC avatar speaking detection =====
+// Tap the avatar's live remote audio track with an AnalyserNode and detect real
+// audio energy. This (plus the data-channel events below) keeps the glow +
+// caption alive for the avatar's entire spoken duration, instead of cutting out
+// at response_done while buffered audio is still playing.
+function attachAvatarAudioAnalyser(stream) {
+    try {
+        stopAvatarAudioAnalyser();
+        if (!stream) return;
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        avatarAudioCtx = new Ctx();
+        if (avatarAudioCtx.state === 'suspended' && avatarAudioCtx.resume) {
+            avatarAudioCtx.resume().catch(() => {});
+        }
+        const src = avatarAudioCtx.createMediaStreamSource(stream);
+        avatarAudioAnalyser = avatarAudioCtx.createAnalyser();
+        avatarAudioAnalyser.fftSize = 512;
+        avatarAudioAnalyser.smoothingTimeConstant = 0.3;
+        avatarAudioData = new Uint8Array(avatarAudioAnalyser.fftSize);
+        // Tap the track for level detection only — do NOT connect to the
+        // destination. The <audio> element already plays this stream; routing it
+        // here too would double the audio.
+        src.connect(avatarAudioAnalyser);
+        avatarAnalyserProven = false;
+        avatarLastAudibleTs = 0;
+        runAvatarSpeakingLoop();
+    } catch (e) {
+        console.warn('[avatar] audio analyser unavailable:', e);
+    }
+}
+
+function runAvatarSpeakingLoop() {
+    if (avatarAudioRafId) return;
+    const tick = () => {
+        if (!avatarAudioAnalyser || !avatarAudioData) { avatarAudioRafId = null; return; }
+        avatarAudioAnalyser.getByteTimeDomainData(avatarAudioData);
+        let sumSq = 0;
+        for (let i = 0; i < avatarAudioData.length; i++) {
+            const v = (avatarAudioData[i] - 128) / 128;
+            sumSq += v * v;
+        }
+        const rms = Math.sqrt(sumSq / avatarAudioData.length);
+        const now = performance.now();
+        if (rms > AVATAR_SPEAK_RMS_ON) {
+            avatarLastAudibleTs = now;
+            avatarAnalyserProven = true;
+        }
+        if (avatarSpeechTurnActive) {
+            // Service says this speaking turn is in progress — keep it lit even
+            // through short between-sentence pauses.
+            setAvatarSpeaking(true);
+        } else if (avatarAnalyserProven) {
+            // No active turn signal: follow real audio energy (with a hangover
+            // so brief gaps don't blink the glow).
+            setAvatarSpeaking((now - avatarLastAudibleTs) < AVATAR_SPEAK_HANGOVER_MS);
+        }
+        avatarAudioRafId = requestAnimationFrame(tick);
+    };
+    avatarAudioRafId = requestAnimationFrame(tick);
+}
+
+function stopAvatarAudioAnalyser() {
+    if (avatarAudioRafId) { cancelAnimationFrame(avatarAudioRafId); avatarAudioRafId = null; }
+    avatarAudioAnalyser = null;
+    avatarAudioData = null;
+    if (avatarAudioCtx) { try { avatarAudioCtx.close(); } catch (e) {} avatarAudioCtx = null; }
+    avatarAnalyserProven = false;
+    avatarSpeechTurnActive = false;
+}
+
+// The avatar service emits speaking-state events over the WebRTC data channel.
+// These bracket the avatar's actual spoken turn precisely, so they are our
+// primary glow/caption ON/OFF signal in WebRTC mode.
+function handleAvatarDataChannelMessage(data) {
+    if (typeof data !== 'string') return;
+    if (data.indexOf('EVENT_TYPE_SWITCH_TO_SPEAKING') !== -1) {
+        avatarSpeechTurnActive = true;
+        avatarLastAudibleTs = performance.now();
+        setAvatarSpeaking(true);
+    } else if (data.indexOf('EVENT_TYPE_SWITCH_TO_IDLE') !== -1) {
+        avatarSpeechTurnActive = false;
+        // If the analyser is live it drops the glow once trailing audio drains;
+        // otherwise drop it now.
+        if (!avatarAnalyserProven) setAvatarSpeaking(false);
+    }
+}
+
+// ===== Suggested prompts + onboarding hint =====
+function buildOnboarding() {
+    const wrap = document.getElementById('avatarOnboarding');
+    if (!wrap) return;
+    if (!suggestedPromptsEnabled) { wrap.hidden = true; return; }
+    const hintEl = document.getElementById('avatarOnboardingHint');
+    if (hintEl) hintEl.textContent = onboardingHintText || '';
+    const chipsEl = document.getElementById('avatarOnboardingChips');
+    if (chipsEl) {
+        chipsEl.innerHTML = '';
+        suggestedPrompts.forEach((q) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'prompt-chip';
+            btn.textContent = q;
+            btn.addEventListener('click', () => {
+                if (sendQuery(q)) dismissOnboarding();
+            });
+            chipsEl.appendChild(btn);
+        });
+    }
+}
+
+// Show on first avatar reveal, if enabled and not already dismissed.
+function showOnboarding() {
+    if (!suggestedPromptsEnabled || onboardingDismissed || avatarSpeaking) return;
+    const wrap = document.getElementById('avatarOnboarding');
+    if (!wrap) return;
+    const hasHint = (onboardingHintText || '').length > 0;
+    const hasChips = suggestedPrompts.length > 0;
+    if (!hasHint && !hasChips) return;
+    wrap.hidden = false;
+    // Next frame so the fade-in transition runs.
+    requestAnimationFrame(() => wrap.classList.add('visible'));
+}
+
+// Hide while the avatar is speaking (e.g. proactive greeting) without marking
+// it permanently dismissed.
+function hideOnboardingTemporarily() {
+    const wrap = document.getElementById('avatarOnboarding');
+    if (wrap) wrap.classList.remove('visible');
+}
+
+function maybeRestoreOnboarding() {
+    if (onboardingDismissed) return;
+    if (!(isConnected && avatarEnabled) || avatarConnecting) return;
+    showOnboarding();
+}
+
+// Permanent dismissal after the first real user action.
+function dismissOnboarding() {
+    if (onboardingDismissed) return;
+    onboardingDismissed = true;
+    const wrap = document.getElementById('avatarOnboarding');
+    if (!wrap) return;
+    wrap.classList.remove('visible');
+    setTimeout(() => { wrap.hidden = true; }, 300);
 }
 
 function updateDeveloperModeLayout() {
@@ -1322,6 +1620,10 @@ function _playAudioPCM16(arrayBuffer) {
     source.start(nextPlaybackTime);
     nextPlaybackTime += buffer.duration;
 
+    // Audio is playing → the avatar is speaking. Reset the watchdog on every
+    // chunk so long answers stay lit; it force-clears only on real silence.
+    setAvatarSpeaking(true);
+
     // Start playback volume animation (only if not already running)
     if (!playChunkAnimationFrameId) {
         startVolumeAnimation('play-chunk');
@@ -1330,6 +1632,8 @@ function _playAudioPCM16(arrayBuffer) {
 
 function stopAudioPlayback() {
     stopPlayChunkAnimation();
+    // Barge-in / teardown — the avatar is no longer speaking.
+    setAvatarSpeaking(false);
     if (playbackContext) { try { playbackContext.close(); } catch (e) {} playbackContext = null; }
     playbackBufferQueue = [];
     nextPlaybackTime = 0;
@@ -1373,6 +1677,8 @@ function startVolumeAnimation(animationType) {
             // For playback: self-terminate when response is done AND audio finished
             if (!isSpeaking && (!playbackContext || playbackContext.currentTime >= nextPlaybackTime + 0.3)) {
                 playChunkAnimationFrameId = null;
+                // Audio has fully drained — drop the speaking glow.
+                setAvatarSpeaking(false);
                 // Switch back to mic animation or reset
                 if (isRecording && micAnalyserNode) {
                     analyserNode = micAnalyserNode;
@@ -1571,6 +1877,8 @@ function preparePeerConnection(iceServers) {
         if (event.track.kind === 'video') {
             avatarVideoElement = mediaPlayer;
             mediaPlayer.onplaying = () => revealAvatarVideo(mediaPlayer);
+        } else if (event.track.kind === 'audio') {
+            attachAvatarAudioAnalyser(event.streams[0]);
         }
     };
 
@@ -1602,6 +1910,7 @@ function preparePeerConnection(iceServers) {
         const dataChannel = event.channel;
         dataChannel.onmessage = (e) => {
             console.log('[' + new Date().toISOString() + '] WebRTC event received: ' + e.data);
+            handleAvatarDataChannelMessage(e.data);
         };
         dataChannel.onclose = () => {
             console.log('Data channel closed');
@@ -1683,6 +1992,8 @@ function setupWebRTC(iceServers) {
         if (event.track.kind === 'video') {
             avatarVideoElement = mediaPlayer;
             mediaPlayer.onplaying = () => revealAvatarVideo(mediaPlayer);
+        } else if (event.track.kind === 'audio') {
+            attachAvatarAudioAnalyser(event.streams[0]);
         }
     };
 
@@ -1714,6 +2025,7 @@ function setupWebRTC(iceServers) {
         const dataChannel = event.channel;
         dataChannel.onmessage = (e) => {
             console.log('[' + new Date().toISOString() + '] WebRTC event received: ' + e.data);
+            handleAvatarDataChannelMessage(e.data);
         };
         dataChannel.onclose = () => {
             console.log('Data channel closed');
@@ -1789,6 +2101,7 @@ function attachAvatarConnectionMonitor(pc) {
 }
 
 function cleanupWebRTC() {
+    stopAvatarAudioAnalyser();
     if (peerConnection) {
         try { peerConnection.close(); } catch (e) {}
         peerConnection = null;
@@ -1806,6 +2119,8 @@ function toggleMicrophone() {
     if (!isConnected) return;
     isRecording = !isRecording;
     updateMicUI();
+    // Turning the mic on counts as a real interaction — retire the onboarding hint.
+    if (isRecording) dismissOnboarding();
     // Start/stop volume animation based on mic state
     if (isRecording && micAnalyserNode) {
         analyserNode = micAnalyserNode;
@@ -1818,20 +2133,32 @@ function toggleMicrophone() {
 }
 
 // ===== Send Text =====
+// Shared text path used by both the dev text input and the suggested-prompt
+// chips. Returns true if the message was actually sent.
+function sendQuery(text) {
+    const q = (text || '').trim();
+    if (!q || !isConnected || !ws) return false;
+    addMessage('user', q);
+    ws.send(JSON.stringify({ type: 'send_text', text: q }));
+    return true;
+}
+
 function sendTextMessage() {
     const input = document.getElementById('textInput');
-    const text = input.value.trim();
-    if (!text || !isConnected || !ws) return;
-
-    addMessage('user', text);
-    ws.send(JSON.stringify({ type: 'send_text', text }));
-    input.value = '';
+    if (sendQuery(input.value)) {
+        input.value = '';
+        dismissOnboarding();
+    }
 }
 
 // ===== Speech Events (sound wave animation) =====
 function onSpeechStarted(itemId) {
     isSpeaking = true;
     console.log(`[Turn] speech_started item=${itemId} | mic chunks sent so far=${audioChunksSent} | isRecording=${isRecording}`);
+    // The user appears to be talking — tuck the onboarding hint away. This is
+    // only a temporary hide (a stray VAD start may yield an empty transcript);
+    // permanent dismissal happens on a non-empty user transcript_done.
+    hideOnboardingTemporarily();
     // NOTE: deliberately do NOT tear down the thinking pill here. A stray VAD
     // speech_started during the grounding gap would otherwise cancel a
     // legitimate pill. Real barge-in is handled by response_done (status
@@ -1865,6 +2192,9 @@ function onTranscriptEmpty(itemId) {
         const msg = document.querySelector(`.message.user[data-item-id="${itemId}"]`);
         if (msg) msg.remove();
     }
+    // The speech segment produced nothing — if the user hasn't really
+    // interacted yet, bring the onboarding hint back.
+    maybeRestoreOnboarding();
     showToast("Didn't catch that — please try again.", 'warning', 2500);
 }
 
