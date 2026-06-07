@@ -25,6 +25,8 @@ param agentProjectName string
 param searchConnectionName string
 param searchIndexName string
 param voiceLiveVoice string
+param bingConnectionName string = ''
+param bingCustomConfigName string = ''
 
 param modelName string
 param modelVersion string
@@ -212,6 +214,8 @@ module app 'modules/containerApp.bicep' = {
     searchIndexName: searchIndexNameEffective
     searchEndpoint: searchEndpointEffective
     voiceLiveVoice: voiceLiveVoice
+    bingConnectionName: bingConnectionName
+    bingCustomConfigName: bingCustomConfigName
     appInsightsConnectionString: appInsights.outputs.connectionString
     agentModel: agentModel
     embeddingDeployment: embeddingDeployment

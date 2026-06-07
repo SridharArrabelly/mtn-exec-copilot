@@ -38,6 +38,8 @@ jobs:
       SEARCH_CONNECTION_NAME:${{ vars.SEARCH_CONNECTION_NAME }}
       SEARCH_INDEX_NAME:     ${{ vars.SEARCH_INDEX_NAME }}
       VOICELIVE_VOICE:       ${{ vars.VOICELIVE_VOICE }}
+      BING_CONNECTION_NAME:  ${{ vars.BING_CONNECTION_NAME }}
+      BING_CUSTOM_CONFIG_NAME: ${{ vars.BING_CUSTOM_CONFIG_NAME }}
 
       # ── Model deployment overrides (optional GitHub Variables) ──
       MODEL_NAME:            ${{ vars.MODEL_NAME }}
