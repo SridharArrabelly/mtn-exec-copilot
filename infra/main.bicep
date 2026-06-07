@@ -31,6 +31,12 @@ param existingSearchServiceName string = ''
 param existingSearchResourceGroup string = ''
 param existingSearchIndexName string = ''
 
+// ───────── BYO Application Insights ─────────
+@description('Name of an existing Application Insights component to reuse. Leave empty to create a new one in this RG.')
+param existingAppInsightsName string = ''
+@description('Resource group of the existing Application Insights component. Defaults to the deployment RG when empty.')
+param existingAppInsightsResourceGroup string = ''
+
 // ───────── Application runtime config ─────────
 param agentName string = 'AvatarAgent'
 param agentProjectName string = 'avatar-forge'
@@ -95,6 +101,8 @@ module resources 'resources.bicep' = {
     existingSearchServiceName: existingSearchServiceName
     existingSearchResourceGroup: existingSearchResourceGroup
     existingSearchIndexName: existingSearchIndexName
+    existingAppInsightsName: existingAppInsightsName
+    existingAppInsightsResourceGroup: existingAppInsightsResourceGroup
     agentName: agentName
     agentProjectName: agentProjectName
     searchConnectionName: searchConnectionName

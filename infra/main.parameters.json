@@ -16,6 +16,9 @@
     "existingSearchResourceGroup": { "value": "${EXISTING_SEARCH_RESOURCE_GROUP=}" },
     "existingSearchIndexName":     { "value": "${EXISTING_SEARCH_INDEX_NAME=}" },
 
+    "existingAppInsightsName":          { "value": "${EXISTING_APPINSIGHTS_NAME=}" },
+    "existingAppInsightsResourceGroup": { "value": "${EXISTING_APPINSIGHTS_RESOURCE_GROUP=}" },
+
     "agentName":           { "value": "${AGENT_NAME=AvatarAgent}" },
     "agentProjectName":    { "value": "${AGENT_PROJECT_NAME=avatar-forge}" },
     "searchConnectionName":{ "value": "${SEARCH_CONNECTION_NAME=aisearch-connection}" },
