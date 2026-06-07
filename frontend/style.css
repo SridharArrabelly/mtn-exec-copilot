@@ -711,22 +711,10 @@ input[type="range"]::-webkit-slider-thumb {
     border-color: rgba(87, 101, 202, 0.3);
 }
 
-/* ===== Speaking-state glow ===== */
-.avatar-stage.speaking {
-    animation: avatar-speaking-glow 1.8s ease-in-out infinite;
-}
-@keyframes avatar-speaking-glow {
-    0%, 100% {
-        box-shadow:
-            0 0 30px 8px rgba(87, 101, 202, 0.52),
-            0 0 70px 20px rgba(87, 101, 202, 0.3);
-    }
-    50% {
-        box-shadow:
-            0 0 46px 14px rgba(87, 101, 202, 0.72),
-            0 0 98px 32px rgba(87, 101, 202, 0.42);
-    }
-}
+/* ===== Speaking-state visual =====
+   The yellow mix-blend-mode overlay on .avatar-video::after carries the
+   "Nuru is speaking" signal on its own; the previous blue glow halo was
+   redundant against the warm yellow tint, so it has been removed. */
 
 /* ===== Suggested prompts + onboarding hint (below the avatar) ===== */
 .avatar-onboarding {
@@ -773,12 +761,6 @@ input[type="range"]::-webkit-slider-thumb {
 .prompt-chip:active { transform: scale(0.96); }
 
 @media (prefers-reduced-motion: reduce) {
-    .avatar-stage.speaking {
-        animation: none;
-        box-shadow:
-            0 0 36px 10px rgba(87, 101, 202, 0.6),
-            0 0 78px 22px rgba(87, 101, 202, 0.34);
-    }
     .avatar-caption,
     .avatar-onboarding { transition: opacity 0.2s ease; }
 }
