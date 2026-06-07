@@ -155,10 +155,14 @@ class VoiceSessionHandler:
         # Build SR options
         sr_model = config.get("srModel", "mai-transcribe-1")
         recognition_language = config.get("recognitionLanguage", "auto")
+        # `language=None` means "auto-detect" to Voice Live. Pass the configured
+        # locale through for any non-auto value, regardless of SR model. MAI
+        # Transcribe may silently ignore a single-locale hint (it's fundamentally
+        # multilingual auto-detect), but the API accepts the field, and cascaded
+        # models honor it strictly.
         input_audio_transcription = AudioInputTranscriptionOptions(
             model=sr_model,
-            language=None if (sr_model.startswith("mai-transcribe") or recognition_language == "auto")
-            else recognition_language,
+            language=None if recognition_language == "auto" else recognition_language,
         )
 
         # Build noise/echo settings
