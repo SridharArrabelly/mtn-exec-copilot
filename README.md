@@ -452,6 +452,12 @@ avatar-forge/
 ├── data/                          # Source corpus ingested into the AI Search index (.docx/.pdf/.md/.txt)
 │   └── README.md                  # What goes here, supported file types, how to rebuild
 │
+├── prompts/                       # Agent prompt content (Markdown), loaded by setup_foundry_agent.py
+│   ├── README.md                  # Layout, format, and edit workflow
+│   └── agent/
+│       ├── description.md         # Short agent description
+│       └── instructions.md        # Full system prompt (voice-first)
+│
 ├── pyproject.toml                 # Project metadata, dependencies, [project.scripts] entry point
 ├── uv.lock                        # Locked dependency versions
 ├── Dockerfile                     # Container build (python:3.12-slim + uv)
