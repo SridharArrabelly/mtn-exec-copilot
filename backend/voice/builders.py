@@ -153,8 +153,19 @@ def build_turn_detection(config: dict):
     """Build turn detection configuration."""
     td_type = config.get("turnDetectionType", "server_vad")
     eou_type = config.get("eouDetectionType", "none")
-    remove_filler = config.get("removeFillerWords", False)
+    remove_filler = config.get("removeFillerWords", True)
     silence_duration_ms = config.get("turnDetectionSilenceMs", 500)
+    # Derive the filler-word-detection language hint from the configured
+    # recognition language. azure_semantic_vad's `languages` field takes
+    # ISO-639-1 codes (e.g. "en"), while recognitionLanguage may be a full
+    # BCP-47 tag like "en-ZA" — strip to the primary subtag. Defaults to
+    # English because this deployment is locked to English output.
+    recognition_lang = (config.get("recognitionLanguage") or "en").strip()
+    if recognition_lang and recognition_lang.lower() != "auto":
+        vad_language = recognition_lang.split("-", 1)[0].lower() or "en"
+    else:
+        vad_language = "en"
+    vad_languages = [vad_language]
     # interrupt_response MUST mirror the client-side barge-in behaviour. If the
     # server is allowed to interrupt on speech_started while the client keeps
     # playing the avatar audio (barge-in off), the avatar's own voice echoing
@@ -184,7 +195,14 @@ def build_turn_detection(config: dict):
             speech_duration_ms=80,
             silence_duration_ms=silence_duration_ms,
             remove_filler_words=remove_filler,
+            languages=vad_languages,
             interrupt_response=interrupt_response,
+            # When a real barge-in happens mid-reply, keep the LLM's view of
+            # the conversation aligned with what the user actually heard:
+            # only the spoken-so-far portion is persisted to history. Per
+            # learn.microsoft.com/azure/ai-services/speech-service/how-to-voice-live-auto-truncation
+            # this should always be paired with interrupt_response=true.
+            auto_truncate=True,
             end_of_utterance_detection=eou_detection,
         )
     else:

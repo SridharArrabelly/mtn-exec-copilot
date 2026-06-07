@@ -107,7 +107,7 @@ def get_ui_defaults() -> dict:
         "turnDetectionType": _str("TURN_DETECTION_TYPE", "azure_semantic_vad"),
         "turnDetectionSilenceMs": int(_str("TURN_DETECTION_SILENCE_MS", "500")),
         "enableBargeIn": _bool("ENABLE_BARGE_IN", True),
-        "removeFillerWords": _bool("REMOVE_FILLER_WORDS", False),
+        "removeFillerWords": _bool("REMOVE_FILLER_WORDS", True),
         "eouDetectionType": _str("EOU_DETECTION_TYPE", "semantic_detection_v1"),
         "enableProactive": _bool("ENABLE_PROACTIVE", False),
         # Voice
