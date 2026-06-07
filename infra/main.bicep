@@ -21,21 +21,21 @@ param resourceGroupName string
 @description('Object ID of the deploying principal (for direct role assignments, optional).')
 param principalId string = ''
 
-// ───────── BYO Foundry ─────────
-param existingFoundryAccountName string = ''
-param existingFoundryResourceGroup string = ''
-param existingFoundryProjectEndpoint string = ''
+// ───────── BYO Foundry (set all three to reuse an existing Foundry account+project) ─────────
+param foundryAccountName string = ''
+param foundryResourceGroup string = ''
+param foundryProjectEndpoint string = ''
 
-// ───────── BYO AI Search ─────────
-param existingSearchServiceName string = ''
-param existingSearchResourceGroup string = ''
-param existingSearchIndexName string = ''
+// ───────── BYO AI Search (set both to reuse an existing Search service) ─────────
+// The index name (greenfield or brownfield) always comes from `searchIndexName` below.
+param searchServiceName string = ''
+param searchResourceGroup string = ''
 
 // ───────── BYO Application Insights ─────────
 @description('Name of an existing Application Insights component to reuse. Leave empty to create a new one in this RG.')
-param existingAppInsightsName string = ''
+param appInsightsName string = ''
 @description('Resource group of the existing Application Insights component. Defaults to the deployment RG when empty.')
-param existingAppInsightsResourceGroup string = ''
+param appInsightsResourceGroup string = ''
 
 // ───────── Application runtime config ─────────
 param agentName string = 'AvatarAgent'
@@ -74,8 +74,8 @@ var tags = {
   workload: 'avatar-forge'
 }
 
-var createFoundry = empty(existingFoundryAccountName) || empty(existingFoundryResourceGroup) || empty(existingFoundryProjectEndpoint)
-var createSearch  = empty(existingSearchServiceName) || empty(existingSearchResourceGroup) || empty(existingSearchIndexName)
+var createFoundry = empty(foundryAccountName) || empty(foundryResourceGroup) || empty(foundryProjectEndpoint)
+var createSearch  = empty(searchServiceName) || empty(searchResourceGroup)
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: resourceGroupName
@@ -95,14 +95,11 @@ module resources 'resources.bicep' = {
     principalId: principalId
     createFoundry: createFoundry
     createSearch: createSearch
-    existingFoundryAccountName: existingFoundryAccountName
-    existingFoundryResourceGroup: existingFoundryResourceGroup
-    existingFoundryProjectEndpoint: existingFoundryProjectEndpoint
-    existingSearchServiceName: existingSearchServiceName
-    existingSearchResourceGroup: existingSearchResourceGroup
-    existingSearchIndexName: existingSearchIndexName
-    existingAppInsightsName: existingAppInsightsName
-    existingAppInsightsResourceGroup: existingAppInsightsResourceGroup
+    existingFoundryAccountName: foundryAccountName
+    existingFoundryProjectEndpoint: foundryProjectEndpoint
+    existingSearchServiceName: searchServiceName
+    existingAppInsightsName: appInsightsName
+    existingAppInsightsResourceGroup: appInsightsResourceGroup
     agentName: agentName
     agentProjectName: agentProjectName
     searchConnectionName: searchConnectionName
@@ -150,3 +147,13 @@ output SEARCH_INDEX_NAME string = searchIndexName
 output BING_CONNECTION_NAME string = bingConnectionName
 output BING_CUSTOM_CONFIG_NAME string = bingCustomConfigName
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = resources.outputs.appInsightsConnectionString
+
+// Echo BYO inputs back as outputs so they end up in the azd env and the postprovision
+// RBAC script can read them without needing the original GitHub vars / .env values.
+output FOUNDRY_ACCOUNT_NAME string = foundryAccountName
+output FOUNDRY_RESOURCE_GROUP string = foundryResourceGroup
+output FOUNDRY_PROJECT_ENDPOINT string = foundryProjectEndpoint
+output SEARCH_SERVICE_NAME string = searchServiceName
+output SEARCH_RESOURCE_GROUP string = searchResourceGroup
+output APPINSIGHTS_NAME string = appInsightsName
+output APPINSIGHTS_RESOURCE_GROUP string = appInsightsResourceGroup

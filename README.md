@@ -260,11 +260,13 @@ The two big-ticket resources — **Azure AI Foundry** and **Azure AI Search** �
 
 ```bicep
 // infra/main.bicep
-var createFoundry = empty(existingFoundryAccountName) || empty(existingFoundryResourceGroup) || empty(existingFoundryProjectEndpoint)
-var createSearch  = empty(existingSearchServiceName)  || empty(existingSearchResourceGroup)  || empty(existingSearchIndexName)
+var createFoundry = empty(foundryAccountName) || empty(foundryResourceGroup) || empty(foundryProjectEndpoint)
+var createSearch  = empty(searchServiceName)  || empty(searchResourceGroup)
 ```
 
-A resource is treated as BYO **only when all three of its `EXISTING_*` env vars are set** — otherwise the template provisions a new one. The two switches are independent: you can BYO Foundry while letting the template create Search, or vice versa.
+A resource is treated as BYO **only when its identifying env vars are set** (all three `FOUNDRY_*` for Foundry, both `SEARCH_*` for Search) — otherwise the template provisions a new one. The two switches are independent: you can BYO Foundry while letting the template create Search, or vice versa.
+
+> **Migration note:** the old `EXISTING_*` env vars have been renamed (e.g. `EXISTING_FOUNDRY_PROJECT_ENDPOINT` → `FOUNDRY_PROJECT_ENDPOINT`). If you have an azd environment from a previous deploy, re-set the values under the new names with `azd env set` before your next `azd up`. The `EXISTING_SEARCH_INDEX_NAME` slot has been folded into the single `SEARCH_INDEX_NAME` var (point it at your existing index for BYO).
 
 ##### Full BYO walkthrough (existing Foundry + existing AI Search)
 
@@ -282,19 +284,19 @@ azd env set AZURE_LOCATION            eastus2
 azd env set AZURE_RESOURCE_GROUP_NAME rg-demo-dev
 
 # 4. Point at the EXISTING Foundry account + project
-azd env set EXISTING_FOUNDRY_ACCOUNT_NAME     your-foundry-prod
-azd env set EXISTING_FOUNDRY_RESOURCE_GROUP   rg-shared-ai
-azd env set EXISTING_FOUNDRY_PROJECT_ENDPOINT https://your-foundry-prod.services.ai.azure.com/api/projects/avatar-forge
+azd env set FOUNDRY_ACCOUNT_NAME     your-foundry-prod
+azd env set FOUNDRY_RESOURCE_GROUP   rg-shared-ai
+azd env set FOUNDRY_PROJECT_ENDPOINT https://your-foundry-prod.services.ai.azure.com/api/projects/avatar-forge
 
 # 5. Point at the EXISTING AI Search service + index
-azd env set EXISTING_SEARCH_SERVICE_NAME   your-search-prod
-azd env set EXISTING_SEARCH_RESOURCE_GROUP rg-shared-ai
-azd env set EXISTING_SEARCH_INDEX_NAME     knowledge-index
+azd env set SEARCH_SERVICE_NAME   your-search-prod
+azd env set SEARCH_RESOURCE_GROUP rg-shared-ai
+azd env set SEARCH_INDEX_NAME     your-existing-index-name
 
 # 5b. (optional) BYO Application Insights — reuse an existing component instead of creating one.
-# Leave EXISTING_APPINSIGHTS_RESOURCE_GROUP empty to use the deployment RG.
-azd env set EXISTING_APPINSIGHTS_NAME           your-appi-prod
-azd env set EXISTING_APPINSIGHTS_RESOURCE_GROUP rg-shared-observability
+# Leave APPINSIGHTS_RESOURCE_GROUP empty to use the deployment RG.
+azd env set APPINSIGHTS_NAME           your-appi-prod
+azd env set APPINSIGHTS_RESOURCE_GROUP rg-shared-observability
 
 # (optional) Pin the agent / search / bing names that the container reads at runtime.
 # Defaults are fine if your existing Foundry agent + connections use these names.
@@ -319,7 +321,7 @@ azd up
 | Azure Container Registry | ✅ Created | App's own ACR for image push |
 | Container Apps Environment | ✅ Created | Hosts the app |
 | Container App | ✅ Created | The web app itself |
-| **Application Insights** | ⚠️ Conditional | Created when `EXISTING_APPINSIGHTS_NAME` is empty; reused otherwise. |
+| **Application Insights** | ⚠️ Conditional | Created when `APPINSIGHTS_NAME` is empty; reused otherwise. |
 | **Foundry account + project + model deployment** | ❌ **SKIPPED** | Reuses the BYO Foundry |
 | **AI Search service + index** | ❌ **SKIPPED** | Reuses the BYO Search |
 
@@ -327,14 +329,13 @@ So you still get a self-contained RG with the app, logs, ACR, and identity — b
 
 ##### Cross-RG RBAC (the bit that's easy to miss)
 
-Because the BYO Foundry/Search live in a *different* resource group, the template needs to grant the new User-Assigned Managed Identity access to those foreign resources. Two purpose-built modules handle this:
+Because the BYO Foundry/Search live in a *different* resource group, the new User-Assigned Managed Identity needs role assignments on those foreign resources. Bicep can't do this safely — a deterministic role-assignment name will collide with any pre-existing assignment that grants the same principal+role+scope and Azure rejects it with `RoleAssignmentExists`, even when it would be a no-op. So the grants are made idempotently by [scripts/grant_byo_rbac.py](scripts/grant_byo_rbac.py), invoked from the `postprovision` hook in [azure.yaml](azure.yaml). The script calls `az role assignment create` and silently swallows duplicate-assignment errors, so re-running `azd up` is always safe.
 
-- [infra/modules/roleAssignmentsForeignFoundry.bicep](infra/modules/roleAssignmentsForeignFoundry.bicep) — scoped to `existingFoundryResourceGroup`, grants the UAMI:
-  - **Cognitive Services User** — call Voice Live + OpenAI data plane
-  - **Azure AI Developer** (account scope, covers all child projects) — create/read threads, runs, agents
-- [infra/modules/roleAssignmentsForeignSearch.bicep](infra/modules/roleAssignmentsForeignSearch.bicep) — scoped to `existingSearchResourceGroup`, grants the UAMI:
-  - **Search Index Data Reader** — query the index
-  - **Search Service Contributor** — required for some Foundry-on-Search flows
+It grants the UAMI:
+  - **Cognitive Services User** + **Azure AI Developer** on the BYO Foundry account (account scope covers all child projects)
+  - **Search Index Data Reader** + **Search Service Contributor** on the BYO Search service
+
+When both Foundry AND Search are BYO, the script additionally looks up the existing Foundry project's system-assigned identity and grants it **Search Index Data Contributor** + **Search Service Contributor** on the BYO Search service so the agents `azure_ai_search` tool can read the index at runtime.
 
 > **Permissions required:** The principal running `azd up` needs **User Access Administrator** (or **Owner**) on the foreign resource group(s) to stamp these role assignments. This is the only extra permission requirement vs. the all-new-resources path.
 
@@ -345,7 +346,7 @@ Because the BYO Foundry/Search live in a *different* resource group, the templat
 ```bicep
 var foundryEndpointEffective        = createFoundry ? foundry!.outputs.accountEndpoint : 'https://${existingFoundryAccountName}.services.ai.azure.com/'
 var foundryProjectEndpointEffective = createFoundry ? foundry!.outputs.projectEndpoint : existingFoundryProjectEndpoint
-var searchIndexNameEffective        = createSearch  ? searchIndexName                  : existingSearchIndexName
+var searchEndpointEffective         = createSearch  ? search!.outputs.endpoint         : 'https://${existingSearchServiceName}.search.windows.net/'
 ```
 
 These flow into the container app as `AZURE_VOICELIVE_ENDPOINT`, `PROJECT_ENDPOINT`, and `SEARCH_INDEX_NAME` — the same env vars your local `.env` uses, so `backend/config.py` and the voice handler don't notice any difference between BYO and freshly-created resources.
@@ -361,13 +362,13 @@ Just make sure your `AGENT_NAME` / `AGENT_PROJECT_NAME` / `SEARCH_CONNECTION_NAM
 
 ##### Mixed mode (BYO one, create the other)
 
-Same flow, just only set one of the two `EXISTING_*` triplets. Example — BYO Foundry, fresh Search:
+Same flow, just only set one of the two BYO triplets. Example — BYO Foundry, fresh Search:
 
 ```bash
-azd env set EXISTING_FOUNDRY_ACCOUNT_NAME     your-foundry-prod
-azd env set EXISTING_FOUNDRY_RESOURCE_GROUP   rg-shared-ai
-azd env set EXISTING_FOUNDRY_PROJECT_ENDPOINT https://your-foundry-prod.services.ai.azure.com/api/projects/avatar-forge
-# (no EXISTING_SEARCH_* — template creates a fresh Search service)
+azd env set FOUNDRY_ACCOUNT_NAME     your-foundry-prod
+azd env set FOUNDRY_RESOURCE_GROUP   rg-shared-ai
+azd env set FOUNDRY_PROJECT_ENDPOINT https://your-foundry-prod.services.ai.azure.com/api/projects/avatar-forge
+# (no SEARCH_SERVICE_NAME / SEARCH_RESOURCE_GROUP — template creates a fresh Search service)
 azd up
 # Then populate the new index:
 uv run python scripts/setup_aisearch_index.py
@@ -378,14 +379,14 @@ uv run python scripts/setup_aisearch_index.py
 Same idea, but configure the values as GitHub **Variables** instead of `azd env set`. The workflow at [.github/workflows/azure-dev.yml](.github/workflows/azure-dev.yml) already passes them through:
 
 ```
-EXISTING_FOUNDRY_ACCOUNT_NAME
-EXISTING_FOUNDRY_RESOURCE_GROUP
-EXISTING_FOUNDRY_PROJECT_ENDPOINT
-EXISTING_SEARCH_SERVICE_NAME
-EXISTING_SEARCH_RESOURCE_GROUP
-EXISTING_SEARCH_INDEX_NAME
-EXISTING_APPINSIGHTS_NAME
-EXISTING_APPINSIGHTS_RESOURCE_GROUP
+FOUNDRY_ACCOUNT_NAME
+FOUNDRY_RESOURCE_GROUP
+FOUNDRY_PROJECT_ENDPOINT
+SEARCH_SERVICE_NAME
+SEARCH_RESOURCE_GROUP
+SEARCH_INDEX_NAME
+APPINSIGHTS_NAME
+APPINSIGHTS_RESOURCE_GROUP
 BING_CONNECTION_NAME
 BING_CUSTOM_CONFIG_NAME
 ```
@@ -432,7 +433,7 @@ A ready-to-use OIDC-based workflow lives at [.github/workflows/azure-dev.yml](.g
 2. Assign that SP **Owner** (or Contributor + User Access Administrator) on the target subscription.
 3. In **GitHub → Settings → Secrets and variables → Actions**, add:
    - **Secrets:** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
-   - **Variables:** `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP_NAME` (required); optionally `EXISTING_FOUNDRY_*` / `EXISTING_SEARCH_*` / `AGENT_*` / `MODEL_*` overrides
+   - **Variables:** `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP_NAME` (required); optionally `FOUNDRY_*` / `SEARCH_*` / `APPINSIGHTS_*` / `AGENT_*` / `MODEL_*` overrides
 4. Push to `main` (or run the workflow manually) — it will `azd provision` then `azd deploy`.
 ## Project Structure
 
