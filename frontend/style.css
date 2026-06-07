@@ -594,7 +594,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .avatar-container.photo-avatar .avatar-loading {
-    border-radius: 10%;
+    border-radius: 0;
 }
 
 .avatar-loading.fade-out {
