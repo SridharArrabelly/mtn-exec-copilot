@@ -474,8 +474,9 @@ avatar-forge/
 ├── prompts/                       # Agent prompt content (Markdown), loaded by setup_foundry_agent.py
 │   ├── README.md                  # Layout, format, and edit workflow
 │   └── agent/
-│       ├── description.md         # Short agent description
-│       └── instructions.md        # Full system prompt (voice-first)
+│       ├── description.md                  # Short agent description
+│       ├── instructions-nonreasoning.md    # System prompt for gpt-4.x / gpt-4o (literal, hard rules)
+│       └── instructions-reasoning.md       # System prompt for o-series / gpt-5 (deliberate, multi-step)
 │
 ├── pyproject.toml                 # Project metadata, dependencies, [project.scripts] entry point
 ├── uv.lock                        # Locked dependency versions

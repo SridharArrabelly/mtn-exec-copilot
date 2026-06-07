@@ -8,11 +8,26 @@ without chasing string literals across the codebase.
 
 ```
 prompts/
-├── README.md            # this file
+├── README.md                          # this file
 └── agent/
-    ├── description.md   # short, one-line agent description (UI / catalog)
-    └── instructions.md  # full system instructions for the agent
+    ├── description.md                 # short, one-line agent description (UI / catalog)
+    ├── instructions-nonreasoning.md   # full system instructions, gpt-4.x / gpt-4o family
+    └── instructions-reasoning.md      # full system instructions, o-series / gpt-5 family
 ```
+
+`setup_foundry_agent.py` selects ONE of the two `instructions-*.md` files
+at agent-provisioning time based on `AGENT_MODEL` — reasoning models
+(o-series, gpt-5) get the deliberate / multi-step prompt; everything
+else (gpt-4.x, gpt-4o) gets the literal / hard-rule prompt. Same
+predicate that gates the `reasoning.effort` parameter, so the prompt
+and the model capability stay in lock-step. Falls back to the
+non-reasoning variant if the reasoning file is missing.
+
+Both variants share: voice-first output rules, the silent meeting
+catalogue contract, and the `bing_custom_search` query-style-by-intent
+block. They differ on tool-selection rigidity (hard rules vs softer
+principles), max calls per turn (one vs up to three), and whether
+exhaustive "X → tool" examples are spelled out.
 
 Future prompts (per-tool routing rules, category-specific instructions,
 clarification templates, UI captions) belong in subfolders under

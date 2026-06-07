@@ -72,29 +72,61 @@ def _load_prompt(*relative: str) -> str:
 
 AGENT_DESCRIPTION = _load_prompt("agent", "description.md")
 
-# Agent instructions — voice-first, tuned for gpt-4.1-mini + Grounding-with-Bing-Custom-Search.
+# Agent instructions — voice-first, two variants tuned by model family.
 #
-# gpt-4.1-mini is FAST, non-reasoning, and LITERAL: it does what the prompt
-# says, no more, no less, so the tool-selection contract is stated as hard
-# rules rather than "use judgement". Its external tool is `bing_custom_search`
-# (a single grounded round-trip restricted to a curated domain allow-list)
-# rather than `web_search` — the latter fans out into many calls and bloats
-# context, which is exactly why we dropped it.
+# Two prompt files live under prompts/agent/:
+#   * instructions-nonreasoning.md — tuned for gpt-4.x / gpt-4o (fast, literal).
+#     Hard rules ("EXACTLY ONE tool per turn"), HARD ANTI-RULE block,
+#     exhaustive "X → tool" examples. These models do what the prompt says,
+#     no more, no less, so the tool-selection contract is stated as hard
+#     rules rather than "use judgement".
+#   * instructions-reasoning.md — tuned for o-series / gpt-5 (deliberate,
+#     multi-step). Softer principles, allows up to 3 tool calls per turn,
+#     one refined follow-up search, no exhaustive anti-rule list. These
+#     models can infer "MTN's own plans live in our minutes, not on the
+#     web" from a short principle.
 #
-# Design principles baked into the prompt at prompts/agent/instructions.md:
-#   * The output is SPOKEN by an avatar — no URLs, no bracket citations, no
-#     Markdown links. The TTS layer reads what we send literally.
-#   * One tool per turn unless the ask is genuinely compound. Never chain
-#     tools as a silent fallback — that doubles the user's latency.
-#   * Ask ONE short, suggestion-style clarifying question BEFORE calling any
-#     tool only when a question is genuinely ambiguous (multiple plausible
-#     meanings that would lead to different tool calls).
-#   * The backend injects a MEETINGS LIST as a system message at session
-#     start (live fetch from AI Search). The prompt tells the model to answer
-#     first/last/count/listing questions from that list rather than searching,
-#     and to phrase precise content searches by exact meeting date.
+# Both share: voice-first output rules (no URLs / no markdown / ≤70 words),
+# the silent meeting catalogue contract, and the bing_custom_search query
+# style by intent (MTN corporate / telecom industry / share price).
+#
+# The external tool is `bing_custom_search` (a grounded round-trip
+# restricted to a curated, server-side domain allow-list) rather than
+# `web_search` — the latter fans out into many calls and bloats context.
+#
+# The variant is selected at create_agent() time from settings["agent_model"]
+# via _model_supports_reasoning() — same predicate that gates the
+# reasoning.effort parameter, so the prompt and the model capability stay
+# in lock-step.
 
-AGENT_INSTRUCTIONS = _load_prompt("agent", "instructions.md")
+
+def _load_agent_instructions(model: str) -> str:
+    """Pick the prompt variant that matches the model family.
+
+    Reasoning models (o-series, gpt-5) get the deliberate, multi-step prompt;
+    everything else (gpt-4.x, gpt-4o) gets the literal, hard-rule prompt.
+    Falls back to the non-reasoning variant if the reasoning file is missing
+    so a partial deployment never bricks the agent.
+    """
+    if _model_supports_reasoning(model):
+        path = _PROMPTS_DIR / "agent" / "instructions-reasoning.md"
+        if path.is_file():
+            print(
+                f"Loading reasoning prompt variant "
+                f"(prompts/agent/instructions-reasoning.md) for model {model!r}."
+            )
+            return path.read_text(encoding="utf-8").strip()
+        print(
+            f"WARNING: model {model!r} supports reasoning but "
+            "prompts/agent/instructions-reasoning.md is missing — falling "
+            "back to instructions-nonreasoning.md."
+        )
+    else:
+        print(
+            f"Loading non-reasoning prompt variant "
+            f"(prompts/agent/instructions-nonreasoning.md) for model {model!r}."
+        )
+    return _load_prompt("agent", "instructions-nonreasoning.md")
 
 
 def load_settings() -> dict:
@@ -256,7 +288,7 @@ def create_agent(project: AIProjectClient, settings: dict):
 
     definition_kwargs = {
         "model": settings["agent_model"],
-        "instructions": AGENT_INSTRUCTIONS,
+        "instructions": _load_agent_instructions(settings["agent_model"]),
         "tools": tools,
     }
     effort = settings.get("agent_reasoning_effort")
