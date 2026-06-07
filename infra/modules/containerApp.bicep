@@ -27,6 +27,10 @@ param isPhotoAvatar string = ''
 @description('"true"/"false" string — frontend treats avatar as custom when "true".')
 param isCustomAvatar string = ''
 param avatarBackgroundImageUrl string = ''
+@description('Speech recognition model. Defaults to mai-transcribe-1; cascaded options include azure-speech, gpt-4o-transcribe.')
+param srModel string = 'mai-transcribe-1'
+@description('Recognition language locale (BCP-47, e.g. en-ZA). Use "auto" to let the SR model auto-detect.')
+param recognitionLanguage string = 'auto'
 
 @description('Placeholder image used on first provision; azd replaces it during `azd deploy`.')
 param containerImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
@@ -92,6 +96,8 @@ resource app 'Microsoft.App/containerApps@2024-10-02-preview' = {
             { name: 'IS_PHOTO_AVATAR', value: isPhotoAvatar }
             { name: 'IS_CUSTOM_AVATAR', value: isCustomAvatar }
             { name: 'AVATAR_BACKGROUND_IMAGE_URL', value: avatarBackgroundImageUrl }
+            { name: 'SR_MODEL', value: srModel }
+            { name: 'RECOGNITION_LANGUAGE', value: recognitionLanguage }
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
           ]
           probes: [

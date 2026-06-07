@@ -45,6 +45,8 @@ param photoAvatarName string = ''
 param isPhotoAvatar string = ''
 param isCustomAvatar string = ''
 param avatarBackgroundImageUrl string = ''
+param srModel string = 'mai-transcribe-1'
+param recognitionLanguage string = 'auto'
 
 var abbrs = loadJsonContent('abbreviations.json')
 
@@ -206,6 +208,8 @@ module app 'modules/containerApp.bicep' = {
     isPhotoAvatar: isPhotoAvatar
     isCustomAvatar: isCustomAvatar
     avatarBackgroundImageUrl: avatarBackgroundImageUrl
+    srModel: srModel
+    recognitionLanguage: recognitionLanguage
   }
 }
 
