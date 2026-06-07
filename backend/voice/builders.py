@@ -197,6 +197,12 @@ def build_turn_detection(config: dict):
             remove_filler_words=remove_filler,
             languages=vad_languages,
             interrupt_response=interrupt_response,
+            # When a real barge-in happens mid-reply, keep the LLM's view of
+            # the conversation aligned with what the user actually heard:
+            # only the spoken-so-far portion is persisted to history. Per
+            # learn.microsoft.com/azure/ai-services/speech-service/how-to-voice-live-auto-truncation
+            # this should always be paired with interrupt_response=true.
+            auto_truncate=True,
             end_of_utterance_detection=eou_detection,
         )
     else:
