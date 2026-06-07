@@ -460,12 +460,12 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .avatar-container.photo-avatar {
-    border-radius: 10%;
+    border-radius: 0;
 }
 
 .avatar-container.photo-avatar .avatar-video,
 .avatar-container.photo-avatar .avatar-video video {
-    border-radius: 10%;
+    border-radius: 0;
 }
 
 /* Column sized to the avatar's intrinsic width: the video on top and the
@@ -521,6 +521,33 @@ input[type="range"]::-webkit-slider-thumb {
        into the caption strip below it. Clipping here (not on .avatar-stage)
        keeps the docked mic's volume glow and the speaking halo unclipped. */
     overflow: hidden;
+    /* Anchor the ::after tint overlay below. */
+    position: relative;
+}
+
+/* Tint overlay sitting ON TOP of the video. The Azure avatar service
+   streams the avatar over an OPAQUE white background, so a plain
+   background-color on .avatar-video would be hidden behind the video.
+   `mix-blend-mode: multiply` blends this overlay's color INTO the video
+   pixels: white areas of the video adopt the overlay color (this is
+   what makes the "background tint" visible), while Nuru's colored
+   pixels get a subtle wash of the same tint. */
+.avatar-video::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-color: #ececec; /* idle: gray wash, reads as "muted/listening" */
+    mix-blend-mode: multiply;
+    pointer-events: none;
+    border-radius: inherit;
+    transition: background-color 450ms ease;
+}
+
+/* Speaking state: swap the multiply overlay to MTN brand yellow. White
+   pixels in the avatar's video background become yellow; Nuru picks up
+   a subtle warm wash. */
+.avatar-stage.speaking .avatar-video::after {
+    background-color: #ffe066;
 }
 
 .avatar-video video {
@@ -533,7 +560,18 @@ input[type="range"]::-webkit-slider-thumb {
     transform: scale(1.15);
     transform-origin: center center;
     opacity: 0;
-    transition: opacity 0.45s ease;
+    /* Idle state: full grayscale. Switches to color via the
+       `.avatar-stage.speaking` rule below. The 450ms ease matches the
+       background-color transition on .avatar-container, so the
+       grayscale->color shift and the white->yellow tint move together. */
+    filter: grayscale(100%);
+    transition: opacity 0.45s ease, filter 450ms ease;
+}
+
+/* Speaking state: drop grayscale so the avatar pops back to full color
+   in sync with the yellow panel tint. */
+.avatar-stage.speaking .avatar-video video {
+    filter: grayscale(0%);
 }
 
 .avatar-video video.avatar-video-ready {
