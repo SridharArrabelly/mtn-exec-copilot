@@ -267,9 +267,18 @@ def create_agent(project: AIProjectClient, settings: dict):
     """Create a new version of the Foundry agent.
 
     Reasoning effort (`AGENT_REASONING_EFFORT`) is OPTIONAL and only
-    applied when the env var is set. The agent runs on gpt-4.1-mini by
-    default, which does NOT support reasoning.effort — set it ONLY if you
-    bind a reasoning model (o-series, gpt-5 family). Leave UNSET otherwise.
+    applied when the env var is set. The validated voice configs are:
+
+      * gpt-4.1-mini                              — leave AGENT_REASONING_EFFORT
+                                                    unset. gpt-4.x reject it.
+      * gpt-5.4-mini + AGENT_REASONING_EFFORT=none — RECOMMENDED. Same first-
+                                                    token latency as gpt-4.1-mini
+                                                    with better synthesis. Any
+                                                    other effort value (low,
+                                                    medium, high, xhigh) adds
+                                                    4-5 seconds to first-token,
+                                                    which is too laggy for
+                                                    conversational voice use.
     """
     azs_connection = project.connections.get(settings["search_connection_name"])
 
