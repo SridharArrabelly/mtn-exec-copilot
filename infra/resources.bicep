@@ -20,11 +20,18 @@ param existingSearchServiceName string
 param existingSearchResourceGroup string
 param existingSearchIndexName string
 
+@description('Name of an existing Application Insights component to reuse. Leave empty to create a new one.')
+param existingAppInsightsName string = ''
+@description('Resource group of the existing Application Insights component. Defaults to the deployment RG when empty.')
+param existingAppInsightsResourceGroup string = ''
+
 param agentName string
 param agentProjectName string
 param searchConnectionName string
 param searchIndexName string
 param voiceLiveVoice string
+param bingConnectionName string = ''
+param bingCustomConfigName string = ''
 
 param modelName string
 param modelVersion string
@@ -64,7 +71,7 @@ module logAnalytics 'modules/logAnalytics.bicep' = {
   }
 }
 
-module appInsights 'modules/applicationInsights.bicep' = {
+module appInsights 'modules/applicationInsights.bicep' = if (empty(existingAppInsightsName)) {
   name: 'appi'
   params: {
     name: '${abbrs.applicationInsights}-${environmentName}-${resourceToken}'
@@ -73,6 +80,15 @@ module appInsights 'modules/applicationInsights.bicep' = {
     logAnalyticsWorkspaceId: logAnalytics.outputs.id
   }
 }
+
+// Reuse an existing App Insights component when EXISTING_APPINSIGHTS_NAME is set.
+// Resolved in its own RG (defaults to the deployment RG when not specified).
+resource existingAppInsights 'Microsoft.Insights/components@2020-02-02' existing = if (!empty(existingAppInsightsName)) {
+  name: existingAppInsightsName
+  scope: resourceGroup(empty(existingAppInsightsResourceGroup) ? resourceGroup().name : existingAppInsightsResourceGroup)
+}
+
+var appInsightsConnectionStringEffective = empty(existingAppInsightsName) ? appInsights.outputs.connectionString : existingAppInsights.properties.ConnectionString
 
 // ───────── Container infrastructure ─────────
 module acr 'modules/containerRegistry.bicep' = {
@@ -212,7 +228,9 @@ module app 'modules/containerApp.bicep' = {
     searchIndexName: searchIndexNameEffective
     searchEndpoint: searchEndpointEffective
     voiceLiveVoice: voiceLiveVoice
-    appInsightsConnectionString: appInsights.outputs.connectionString
+    bingConnectionName: bingConnectionName
+    bingCustomConfigName: bingCustomConfigName
+    appInsightsConnectionString: appInsightsConnectionStringEffective
     agentModel: agentModel
     embeddingDeployment: embeddingDeployment
     avatarName: avatarName
@@ -234,6 +252,6 @@ output uamiPrincipalId string = uami.outputs.principalId
 output foundryEndpoint string = foundryEndpointEffective
 output foundryProjectEndpoint string = foundryProjectEndpointEffective
 output searchEndpoint string = searchEndpointEffective
-output appInsightsConnectionString string = appInsights.outputs.connectionString
+output appInsightsConnectionString string = appInsightsConnectionStringEffective
 output effectiveAgentProjectName string = createFoundry ? 'proj-${environmentName}' : agentProjectName
 

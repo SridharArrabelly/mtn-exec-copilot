@@ -16,11 +16,16 @@
     "existingSearchResourceGroup": { "value": "${EXISTING_SEARCH_RESOURCE_GROUP=}" },
     "existingSearchIndexName":     { "value": "${EXISTING_SEARCH_INDEX_NAME=}" },
 
+    "existingAppInsightsName":          { "value": "${EXISTING_APPINSIGHTS_NAME=}" },
+    "existingAppInsightsResourceGroup": { "value": "${EXISTING_APPINSIGHTS_RESOURCE_GROUP=}" },
+
     "agentName":           { "value": "${AGENT_NAME=AvatarAgent}" },
     "agentProjectName":    { "value": "${AGENT_PROJECT_NAME=avatar-forge}" },
     "searchConnectionName":{ "value": "${SEARCH_CONNECTION_NAME=aisearch-connection}" },
     "searchIndexName":     { "value": "${SEARCH_INDEX_NAME=knowledge-index}" },
     "voiceLiveVoice":      { "value": "${VOICELIVE_VOICE=en-US-AvaMultilingualNeural}" },
+    "bingConnectionName":  { "value": "${BING_CONNECTION_NAME=}" },
+    "bingCustomConfigName":{ "value": "${BING_CUSTOM_CONFIG_NAME=}" },
 
     "agentModel":             { "value": "${AGENT_MODEL=gpt-4.1-mini}" },
     "embeddingDeployment":    { "value": "${EMBEDDING_DEPLOYMENT=text-embedding-3-small}" },

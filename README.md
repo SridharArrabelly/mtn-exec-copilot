@@ -289,6 +289,19 @@ azd env set EXISTING_SEARCH_SERVICE_NAME   your-search-prod
 azd env set EXISTING_SEARCH_RESOURCE_GROUP rg-shared-ai
 azd env set EXISTING_SEARCH_INDEX_NAME     knowledge-index
 
+# 5b. (optional) BYO Application Insights — reuse an existing component instead of creating one.
+# Leave EXISTING_APPINSIGHTS_RESOURCE_GROUP empty to use the deployment RG.
+azd env set EXISTING_APPINSIGHTS_NAME           your-appi-prod
+azd env set EXISTING_APPINSIGHTS_RESOURCE_GROUP rg-shared-observability
+
+# (optional) Pin the agent / search / bing names that the container reads at runtime.
+# Defaults are fine if your existing Foundry agent + connections use these names.
+azd env set AGENT_NAME              MtnAvatarAgent
+azd env set AGENT_MODEL             gpt-4.1-mini
+azd env set SEARCH_CONNECTION_NAME  aisearch-connection
+azd env set BING_CONNECTION_NAME    groundingwithbingcustquraml
+azd env set BING_CUSTOM_CONFIG_NAME mtn-avatar-search
+
 # 6. Provision + deploy
 azd up
 ```
@@ -303,6 +316,7 @@ azd up
 | Azure Container Registry | ✅ Created | App's own ACR for image push |
 | Container Apps Environment | ✅ Created | Hosts the app |
 | Container App | ✅ Created | The web app itself |
+| **Application Insights** | ⚠️ Conditional | Created when `EXISTING_APPINSIGHTS_NAME` is empty; reused otherwise. |
 | **Foundry account + project + model deployment** | ❌ **SKIPPED** | Reuses the BYO Foundry |
 | **AI Search service + index** | ❌ **SKIPPED** | Reuses the BYO Search |
 
@@ -367,6 +381,10 @@ EXISTING_FOUNDRY_PROJECT_ENDPOINT
 EXISTING_SEARCH_SERVICE_NAME
 EXISTING_SEARCH_RESOURCE_GROUP
 EXISTING_SEARCH_INDEX_NAME
+EXISTING_APPINSIGHTS_NAME
+EXISTING_APPINSIGHTS_RESOURCE_GROUP
+BING_CONNECTION_NAME
+BING_CUSTOM_CONFIG_NAME
 ```
 
 Set them under **Settings → Secrets and variables → Actions → Variables**, push to `main`, and the deploy reuses the existing resources.

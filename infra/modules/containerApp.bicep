@@ -12,6 +12,8 @@ param agentProjectName string
 param searchConnectionName string
 param searchIndexName string
 param voiceLiveVoice string
+param bingConnectionName string = ''
+param bingCustomConfigName string = ''
 param appInsightsConnectionString string
 @description('Search service endpoint (https://<name>.search.windows.net/)')
 param searchEndpoint string = ''
@@ -82,6 +84,8 @@ resource app 'Microsoft.App/containerApps@2024-10-02-preview' = {
             { name: 'SEARCH_CONNECTION_NAME', value: searchConnectionName }
             { name: 'SEARCH_INDEX_NAME', value: searchIndexName }
             { name: 'VOICELIVE_VOICE', value: voiceLiveVoice }
+            { name: 'BING_CONNECTION_NAME', value: bingConnectionName }
+            { name: 'BING_CUSTOM_CONFIG_NAME', value: bingCustomConfigName }
             { name: 'AVATAR_NAME', value: avatarName }
             { name: 'CUSTOM_AVATAR_NAME', value: customAvatarName }
             { name: 'PHOTO_AVATAR_NAME', value: photoAvatarName }

@@ -31,12 +31,24 @@ param existingSearchServiceName string = ''
 param existingSearchResourceGroup string = ''
 param existingSearchIndexName string = ''
 
+// ───────── BYO Application Insights ─────────
+@description('Name of an existing Application Insights component to reuse. Leave empty to create a new one in this RG.')
+param existingAppInsightsName string = ''
+@description('Resource group of the existing Application Insights component. Defaults to the deployment RG when empty.')
+param existingAppInsightsResourceGroup string = ''
+
 // ───────── Application runtime config ─────────
 param agentName string = 'AvatarAgent'
 param agentProjectName string = 'avatar-forge'
 param searchConnectionName string = 'aisearch-connection'
 param searchIndexName string = 'knowledge-index'
 param voiceLiveVoice string = 'en-US-AvaMultilingualNeural'
+
+@description('Foundry connection name for the Grounding-with-Bing-Custom-Search resource. Surfaces as BING_CONNECTION_NAME in the container.')
+param bingConnectionName string = ''
+
+@description('Bing Custom Search configuration (instance) name — the curated domain allow-list. Surfaces as BING_CUSTOM_CONFIG_NAME in the container.')
+param bingCustomConfigName string = ''
 
 // App runtime extras
 param agentModel string = 'gpt-4.1-mini'
@@ -89,11 +101,15 @@ module resources 'resources.bicep' = {
     existingSearchServiceName: existingSearchServiceName
     existingSearchResourceGroup: existingSearchResourceGroup
     existingSearchIndexName: existingSearchIndexName
+    existingAppInsightsName: existingAppInsightsName
+    existingAppInsightsResourceGroup: existingAppInsightsResourceGroup
     agentName: agentName
     agentProjectName: agentProjectName
     searchConnectionName: searchConnectionName
     searchIndexName: searchIndexName
     voiceLiveVoice: voiceLiveVoice
+    bingConnectionName: bingConnectionName
+    bingCustomConfigName: bingCustomConfigName
     modelName: modelName
     modelVersion: modelVersion
     modelDeploymentName: modelDeploymentName
@@ -131,4 +147,6 @@ output AGENT_NAME string = agentName
 output AGENT_PROJECT_NAME string = resources.outputs.effectiveAgentProjectName
 output SEARCH_CONNECTION_NAME string = searchConnectionName
 output SEARCH_INDEX_NAME string = searchIndexName
+output BING_CONNECTION_NAME string = bingConnectionName
+output BING_CUSTOM_CONFIG_NAME string = bingCustomConfigName
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = resources.outputs.appInsightsConnectionString
