@@ -8,8 +8,8 @@ This sample demonstrates the usage of Azure Voice Live API with avatar, implemen
 ┌─────────────────────────┐         ┌─────────────────────────────┐         ┌──────────────────┐         ┌──────────────────────────────┐
 │    Browser (Frontend)   │◄──WS───►│   Python Server (FastAPI)   │◄──SDK──►│ Azure Voice Live │◄───────►│    Foundry Agent Service     │
 │                         │         │                             │         │     Service      │ agent_  │     (your Foundry agent)     │
-│  • Audio capture (mic)  │         │  • Session management       │         └──────────────────┘ config  │  • Instructions/prompt       │
-│  • Audio playback       │         │  • Voice Live SDK calls     │                  │                   │  • gpt-4.1-mini deployment   │
+│  • Audio capture (mic)  │         │  • Session management       │         └──────────────────┘ config  │  • Instructions (variant)    │
+│  • Audio playback       │         │  • Voice Live SDK calls     │                                       │  • gpt-5.4-mini deployment   │
 │  • Avatar video         │◄─WebRTC (peer-to-peer video)──────────────────────────────┘                  │  • Azure AI Search tool      │
 │  • Settings UI          │         │  • Event relay              │                                      │  • Grounding w/ Bing Custom  │
 │  • Chat messages        │         │  • Meeting catalogue inject │                                      └──────────────────────────────┘
@@ -37,6 +37,8 @@ The avatar's usefulness hinges on calling the **right tool** for each question: 
 The original agent decided tools entirely on its own and reached only **~70%** first-tool accuracy, frequently **fanning out** multiple external web calls (≈45% of web turns), which inflated latency and token cost. Switching to **`gpt-4.1-mini` + Grounding with Bing Custom Search** (a single hosted Bing call instead of an open-ended web tool) lifted first-tool accuracy to **~93.5%** and cut fan-out to ≈3%.
 
 > **Note on the web tool:** the agent's only external tool is **`bing_custom_search`** (Grounding with Bing Custom Search) — a single grounded round-trip that returns curated snippets restricted to a server-side domain allow-list (the "configuration" provisioned in the Bing Custom Search portal, referenced by `BING_CUSTOM_CONFIG_NAME`). An open-ended web-search tool on `gpt-4.1-mini` either fans out into many calls or bloats the context; `bing_custom_search` resolves a turn in one call. It is wired by setting `BING_CONNECTION_NAME` (the Foundry connection) and `BING_CUSTOM_CONFIG_NAME` (the Bing Custom Search instance) when running `scripts/setup_foundry_agent.py`.
+
+> **Note on the system prompt:** the script picks one of two prompt variants at agent-provisioning time based on `AGENT_MODEL` — `prompts/agent/instructions-nonreasoning.md` for `gpt-4.x` / `gpt-4o` (literal, hard rules, one tool per turn) and `prompts/agent/instructions-reasoning.md` for o-series / `gpt-5` (softer principles, up to 3 tool calls per turn, refined follow-up search allowed). Both variants share the voice-first output rules, the silent meeting catalogue contract, the intent-aware Bing query block, and the JSE-cents conversion rule. The selector uses the same `_model_supports_reasoning()` predicate that gates `reasoning.effort`, so prompt and model capability stay in lock-step. Fully documented in [`prompts/README.md`](prompts/README.md).
 
 ## Frontend UX
 
@@ -100,10 +102,10 @@ The avatar feature is currently available in the following service regions: Sout
    - `PROJECT_ENDPOINT` - **Required.** Foundry project endpoint, e.g. `https://<resource>.services.ai.azure.com/api/projects/<project-name>`
    - `SEARCH_CONNECTION_NAME` - **Required.** Name of the Azure AI Search connection in the Foundry project
    - `SEARCH_INDEX_NAME` - **Required.** Azure AI Search index to expose to the agent
-   - `AGENT_MODEL` - Foundry model deployment the agent runs on (default: `gpt-4.1-mini`, the validated voice config). Must match a deployment in your project.
+   - `AGENT_MODEL` - Foundry model deployment the agent runs on. Two configs are validated for voice: `gpt-4.1-mini` (fast, non-reasoning — the original baseline used to measure tool-calling accuracy below) and `gpt-5.4-mini` with `AGENT_REASONING_EFFORT=none` (the current recommended config — same first-token latency, better synthesis on fiscal-period questions and share-price conversion). Must match a deployment in your project.
    - `BING_CONNECTION_NAME` - **Required.** Name of the Grounding-with-Bing-Custom-Search connection in the Foundry project (the agent's only external tool).
    - `BING_CUSTOM_CONFIG_NAME` - **Required.** Bing Custom Search configuration (instance) name — the curated domain allow-list the web tool is restricted to.
-   - `AGENT_REASONING_EFFORT` - *Only* set for reasoning models (o-series, gpt-5 family). Leave **unset** for `gpt-4.x` / `gpt-4o` — they reject `reasoning.effort` with a 400 on every response, which manifests as a silently non-speaking avatar.
+   - `AGENT_REASONING_EFFORT` - Reasoning-effort setting passed to the agent. Valid values depend on the model: `gpt-4.x` / `gpt-4o` reject this parameter entirely (leave **unset** — they 400 on every response, which manifests as a silently non-speaking avatar); `gpt-5.4-mini` accepts `none | low | medium | high | xhigh`; o-series models accept `low | medium | high`. For voice latency the validated value is `none` on `gpt-5.4-mini` — actual reasoning steps add 4–5 seconds to first-token. The provisioning script (`scripts/setup_foundry_agent.py`) warns and ignores the value if the model doesn't support it.
 
    Search index build/test (only needed when running [`scripts/setup_aisearch_index.py`](scripts/setup_aisearch_index.py) or [`scripts/test_aisearch_query.py`](scripts/test_aisearch_query.py)):
    - `AZURE_SEARCH_ENDPOINT` - **Required.** `https://<service>.search.windows.net`
@@ -297,7 +299,8 @@ azd env set EXISTING_APPINSIGHTS_RESOURCE_GROUP rg-shared-observability
 # (optional) Pin the agent / search / bing names that the container reads at runtime.
 # Defaults are fine if your existing Foundry agent + connections use these names.
 azd env set AGENT_NAME              MtnAvatarAgent
-azd env set AGENT_MODEL             gpt-4.1-mini
+azd env set AGENT_MODEL             gpt-5.4-mini
+azd env set AGENT_REASONING_EFFORT  none
 azd env set SEARCH_CONNECTION_NAME  aisearch-connection
 azd env set BING_CONNECTION_NAME    groundingwithbingcustquraml
 azd env set BING_CUSTOM_CONFIG_NAME mtn-avatar-search
