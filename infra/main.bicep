@@ -59,6 +59,8 @@ param photoAvatarName string = ''
 param isPhotoAvatar string = 'false'
 param isCustomAvatar string = 'false'
 param avatarBackgroundImageUrl string = ''
+param srModel string = 'mai-transcribe-1'
+param recognitionLanguage string = 'auto'
 
 // ───────── Model deployment (used only when creating Foundry) ─────────
 param modelName string = 'gpt-4.1-mini'
@@ -120,6 +122,8 @@ module resources 'resources.bicep' = {
     isPhotoAvatar: isPhotoAvatar
     isCustomAvatar: isCustomAvatar
     avatarBackgroundImageUrl: avatarBackgroundImageUrl
+    srModel: srModel
+    recognitionLanguage: recognitionLanguage
   }
 }
 

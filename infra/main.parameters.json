@@ -34,6 +34,8 @@
     "isPhotoAvatar":          { "value": "${IS_PHOTO_AVATAR=true}" },
     "isCustomAvatar":         { "value": "${IS_CUSTOM_AVATAR=true}" },
     "avatarBackgroundImageUrl": { "value": "${AVATAR_BACKGROUND_IMAGE_URL=}" },
+    "srModel":             { "value": "${SR_MODEL=mai-transcribe-1}" },
+    "recognitionLanguage": { "value": "${RECOGNITION_LANGUAGE=auto}" },
 
     "modelName":           { "value": "${MODEL_NAME=gpt-4.1-mini}" },
     "modelVersion":        { "value": "${MODEL_VERSION=2025-04-14}" },

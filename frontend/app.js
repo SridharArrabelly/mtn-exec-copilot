@@ -341,10 +341,12 @@ function updateConditionalFields() {
     const isPhotoAvatar = document.getElementById('isPhotoAvatar').checked;
     const isCustomAvatar = document.getElementById('isCustomAvatar').checked;
     const turnDetectionType = document.getElementById('turnDetectionType').value;
-    const srModel = document.getElementById('srModel').value;
 
-    // Recognition language hidden for MAI Transcribe models (auto multilingual)
-    show('recognitionLanguageField', !srModel.startsWith('mai-transcribe'));
+    // Recognition language is always shown. MAI Transcribe may treat a single-locale
+    // hint as advisory (it's fundamentally multilingual auto-detect), but the API
+    // accepts the field and cascaded models honor it strictly. Hiding it would
+    // silently strip an English-only lock when users want one.
+    show('recognitionLanguageField', true);
 
     // Filler words (semantic VAD)
     show('fillerWordsField', turnDetectionType === 'azure_semantic_vad');
