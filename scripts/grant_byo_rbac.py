@@ -38,21 +38,26 @@ ROLES = {
 }
 
 
-def _run(cmd: list[str], *, check: bool = True, capture: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, check=check, capture_output=capture, text=True)
+# Resolved at startup. On Windows `az` is `az.cmd`, and CreateProcess won't
+# resolve .cmd shims unless you pass the full path - so we do.
+_AZ: str | None = None
+
+
+def _az(args: list[str], *, check: bool = False) -> subprocess.CompletedProcess[str]:
+    assert _AZ is not None
+    return subprocess.run([_AZ, *args], check=check, capture_output=True, text=True)
 
 
 def _grant(label: str, principal_id: str, role_id: str, scope: str) -> None:
     """Create a role assignment and swallow 'already exists' as success."""
     print(f"  -> {label}", flush=True)
-    cmd = [
-        "az", "role", "assignment", "create",
+    proc = _az([
+        "role", "assignment", "create",
         "--assignee-object-id", principal_id,
         "--assignee-principal-type", "ServicePrincipal",
         "--role", role_id,
         "--scope", scope,
-    ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    ])
     if proc.returncode == 0:
         return
     err = (proc.stderr or "") + (proc.stdout or "")
@@ -68,18 +73,14 @@ def _lookup_foundry_project_principal_id(
     account_name: str, rg: str, project_name: str, sub_id: str
 ) -> str | None:
     """Read the system-assigned identity of an existing Foundry project."""
-    try:
-        proc = _run([
-            "az", "cognitiveservices", "account", "project", "show",
-            "--name", account_name,
-            "--project-name", project_name,
-            "--resource-group", rg,
-            "--subscription", sub_id,
-            "-o", "json",
-        ], check=False)
-    except FileNotFoundError:
-        print("ERROR: az CLI not found on PATH - cannot grant BYO RBAC.", file=sys.stderr)
-        raise SystemExit(1)
+    proc = _az([
+        "cognitiveservices", "account", "project", "show",
+        "--name", account_name,
+        "--project-name", project_name,
+        "--resource-group", rg,
+        "--subscription", sub_id,
+        "-o", "json",
+    ])
     if proc.returncode != 0:
         print(
             "WARN: could not look up existing Foundry project SMI (project '"
@@ -95,7 +96,9 @@ def _lookup_foundry_project_principal_id(
 
 
 def main() -> int:
-    if shutil.which("az") is None:
+    global _AZ
+    _AZ = shutil.which("az")
+    if _AZ is None:
         print("ERROR: az CLI not found on PATH.", file=sys.stderr)
         return 1
 
