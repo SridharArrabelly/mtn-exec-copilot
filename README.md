@@ -11,17 +11,17 @@ This sample demonstrates the usage of Azure Voice Live API with avatar, implemen
 │  • Audio capture (mic)  │         │  • Session management       │         └──────────────────┘ config  │  • Instructions/prompt       │
 │  • Audio playback       │         │  • Voice Live SDK calls     │                  │                   │  • gpt-4.1-mini deployment   │
 │  • Avatar video         │◄─WebRTC (peer-to-peer video)──────────────────────────────┘                  │  • Azure AI Search tool      │
-│  • Settings UI          │         │  • Event relay              │                                      │  • Grounding with Bing tool  │
+│  • Settings UI          │         │  • Event relay              │                                      │  • Grounding w/ Bing Custom  │
 │  • Chat messages        │         │  • Meeting catalogue inject │                                      └──────────────────────────────┘
 └─────────────────────────┘         └─────────────────────────────┘
 ```
 
-**Key design:** The Python backend acts as a bridge between the browser and Azure Voice Live service. Voice Live binds the session to an existing **Microsoft Foundry agent** via `agent_config = { agent_name, project_name }`. The agent (created once with [`scripts/setup_foundry_agent.py`](scripts/setup_foundry_agent.py)) owns the system prompt, model selection, and tool wiring (Azure AI Search index over board-meeting minutes + **Grounding with Bing Search** for live web facts). Voice Live handles speech-in/speech-out and routes turns through the agent so tool calls resolve server-side in Foundry.
+**Key design:** The Python backend acts as a bridge between the browser and Azure Voice Live service. Voice Live binds the session to an existing **Microsoft Foundry agent** via `agent_config = { agent_name, project_name }`. The agent (created once with [`scripts/setup_foundry_agent.py`](scripts/setup_foundry_agent.py)) owns the system prompt, model selection, and tool wiring (Azure AI Search index over board-meeting minutes + **Grounding with Bing Custom Search** for live web facts restricted to a curated domain allow-list). Voice Live handles speech-in/speech-out and routes turns through the agent so tool calls resolve server-side in Foundry.
 
 Two backend features improve tool-calling accuracy for this voice workload:
 
 - **Meeting catalogue injection** — at session start the backend fetches a compact catalogue of every indexed meeting (date + title) from AI Search and injects it as a system message. This lets the agent answer "how many meetings / first / last / list them" with **no** search call, and lets it phrase precise content searches using exact dates. See [`backend/voice/catalog.py`](backend/voice/catalog.py).
-- **`gpt-4.1-mini` + Grounding with Bing Search** — the agent's model and external tool were chosen for tool-calling precision. See [Tool Calling Accuracy](#tool-calling-accuracy).
+- **`gpt-4.1-mini` + Grounding with Bing Custom Search** — the agent's model and external tool were chosen for tool-calling precision. See [Tool Calling Accuracy](#tool-calling-accuracy).
 
 All SDK operations (session creation, configuration, audio forwarding, event processing) happen in Python. The browser only handles:
 - Microphone capture → sends PCM16 audio via WebSocket
@@ -32,11 +32,11 @@ All SDK operations (session creation, configuration, audio forwarding, event pro
 
 ## Tool Calling Accuracy
 
-The avatar's usefulness hinges on calling the **right tool** for each question: the Azure AI Search index (board-meeting minutes) for internal questions, **Grounding with Bing Search** for live external facts (share price, competitor news), or **both** for comparisons ("how does our revenue compare to what analysts expected?").
+The avatar's usefulness hinges on calling the **right tool** for each question: the Azure AI Search index (board-meeting minutes) for internal questions, **Grounding with Bing Custom Search** for live external facts from a curated domain allow-list (share price, competitor news), or **both** for comparisons ("how does our revenue compare to what analysts expected?").
 
-The original agent decided tools entirely on its own and reached only **~70%** first-tool accuracy, frequently **fanning out** multiple external web calls (≈45% of web turns), which inflated latency and token cost. Switching to **`gpt-4.1-mini` + Grounding with Bing Search** (a single hosted Bing call instead of an open-ended web tool) lifted first-tool accuracy to **~93.5%** and cut fan-out to ≈3%.
+The original agent decided tools entirely on its own and reached only **~70%** first-tool accuracy, frequently **fanning out** multiple external web calls (≈45% of web turns), which inflated latency and token cost. Switching to **`gpt-4.1-mini` + Grounding with Bing Custom Search** (a single hosted Bing call instead of an open-ended web tool) lifted first-tool accuracy to **~93.5%** and cut fan-out to ≈3%.
 
-> **Note on the web tool:** the agent's only external tool is **`bing_grounding`** (Grounding with Bing Search) — a single grounded round-trip that returns curated snippets. An open-ended web-search tool on `gpt-4.1-mini` either fans out into many calls or bloats the context; `bing_grounding` resolves a turn in one call. It is wired by setting `BING_CONNECTION_NAME` when running `scripts/setup_foundry_agent.py`.
+> **Note on the web tool:** the agent's only external tool is **`bing_custom_search`** (Grounding with Bing Custom Search) — a single grounded round-trip that returns curated snippets restricted to a server-side domain allow-list (the "configuration" provisioned in the Bing Custom Search portal, referenced by `BING_CUSTOM_CONFIG_NAME`). An open-ended web-search tool on `gpt-4.1-mini` either fans out into many calls or bloats the context; `bing_custom_search` resolves a turn in one call. It is wired by setting `BING_CONNECTION_NAME` (the Foundry connection) and `BING_CUSTOM_CONFIG_NAME` (the Bing Custom Search instance) when running `scripts/setup_foundry_agent.py`.
 
 ## Frontend UX
 
@@ -101,7 +101,8 @@ The avatar feature is currently available in the following service regions: Sout
    - `SEARCH_CONNECTION_NAME` - **Required.** Name of the Azure AI Search connection in the Foundry project
    - `SEARCH_INDEX_NAME` - **Required.** Azure AI Search index to expose to the agent
    - `AGENT_MODEL` - Foundry model deployment the agent runs on (default: `gpt-4.1-mini`, the validated voice config). Must match a deployment in your project.
-   - `BING_CONNECTION_NAME` - **Required.** Name of the Grounding-with-Bing connection in the Foundry project (the agent's only external tool).
+   - `BING_CONNECTION_NAME` - **Required.** Name of the Grounding-with-Bing-Custom-Search connection in the Foundry project (the agent's only external tool).
+   - `BING_CUSTOM_CONFIG_NAME` - **Required.** Bing Custom Search configuration (instance) name — the curated domain allow-list the web tool is restricted to.
    - `AGENT_REASONING_EFFORT` - *Only* set for reasoning models (o-series, gpt-5 family). Leave **unset** for `gpt-4.x` / `gpt-4o` — they reject `reasoning.effort` with a 400 on every response, which manifests as a silently non-speaking avatar.
 
    Search index build/test (only needed when running [`scripts/setup_aisearch_index.py`](scripts/setup_aisearch_index.py) or [`scripts/test_aisearch_query.py`](scripts/test_aisearch_query.py)):
@@ -391,7 +392,7 @@ The Bicep template accepts overrides via azd environment variables — set any o
 For **greenfield** deployments (template provisions Foundry + Search) the `postprovision` hook in [azure.yaml](azure.yaml) runs both setup scripts automatically:
 
 - `scripts/setup_aisearch_index.py` - chunks + embeds every `data/*.docx` and builds the AI Search index. **Drop your documents into `data/` BEFORE running `azd up`** - otherwise the hook prints a warning and you must run it manually after adding files.
-- `scripts/setup_foundry_agent.py` - registers the Foundry agent (`AGENT_NAME`) with the AI Search + Grounding-with-Bing tools.
+- `scripts/setup_foundry_agent.py` - registers the Foundry agent (`AGENT_NAME`) with the AI Search + Grounding-with-Bing-Custom-Search tools.
 
 For **brownfield** (BYO Foundry / Search) the hook skips both - your existing agent and index are reused as-is.
 
@@ -439,7 +440,7 @@ avatar-forge/
 │   └── app.js                     # Audio capture/playback, WebRTC, WebSocket, UI logic (captions, glow, onboarding)
 │
 ├── scripts/                       # Utility / one-off scripts (not part of the server)
-│   ├── setup_foundry_agent.py     # Creates the Foundry agent with AI Search + Grounding-with-Bing tools
+│   ├── setup_foundry_agent.py     # Creates the Foundry agent with AI Search + Grounding-with-Bing-Custom-Search tools
 │   ├── setup_aisearch_index.py    # Creates/updates the AI Search index and ingests data/ (docx/pdf/md/txt)
 │   ├── test_aisearch_query.py     # Smoke-tests the index with a hybrid + semantic query
 │   ├── test_foundry_agent.py      # Smoke-tests the live agent end-to-end (tool calls + answer)

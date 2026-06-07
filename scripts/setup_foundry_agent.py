@@ -4,27 +4,31 @@ This script creates a new version of a Microsoft Foundry agent (e.g.
 ``MtnAvatarAgent``) wired with two tools:
 
 * **Azure AI Search** - internal index of past MTN executive meetings.
-* **Grounding with Bing Search** - single-shot open-web grounding for current
-  telco / market information.
+* **Grounding with Bing Custom Search** - single-shot open-web grounding
+  restricted to a curated allow-list (configured server-side as a Bing Custom
+  Search "configuration"). Provides hard source restriction rather than a soft
+  ``site:`` hint, which makes the avatar's external answers safer to trust.
 
 The agent's system prompt, model, and tool wiring live here; the runtime
 backend (``backend/``) only references the agent by ``AGENT_NAME`` /
 ``AGENT_PROJECT_NAME`` and lets Foundry resolve the rest server-side.
 
-The agent runs on ``gpt-4.1-mini`` + Grounding-with-Bing: the validated
-voice config (single grounded round-trip, no web_search fan-out).
+The agent runs on ``gpt-4.1-mini`` + Grounding-with-Bing-Custom-Search: the
+validated voice config (single grounded round-trip, no web_search fan-out).
 
 Run ``scripts/test_foundry_agent.py`` after provisioning to smoke-test the
 agent end-to-end.
 
 Required environment variables (see ``.env.example``):
-    PROJECT_ENDPOINT       Foundry project endpoint
-                           (https://<resource>.services.ai.azure.com/api/projects/<project>)
-    SEARCH_CONNECTION_NAME Name of the Azure AI Search connection in the project
-    SEARCH_INDEX_NAME      Azure AI Search index to expose to the agent
-    AGENT_NAME             Name of the Foundry agent to create / version (e.g. ``MtnAvatarAgent``)
-    AGENT_MODEL            Model deployment name to bind to the agent (e.g. ``gpt-4.1-mini``)
-    BING_CONNECTION_NAME   Name of the Grounding-with-Bing connection in the project
+    PROJECT_ENDPOINT          Foundry project endpoint
+                              (https://<resource>.services.ai.azure.com/api/projects/<project>)
+    SEARCH_CONNECTION_NAME    Name of the Azure AI Search connection in the project
+    SEARCH_INDEX_NAME         Azure AI Search index to expose to the agent
+    AGENT_NAME                Name of the Foundry agent to create / version (e.g. ``MtnAvatarAgent``)
+    AGENT_MODEL               Model deployment name to bind to the agent (e.g. ``gpt-4.1-mini``)
+    BING_CONNECTION_NAME      Name of the Grounding-with-Bing-Custom-Search connection in the project
+    BING_CUSTOM_CONFIG_NAME   Bing Custom Search configuration (instance) name — the curated
+                              allow-list of sites that the tool is restricted to.
 
 Auth: uses ``DefaultAzureCredential`` - run ``az login`` first.
 
@@ -45,9 +49,9 @@ from azure.ai.projects.models import (
     AzureAISearchQueryType,
     AzureAISearchTool,
     AzureAISearchToolResource,
-    BingGroundingSearchConfiguration,
-    BingGroundingSearchToolParameters,
-    BingGroundingTool,
+    BingCustomSearchConfiguration,
+    BingCustomSearchPreviewTool,
+    BingCustomSearchToolParameters,
     PromptAgentDefinition,
     Reasoning,
 )
@@ -68,13 +72,14 @@ def _load_prompt(*relative: str) -> str:
 
 AGENT_DESCRIPTION = _load_prompt("agent", "description.md")
 
-# Agent instructions — voice-first, tuned for gpt-4.1-mini + Grounding-with-Bing.
+# Agent instructions — voice-first, tuned for gpt-4.1-mini + Grounding-with-Bing-Custom-Search.
 #
 # gpt-4.1-mini is FAST, non-reasoning, and LITERAL: it does what the prompt
 # says, no more, no less, so the tool-selection contract is stated as hard
-# rules rather than "use judgement". Its external tool is `bing_grounding`
-# (a single grounded round-trip) rather than `web_search` — the latter fans
-# out into many calls and bloats context, which is exactly why we dropped it.
+# rules rather than "use judgement". Its external tool is `bing_custom_search`
+# (a single grounded round-trip restricted to a curated domain allow-list)
+# rather than `web_search` — the latter fans out into many calls and bloats
+# context, which is exactly why we dropped it.
 #
 # Design principles baked into the prompt at prompts/agent/instructions.md:
 #   * The output is SPOKEN by an avatar — no URLs, no bracket citations, no
@@ -104,8 +109,11 @@ def load_settings() -> dict:
         # Optional. Only set for reasoning models (o-series, gpt-5 family).
         # gpt-4.x / gpt-4o reject `reasoning.effort` at /responses time.
         "agent_reasoning_effort": (os.getenv("AGENT_REASONING_EFFORT") or "").strip() or None,
-        # Grounding-with-Bing connection name (the agent's only web tool).
+        # Grounding-with-Bing-Custom-Search connection name (the agent's only web tool).
         "bing_connection_name": (os.getenv("BING_CONNECTION_NAME") or "").strip() or None,
+        # Bing Custom Search configuration (instance) name — the curated
+        # allow-list of sites the web tool is restricted to.
+        "bing_custom_config_name": (os.getenv("BING_CUSTOM_CONFIG_NAME") or "").strip() or None,
     }
     required = (
         "project_endpoint",
@@ -114,6 +122,7 @@ def load_settings() -> dict:
         "agent_name",
         "agent_model",
         "bing_connection_name",
+        "bing_custom_config_name",
     )
     missing = [k for k in required if not settings[k]]
     if missing:
@@ -124,13 +133,23 @@ def load_settings() -> dict:
     return settings
 
 
-def build_bing_tool(bing_connection_id: str) -> BingGroundingTool:
-    """Grounding-with-Bing tool — single grounded round-trip per turn.
+def build_bing_tool(
+    bing_connection_id: str,
+    bing_custom_config_name: str,
+) -> BingCustomSearchPreviewTool:
+    """Grounding-with-Bing-Custom-Search tool — single grounded round-trip per turn.
 
     A reasoning agent + WebSearchTool fans out into many web_search calls
     (measured: 121+ extra calls across the harness); even gpt-4.1-mini +
-    WebSearchTool fans out and bloats tokens. Grounding-with-Bing returns
+    WebSearchTool fans out and bloats tokens. Grounding-with-Bing-Custom-Search returns
     curated snippets in one shot, which is why it is the agent's only web tool.
+
+    Custom Search vs. classic Grounding: the Custom Search variant pins the
+    tool to a server-side "configuration" (instance) that lists exactly which
+    domains are searchable. This is a HARD allow-list enforced by Bing — not
+    a soft ``site:`` hint in the query — so external answers cite only the
+    curated sources. The configuration is provisioned out of band (Bing Custom
+    Search portal); we reference it by name here via ``instance_name``.
 
     count=5 keeps the snippet budget tight for voice answers; market/set_lang
     pin South-Africa-first English. freshness is intentionally left unset —
@@ -139,11 +158,12 @@ def build_bing_tool(bing_connection_id: str) -> BingGroundingTool:
     Compliance: the formulated query leaves the Azure compliance/Geo boundary
     (per the Bing tool docs). Internal minutes never do — they stay in AI Search.
     """
-    return BingGroundingTool(
-        bing_grounding=BingGroundingSearchToolParameters(
+    return BingCustomSearchPreviewTool(
+        bing_custom_search_preview=BingCustomSearchToolParameters(
             search_configurations=[
-                BingGroundingSearchConfiguration(
+                BingCustomSearchConfiguration(
                     project_connection_id=bing_connection_id,
+                    instance_name=bing_custom_config_name,
                     market="en-ZA",
                     set_lang="en",
                     count=5,
@@ -157,8 +177,9 @@ def build_tools(
     search_connection_id: str,
     search_index_name: str,
     bing_connection_id: str,
+    bing_custom_config_name: str,
 ) -> list:
-    """Build the tool list for the agent: AI Search + Grounding-with-Bing.
+    """Build the tool list for the agent: AI Search + Grounding-with-Bing-Custom-Search.
 
     AI Search uses VECTOR_SIMPLE_HYBRID — vector ANN + BM25 keyword.
     The semantic re-ranker (VECTOR_SEMANTIC_HYBRID) would lift recall on
@@ -186,7 +207,7 @@ def build_tools(
             ]
         )
     )
-    return [ai_search, build_bing_tool(bing_connection_id)]
+    return [ai_search, build_bing_tool(bing_connection_id, bing_custom_config_name)]
 
 
 def _model_supports_reasoning(model: str) -> bool:
@@ -222,13 +243,15 @@ def create_agent(project: AIProjectClient, settings: dict):
 
     bing_connection = project.connections.get(settings["bing_connection_name"])
     print(
-        f"Web tool: bing_grounding (connection {settings['bing_connection_name']!r})."
+        f"Web tool: bing_custom_search (connection {settings['bing_connection_name']!r}, "
+        f"configuration {settings['bing_custom_config_name']!r})."
     )
 
     tools = build_tools(
         azs_connection.id,
         settings["search_index_name"],
         bing_connection.id,
+        settings["bing_custom_config_name"],
     )
 
     definition_kwargs = {
