@@ -13,12 +13,9 @@ param createFoundry bool
 param createSearch bool
 
 param existingFoundryAccountName string
-param existingFoundryResourceGroup string
 param existingFoundryProjectEndpoint string
 
 param existingSearchServiceName string
-param existingSearchResourceGroup string
-param existingSearchIndexName string
 
 @description('Name of an existing Application Insights component to reuse. Leave empty to create a new one.')
 param existingAppInsightsName string = ''
@@ -81,8 +78,9 @@ module appInsights 'modules/applicationInsights.bicep' = if (empty(existingAppIn
   }
 }
 
-// Reuse an existing App Insights component when EXISTING_APPINSIGHTS_NAME is set.
-// Resolved in its own RG (defaults to the deployment RG when not specified).
+// Reuse an existing App Insights component when appInsightsName is set (sourced
+// from the APPINSIGHTS_NAME env var). Resolved in its own RG (defaults to the
+// deployment RG when not specified).
 resource existingAppInsights 'Microsoft.Insights/components@2020-02-02' existing = if (!empty(existingAppInsightsName)) {
   name: existingAppInsightsName
   scope: resourceGroup(empty(existingAppInsightsResourceGroup) ? resourceGroup().name : existingAppInsightsResourceGroup)
@@ -134,14 +132,9 @@ module foundry 'modules/foundry.bicep' = if (createFoundry) {
   }
 }
 
-module foundryByoRoles 'modules/roleAssignmentsForeignFoundry.bicep' = if (!createFoundry) {
-  name: 'foundry-byo-roles'
-  scope: resourceGroup(existingFoundryResourceGroup)
-  params: {
-    foundryAccountName: existingFoundryAccountName
-    uamiPrincipalId: uami.outputs.principalId
-  }
-}
+// BYO Foundry/Search role assignments are NOT done in Bicep (they would fail with
+// RoleAssignmentExists on re-runs because the assignment lives on a foreign resource).
+// They are granted idempotently by scripts/grant_byo_rbac.py via the postprovision hook.
 
 // ───────── AI Search (conditional) ─────────
 module search 'modules/aiSearch.bicep' = if (createSearch) {
@@ -155,14 +148,7 @@ module search 'modules/aiSearch.bicep' = if (createSearch) {
   }
 }
 
-module searchByoRoles 'modules/roleAssignmentsForeignSearch.bicep' = if (!createSearch) {
-  name: 'search-byo-roles'
-  scope: resourceGroup(existingSearchResourceGroup)
-  params: {
-    searchServiceName: existingSearchServiceName
-    uamiPrincipalId: uami.outputs.principalId
-  }
-}
+// BYO Search: role assignment handled by scripts/grant_byo_rbac.py (see note above).
 
 // Grant Foundry project SMI Search RBAC for the agents azure_ai_search tool (greenfield search only).
 module searchRoleForProject 'modules/searchRoleForProject.bicep' = if (createSearch && createFoundry) {
@@ -173,27 +159,9 @@ module searchRoleForProject 'modules/searchRoleForProject.bicep' = if (createSea
   }
 }
 
-// Brownfield symmetry: when both Foundry AND Search are BYO, look up the existing
-// project SMI and grant it the same Search RBAC on the existing search service.
-// (Skipped if either side is greenfield — those cases are covered above or by the
-// in-RG searchRoleForProject path.)
-module foreignFoundryProjectLookup 'modules/lookupForeignFoundryProject.bicep' = if (!createFoundry && !createSearch) {
-  name: 'foreign-foundry-project-lookup'
-  scope: resourceGroup(existingFoundryResourceGroup)
-  params: {
-    foundryAccountName: existingFoundryAccountName
-    projectName: agentProjectName
-  }
-}
-
-module searchRoleForForeignProject 'modules/searchRoleForProject.bicep' = if (!createFoundry && !createSearch) {
-  name: 'search-role-for-foreign-foundry-project'
-  scope: resourceGroup(existingSearchResourceGroup)
-  params: {
-    searchServiceName: existingSearchServiceName
-    foundryProjectPrincipalId: foreignFoundryProjectLookup!.outputs.principalId
-  }
-}
+// Brownfield symmetry: when both Foundry AND Search are BYO, granting the existing
+// Foundry project SMI access to the existing Search service is handled by
+// scripts/grant_byo_rbac.py (idempotent, swallows duplicate-assignment errors).
 
 // Grant Search service SMI Cognitive Services OpenAI User on Foundry account (vectorizer query-time embeddings).
 module foundryRoleForSearch 'modules/foundryRoleForSearch.bicep' = if (createSearch && createFoundry) {
@@ -207,7 +175,6 @@ module foundryRoleForSearch 'modules/foundryRoleForSearch.bicep' = if (createSea
 // ───────── Container App ─────────
 var foundryEndpointEffective = createFoundry ? foundry!.outputs.accountEndpoint : 'https://${existingFoundryAccountName}.services.ai.azure.com/'
 var foundryProjectEndpointEffective = createFoundry ? foundry!.outputs.projectEndpoint : existingFoundryProjectEndpoint
-var searchIndexNameEffective = createSearch ? searchIndexName : existingSearchIndexName
 var searchEndpointEffective = createSearch ? search!.outputs.endpoint : 'https://${existingSearchServiceName}.search.windows.net/'
 
 module app 'modules/containerApp.bicep' = {
@@ -225,7 +192,7 @@ module app 'modules/containerApp.bicep' = {
     agentName: agentName
     agentProjectName: createFoundry ? 'proj-${environmentName}' : agentProjectName
     searchConnectionName: searchConnectionName
-    searchIndexName: searchIndexNameEffective
+    searchIndexName: searchIndexName
     searchEndpoint: searchEndpointEffective
     voiceLiveVoice: voiceLiveVoice
     bingConnectionName: bingConnectionName

@@ -8,16 +8,15 @@
     "resourceGroupName": { "value": "${AZURE_RESOURCE_GROUP_NAME}" },
     "principalId":     { "value": "${AZURE_PRINCIPAL_ID=}" },
 
-    "existingFoundryAccountName":     { "value": "${EXISTING_FOUNDRY_ACCOUNT_NAME=}" },
-    "existingFoundryResourceGroup":   { "value": "${EXISTING_FOUNDRY_RESOURCE_GROUP=}" },
-    "existingFoundryProjectEndpoint": { "value": "${EXISTING_FOUNDRY_PROJECT_ENDPOINT=}" },
+    "foundryAccountName":     { "value": "${FOUNDRY_ACCOUNT_NAME=}" },
+    "foundryResourceGroup":   { "value": "${FOUNDRY_RESOURCE_GROUP=}" },
+    "foundryProjectEndpoint": { "value": "${FOUNDRY_PROJECT_ENDPOINT=}" },
 
-    "existingSearchServiceName":   { "value": "${EXISTING_SEARCH_SERVICE_NAME=}" },
-    "existingSearchResourceGroup": { "value": "${EXISTING_SEARCH_RESOURCE_GROUP=}" },
-    "existingSearchIndexName":     { "value": "${EXISTING_SEARCH_INDEX_NAME=}" },
+    "searchServiceName":   { "value": "${SEARCH_SERVICE_NAME=}" },
+    "searchResourceGroup": { "value": "${SEARCH_RESOURCE_GROUP=}" },
 
-    "existingAppInsightsName":          { "value": "${EXISTING_APPINSIGHTS_NAME=}" },
-    "existingAppInsightsResourceGroup": { "value": "${EXISTING_APPINSIGHTS_RESOURCE_GROUP=}" },
+    "appInsightsName":          { "value": "${APPINSIGHTS_NAME=}" },
+    "appInsightsResourceGroup": { "value": "${APPINSIGHTS_RESOURCE_GROUP=}" },
 
     "agentName":           { "value": "${AGENT_NAME=AvatarAgent}" },
     "agentProjectName":    { "value": "${AGENT_PROJECT_NAME=avatar-forge}" },

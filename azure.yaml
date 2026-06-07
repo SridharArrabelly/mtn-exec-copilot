@@ -20,6 +20,10 @@ services:
       remoteBuild: true
 
 hooks:
+  # Runs after every successful `azd provision` / `azd up`. Three jobs:
+  #   1. Grant BYO RBAC idempotently (handles RoleAssignmentExists gracefully).
+  #   2. Build the AI Search index from data/*.docx (greenfield search only).
+  #   3. Create/update the Foundry agent (greenfield foundry only).
   postprovision:
     windows:
       shell: pwsh
@@ -30,8 +34,14 @@ hooks:
         Write-Host "Search endpoint:   $env:AZURE_SEARCH_ENDPOINT"
         Write-Host ""
 
-        $greenfieldFoundry = [string]::IsNullOrWhiteSpace($env:EXISTING_FOUNDRY_ACCOUNT_NAME)
-        $greenfieldSearch  = [string]::IsNullOrWhiteSpace($env:EXISTING_SEARCH_SERVICE_NAME)
+        $greenfieldFoundry = [string]::IsNullOrWhiteSpace($env:FOUNDRY_ACCOUNT_NAME)
+        $greenfieldSearch  = [string]::IsNullOrWhiteSpace($env:SEARCH_SERVICE_NAME)
+
+        if (-not ($greenfieldFoundry -and $greenfieldSearch)) {
+          Write-Host "Granting BYO runtime RBAC (idempotent) ..." -ForegroundColor Cyan
+          uv run python scripts/grant_byo_rbac.py
+          if ($LASTEXITCODE -ne 0) { Write-Warning "BYO RBAC grant failed (exit $LASTEXITCODE)." }
+        }
 
         if ($greenfieldSearch) {
           Write-Host "[greenfield] Building AI Search index from data/*.docx ..." -ForegroundColor Cyan
@@ -65,7 +75,12 @@ hooks:
         echo "Search endpoint:   $AZURE_SEARCH_ENDPOINT"
         echo ""
 
-        if [ -z "$EXISTING_SEARCH_SERVICE_NAME" ]; then
+        if [ -n "$FOUNDRY_ACCOUNT_NAME" ] || [ -n "$SEARCH_SERVICE_NAME" ]; then
+          echo "Granting BYO runtime RBAC (idempotent) ..."
+          uv run python scripts/grant_byo_rbac.py || echo "WARN: BYO RBAC grant failed."
+        fi
+
+        if [ -z "$SEARCH_SERVICE_NAME" ]; then
           echo "[greenfield] Building AI Search index from data/*.docx ..."
           if ls data/*.docx >/dev/null 2>&1; then
             uv run python scripts/setup_aisearch_index.py || echo "WARN: AI Search index build failed. Re-run manually."
@@ -76,7 +91,7 @@ hooks:
           echo "[brownfield] Skipping AI Search index build - using existing index '$SEARCH_INDEX_NAME'."
         fi
 
-        if [ -z "$EXISTING_FOUNDRY_ACCOUNT_NAME" ]; then
+        if [ -z "$FOUNDRY_ACCOUNT_NAME" ]; then
           echo "[greenfield] Creating Foundry agent '$AGENT_NAME' ..."
           uv run python scripts/setup_foundry_agent.py || echo "WARN: Foundry agent setup failed. Re-run manually."
         else
@@ -85,3 +100,35 @@ hooks:
 
         echo ""
         echo "App ready: $SERVICE_APP_URI"
+
+  # Defense-in-depth: ensure vars the `azure.ai.agents` azd extension expects are set
+  # in the azd env BEFORE `azd deploy` invokes its postdeploy hook. The extension
+  # requires AZURE_AI_PROJECT_ENDPOINT and AZURE_TENANT_ID; when provision fails
+  # partway, neither gets captured from Bicep outputs and the hook errors out.
+  predeploy:
+    windows:
+      shell: pwsh
+      run: |
+        if ([string]::IsNullOrWhiteSpace($env:AZURE_AI_PROJECT_ENDPOINT) -and -not [string]::IsNullOrWhiteSpace($env:FOUNDRY_PROJECT_ENDPOINT)) {
+          azd env set AZURE_AI_PROJECT_ENDPOINT $env:FOUNDRY_PROJECT_ENDPOINT | Out-Null
+        }
+        if ([string]::IsNullOrWhiteSpace($env:PROJECT_ENDPOINT) -and -not [string]::IsNullOrWhiteSpace($env:FOUNDRY_PROJECT_ENDPOINT)) {
+          azd env set PROJECT_ENDPOINT $env:FOUNDRY_PROJECT_ENDPOINT | Out-Null
+        }
+        if ([string]::IsNullOrWhiteSpace($env:AZURE_TENANT_ID)) {
+          $tid = az account show --query tenantId -o tsv 2>$null
+          if (-not [string]::IsNullOrWhiteSpace($tid)) { azd env set AZURE_TENANT_ID $tid | Out-Null }
+        }
+    posix:
+      shell: sh
+      run: |
+        if [ -z "$AZURE_AI_PROJECT_ENDPOINT" ] && [ -n "$FOUNDRY_PROJECT_ENDPOINT" ]; then
+          azd env set AZURE_AI_PROJECT_ENDPOINT "$FOUNDRY_PROJECT_ENDPOINT" >/dev/null
+        fi
+        if [ -z "$PROJECT_ENDPOINT" ] && [ -n "$FOUNDRY_PROJECT_ENDPOINT" ]; then
+          azd env set PROJECT_ENDPOINT "$FOUNDRY_PROJECT_ENDPOINT" >/dev/null
+        fi
+        if [ -z "$AZURE_TENANT_ID" ]; then
+          tid="$(az account show --query tenantId -o tsv 2>/dev/null)"
+          if [ -n "$tid" ]; then azd env set AZURE_TENANT_ID "$tid" >/dev/null; fi
+        fi
