@@ -60,6 +60,30 @@ PROACTIVE_GREETING_INSTRUCTIONS = (
 )
 
 
+def normalize_recognition_language(sr_model: str, recognition_language: str):
+    """Return the Voice Live transcription ``language`` for the chosen SR model.
+
+    Different speech-recognition models accept different locale formats, and
+    sending a value the model doesn't understand causes recognition failures
+    (empty transcripts / the avatar appearing to ignore the user):
+
+    * ``"auto"`` / empty -> ``None`` (Voice Live multilingual auto-detect).
+    * ``mai-transcribe*`` -> **ISO-639-1 primary subtag only** (e.g.
+      ``"en-ZA"`` -> ``"en"``). The MAI Transcribe models accept bare language
+      codes, not BCP-47 regional locales; ``"en-ZA"`` is not a valid value and
+      is rejected/ignored.
+    * ``azure-speech`` / cascaded models -> full BCP-47 locale passed through
+      (e.g. ``"en-ZA"``, ``"en-GB"``), which those models support.
+    """
+    lang = (recognition_language or "").strip()
+    if not lang or lang.lower() == "auto":
+        return None
+    model = (sr_model or "").strip().lower()
+    if model.startswith("mai-transcribe"):
+        return lang.split("-", 1)[0].lower()
+    return lang
+
+
 class VoiceSessionHandler:
     """Single Voice Live session bridged to one browser WebSocket client."""
 
@@ -152,17 +176,27 @@ class VoiceSessionHandler:
         # Build modalities (avatar is NOT a modality - it's configured via the avatar field)
         modalities = [Modality.TEXT, Modality.AUDIO]
 
-        # Build SR options
+        # Build SR options. The recognition language is normalized to the
+        # format the chosen SR model accepts — mai-transcribe takes bare
+        # ISO-639-1 codes (en), azure-speech takes full BCP-47 (en-ZA). See
+        # normalize_recognition_language for why a raw "en-ZA" on mai-transcribe
+        # causes empty transcripts.
         sr_model = config.get("srModel", "mai-transcribe-1")
         recognition_language = config.get("recognitionLanguage", "auto")
-        # `language=None` means "auto-detect" to Voice Live. Pass the configured
-        # locale through for any non-auto value, regardless of SR model. MAI
-        # Transcribe may silently ignore a single-locale hint (it's fundamentally
-        # multilingual auto-detect), but the API accepts the field, and cascaded
-        # models honor it strictly.
+        normalized_language = normalize_recognition_language(
+            sr_model, recognition_language
+        )
+        if (
+            normalized_language is not None
+            and normalized_language != recognition_language
+        ):
+            logger.info(
+                f"Normalized recognition language {recognition_language!r} -> "
+                f"{normalized_language!r} for SR model {sr_model!r}"
+            )
         input_audio_transcription = AudioInputTranscriptionOptions(
             model=sr_model,
-            language=None if recognition_language == "auto" else recognition_language,
+            language=normalized_language,
         )
 
         # Build noise/echo settings
