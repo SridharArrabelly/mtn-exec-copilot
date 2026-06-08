@@ -266,8 +266,18 @@ def _model_supports_reasoning(model: str) -> bool:
 def create_agent(project: AIProjectClient, settings: dict):
     """Create a new version of the Foundry agent.
 
-    Reasoning effort (`AGENT_REASONING_EFFORT`) is OPTIONAL and only
-    applied when the env var is set. The validated voice configs are:
+    Reasoning effort (`AGENT_REASONING_EFFORT`) is OPTIONAL. Behavior by model:
+
+      * gpt-4.x / gpt-4o  — reject reasoning.effort. A set value is ignored
+                            (with a warning); leave it unset.
+      * gpt-5 family      — if unset, defaults to "none" for low conversational
+                            latency (an unset value would otherwise let the model
+                            use its server-side default "medium", adding 4-5s to
+                            first-token). Set explicitly to override.
+      * o-series          — must set a supported value explicitly (low/medium/
+                            high); they do NOT accept "none".
+
+    The validated voice configs are:
 
       * gpt-4.1-mini                              — leave AGENT_REASONING_EFFORT
                                                     unset. gpt-4.x reject it.
@@ -310,9 +320,21 @@ def create_agent(project: AIProjectClient, settings: dict):
             "AGENT_REASONING_EFFORT in .env to silence this warning."
         )
         effort = None
+    # Safety default for the gpt-5 family: if the developer forgot to set
+    # AGENT_REASONING_EFFORT, fall back to "none" rather than letting the model
+    # use its server-side default ("medium"), which adds 4-5s to first-token —
+    # too laggy for conversational voice. Scoped to gpt-5 specifically: the
+    # o-series reasoning models do NOT accept effort="none" (they take
+    # low/medium/high), so we must not blanket-default every reasoning model.
+    if not effort and (settings["agent_model"] or "").strip().lower().startswith("gpt-5"):
+        effort = "none"
+        print(
+            "AGENT_REASONING_EFFORT not set for gpt-5 family — defaulting to "
+            "'none' for low conversational latency. Set it explicitly to override."
+        )
     if effort:
         definition_kwargs["reasoning"] = Reasoning(effort=effort)
-        print(f"Applying reasoning.effort={effort!r} (AGENT_REASONING_EFFORT is set).")
+        print(f"Applying reasoning.effort={effort!r}.")
     else:
         print(
             "Skipping reasoning.effort — not set or not supported by this model. "
