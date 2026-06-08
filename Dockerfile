@@ -14,7 +14,6 @@ RUN uv sync --frozen --no-install-project --no-dev
 
 COPY backend/ backend/
 COPY frontend/ frontend/
-COPY data/ data/
 
 RUN uv sync --frozen --no-dev
 
