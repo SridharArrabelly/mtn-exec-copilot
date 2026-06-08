@@ -819,9 +819,12 @@ async function onSessionStarted(msg) {
         showMicControls();
     }
 
-    // Start audio capture but leave mic off by default
+    // Start audio capture but leave mic off by default. The capture stream
+    // stays live; the mic is muted at the track level (applyMicMuteState), so
+    // silence keeps flowing and the server VAD always has a continuous stream.
     await startAudioCapture();
     isRecording = false;
+    applyMicMuteState();
     stopRecordAnimation();
     resetVolumeCircle();
     updateMicUI();
@@ -1486,6 +1489,11 @@ async function startAudioCapture() {
                 noiseSuppression: true,
             }
         });
+        // Honor the current mute state immediately, at the track level, so we
+        // never stream real microphone audio before the user enables the mic.
+        // A disabled track stays live and delivers silence (not nothing) to the
+        // worklet — see applyMicMuteState for why that matters.
+        applyMicMuteState();
         audioContext = new AudioContext({ sampleRate: 24000 });
         console.log('[Audio] AudioContext created, actual sampleRate:', audioContext.sampleRate);
 
@@ -1537,15 +1545,25 @@ registerProcessor('pcm16-processor', PCM16Processor);
         const micDataArray = new Uint8Array(micAnalyser.frequencyBinCount);
 
         workletNode.port.onmessage = (e) => {
-            if (!isConnected || !isRecording || !ws || ws.readyState !== WebSocket.OPEN) return;
+            if (!isConnected || !ws || ws.readyState !== WebSocket.OPEN) return;
 
-            // Stream mic audio continuously. We intentionally do NOT gate the
-            // mic on playback state: doing so is fragile (a single missed
-            // response_done leaves the gate stuck and drops the mic permanently,
-            // breaking every turn after the first). Echo-driven false turns are
-            // instead prevented by keeping client barge-in (stopAudioPlayback on
-            // speech_started) and the server's interrupt_response in lock-step,
-            // plus the browser's echo cancellation on the mic capture.
+            // Stream audio continuously while connected — including while muted.
+            // Muting is done at the track level (mediaStream track.enabled =
+            // false in applyMicMuteState), so a muted mic keeps delivering
+            // *silence* frames here rather than nothing at all. This is
+            // deliberate: cutting the stream on mute (the old behavior) orphaned
+            // the server-side VAD when the user toggled the mic mid-utterance —
+            // it had fired speech_started but, with no further audio (not even
+            // silence) arriving, never fired speech_stopped, so the turn hung
+            // forever ("voice won't go down"). Continuous silence lets the
+            // server always observe end-of-speech and close the turn. The user's
+            // real audio is never sent while muted (the track zeroes it).
+            // We also intentionally do NOT gate on playback state: that is
+            // fragile (a single missed response_done would stick the gate and
+            // drop the mic permanently). Echo-driven false turns are prevented
+            // by keeping client barge-in (stopAudioPlayback on speech_started)
+            // and the server's interrupt_response in lock-step, plus the
+            // browser's echo cancellation on the mic capture.
             audioChunksSent++;
             if (audioChunksSent <= 3 || audioChunksSent % 100 === 0) {
                 console.log(`[Audio] Sending chunk #${audioChunksSent}, bytes=${e.data.byteLength}`);
@@ -2117,9 +2135,22 @@ function cleanupWebRTC() {
 }
 
 // ===== Mic Toggle =====
+// Mute/unmute at the MediaStreamTrack level rather than by starting/stopping
+// the capture stream. A disabled track stays live and keeps feeding *silence*
+// to the worklet, so the server VAD always sees a continuous stream and can
+// close any in-flight turn. Cutting the stream instead (the old approach)
+// orphaned the VAD when the mic was toggled mid-utterance and hung the turn
+// ("voice won't go down"). Privacy is preserved: a disabled track zeroes the
+// samples, so the user's real audio never leaves the browser while muted.
+function applyMicMuteState() {
+    if (!mediaStream) return;
+    mediaStream.getAudioTracks().forEach(t => { t.enabled = isRecording; });
+}
+
 function toggleMicrophone() {
     if (!isConnected) return;
     isRecording = !isRecording;
+    applyMicMuteState();
     updateMicUI();
     // Turning the mic on counts as a real interaction — retire the onboarding hint.
     if (isRecording) dismissOnboarding();
