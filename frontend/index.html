@@ -394,17 +394,37 @@
                     <div class="avatar-stack">
                         <div class="avatar-stage">
                             <div id="avatarVideo" class="avatar-video"></div>
+                            <!-- Top-left identity lockup (branding): avatar name in
+                                 bold with a tagline underneath. Plain text on a subtle
+                                 top scrim (not a pill) so it reads as a title, not a
+                                 control. Hidden until the avatar (and its name) is on
+                                 screen via :has() in CSS. -->
+                            <div class="avatar-identity">
+                                <div id="avatarNameLabel" class="avatar-name"></div>
+                                <div id="avatarTagline" class="avatar-tagline"></div>
+                            </div>
                             <div id="avatarThinking" class="avatar-thinking">
                                 <div class="avatar-thinking-dots"><span></span><span></span><span></span></div>
                                 <div id="avatarThinkingText" class="avatar-thinking-text">Looking through the records…</div>
                             </div>
-                            <!-- Bottom dock: a single flex row spanning the stage
-                                 bottom — avatar name, then the mic, then the text
-                                 composer which flex-grows to fill all remaining width
-                                 out to the right edge. One row keeps the three
-                                 controls aligned and lets them scale together. -->
+                            <!-- Bottom dock: a single flex row across the stage bottom.
+                                 The text composer fills the left (flex-grows), and the
+                                 mic sits in the bottom-right corner as the primary voice
+                                 control. Both scale together across screen sizes. -->
                             <div class="avatar-dock">
-                                <div id="avatarNameLabel" class="avatar-name-label"></div>
+                                <!-- Text composer (normal mode, env-gated). Fills the
+                                     left side; voice (the mic at the right) stays the
+                                     primary control. -->
+                                <div id="stageComposer" class="stage-composer hidden">
+                                    <input type="text" id="stageTextInput" class="stage-text-input"
+                                           placeholder="Type a message…" autocomplete="off"
+                                           aria-label="Type a message"
+                                           onkeydown="if(event.key==='Enter')sendStageMessage()" disabled />
+                                    <button class="stage-send-btn" onclick="sendStageMessage()"
+                                            aria-label="Send message" title="Send message">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                                    </button>
+                                </div>
                                 <button id="avatarMicBtn" class="avatar-mic-btn hidden" onclick="toggleMicrophone()"
                                         aria-label="Turn on microphone" title="Turn on/off microphone">
                                     <span class="avatar-mic-ring" aria-hidden="true"></span>
@@ -419,19 +439,6 @@
                                         <circle cx="10" cy="10" r="6" fill="#A80000"/>
                                     </svg>
                                 </button>
-                                <!-- Text composer (normal mode, env-gated). Voice (the
-                                     mic to its left) stays primary; this fills the rest
-                                     of the row so there's room to type. -->
-                                <div id="stageComposer" class="stage-composer hidden">
-                                    <input type="text" id="stageTextInput" class="stage-text-input"
-                                           placeholder="Type a message…" autocomplete="off"
-                                           aria-label="Type a message"
-                                           onkeydown="if(event.key==='Enter')sendStageMessage()" disabled />
-                                    <button class="stage-send-btn" onclick="sendStageMessage()"
-                                            aria-label="Send message" title="Send message">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                                    </button>
-                                </div>
                             </div>
                         </div>
                         <!-- Below-the-avatar strip (caption + onboarding hint/chips) -->

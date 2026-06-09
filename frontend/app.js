@@ -72,6 +72,7 @@ let connectionState = null;
 // doesn't mistake an intentional disconnect for an unexpected drop.
 let intentionalDisconnect = false;
 let onboardingHintText = 'Tap the mic and ask me anything';
+let avatarTaglineText = '';
 let suggestedPrompts = [];
 // Onboarding lifecycle: dismissed permanently after the first real user action;
 // hidden temporarily while the avatar speaks (e.g. the proactive greeting).
@@ -211,6 +212,9 @@ async function fetchServerConfig() {
         textInputEnabled = d.enableTextInput ?? true;
         suggestedPromptsEnabled = d.enableSuggestedPrompts ?? true;
         onboardingHintText = d.onboardingHint ?? onboardingHintText;
+        avatarTaglineText = d.avatarTagline ?? avatarTaglineText;
+        const taglineEl = document.getElementById('avatarTagline');
+        if (taglineEl) taglineEl.textContent = avatarTaglineText || '';
         suggestedPrompts = Array.isArray(d.suggestedPrompts) ? d.suggestedPrompts : [];
         buildOnboarding();
 

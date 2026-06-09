@@ -580,6 +580,22 @@ input[type="range"]::-webkit-slider-thumb {
     align-self: center;
 }
 
+/* Subtle top scrim so the top-left identity (name + tagline) stays legible
+   over any avatar, in both light and dark themes. Sits above the video but
+   below the identity/controls (z-index 1 vs 2). */
+.avatar-stage::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: clamp(64px, 16vmin, 116px);
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0));
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 1;
+}
+
 /* Below-the-avatar strip — same width as the avatar (stretched in the stack).
    width:0 + min-width:100% lets it fill the avatar's width WITHOUT its own
    content (long captions / chips) widening the shrink-to-fit stack. */
@@ -853,7 +869,7 @@ input[type="range"]::-webkit-slider-thumb {
     .stage-composer,
     .avatar-dock,
     .avatar-mic-btn,
-    .avatar-name-label { animation: none; }
+    .avatar-identity { animation: none; }
     .stage-status { transition: none; }
     .stage-send-btn { transition: none; }
 }
@@ -1112,10 +1128,10 @@ input[type="range"]::-webkit-slider-thumb {
 .btn-faded { opacity: 0.5; }
 
 
-/* Bottom dock: a single full-width flex row across the stage bottom holding
-   the name, the mic, then the composer (which flex-grows to the right edge).
-   All sizes use vmin-based clamp() so the controls scale up on large screens
-   and shrink on small ones, staying proportional to the avatar.
+/* Bottom dock: a single full-width flex row across the stage bottom. The
+   composer flex-grows to fill the left side and the mic sits in the bottom-right
+   corner. All sizes use vmin-based clamp() so the controls scale up on large
+   screens and shrink on small ones, staying proportional to the avatar.
    pointer-events:none on the bar itself keeps the empty gaps from blocking
    clicks on the avatar; interactive children re-enable it. */
 .avatar-dock {
@@ -1131,44 +1147,57 @@ input[type="range"]::-webkit-slider-thumb {
     animation: avatar-name-in 0.5s ease both;
 }
 .avatar-dock > * { pointer-events: auto; }
-.avatar-name-label {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    height: clamp(34px, 6.4vmin, 46px);
-    box-sizing: border-box;
-    font-size: clamp(0.82rem, 2.3vmin, 1.02rem);
-    font-weight: 600;
-    color: var(--overlay-text);
-    background: var(--overlay-surface);
-    -webkit-backdrop-filter: blur(10px);
-    backdrop-filter: blur(10px);
-    padding: 0 clamp(12px, 2vmin, 18px);
-    border-radius: 999px;
-    border: 1px solid var(--overlay-border);
-    box-shadow: 0 4px 18px var(--overlay-shadow);
-    letter-spacing: 0.01em;
+@keyframes avatar-name-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Top-left identity lockup (branding): bold name + italic tagline. Plain text
+   on a top scrim (see .avatar-stage::before) rather than a pill, so it reads as
+   a title, not a control. Light text + shadow keep it legible over the avatar
+   in both themes; sizes scale with the avatar via vmin clamp(). */
+.avatar-identity {
+    position: absolute;
+    top: clamp(10px, 2.4vmin, 18px);
+    left: clamp(12px, 2.6vmin, 20px);
+    z-index: 2;
+    max-width: 72%;
     pointer-events: none;
+    animation: avatar-name-in 0.5s ease both;
+}
+/* Hide the whole lockup (name + tagline) until the avatar name is populated. */
+.avatar-identity:has(.avatar-name:empty) { display: none; }
+.avatar-name {
+    font-size: clamp(1.15rem, 3.6vmin, 1.7rem);
+    font-weight: 700;
+    line-height: 1.15;
+    color: #ffffff;
+    letter-spacing: 0.01em;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55), 0 0 1px rgba(0, 0, 0, 0.6);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 40%;
 }
-@keyframes avatar-name-in {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
+.avatar-tagline {
+    margin-top: 2px;
+    font-size: clamp(0.72rem, 1.9vmin, 0.92rem);
+    font-style: italic;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.85);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
-.avatar-name-label:empty { display: none; }
-@keyframes avatar-name-in {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
-}
-.avatar-name-label:empty { display: none; }
+.avatar-tagline:empty { display: none; }
 
 /* ===== Docked avatar mic button ===== */
 .avatar-mic-btn {
     position: relative;
     flex-shrink: 0;
+    /* Always pin to the right corner — even in developer mode when the composer
+       is hidden and the mic is the only child of the row. */
+    margin-left: auto;
     width: clamp(34px, 6.4vmin, 46px);
     height: clamp(34px, 6.4vmin, 46px);
     display: flex;

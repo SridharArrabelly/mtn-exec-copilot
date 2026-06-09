@@ -52,8 +52,9 @@ The browser UI has two modes, selected by `DEVELOPER_MODE` and delivered to the 
 Everything the end user sees is anchored to the avatar:
 
 - **Avatar video** — the WebRTC (or WebSocket/MSE) photo or standard avatar.
-- **Bottom control row** — a single row anchored along the bottom of the stage holds the avatar's **name pill** (a frosted-glass label), the **docked mic button** (a circular mic with a volume-reactive ring; tap to talk — barge-in is supported, so start speaking to interrupt the avatar), and the **text composer** (next). All three share a height and scale together with the avatar across screen sizes.
-- **Text composer** *(optional)* — a "Type a message…" pill that fills the rest of the bottom row out to the right edge, so users can type instead of (or alongside) talking. It reuses the existing text path (voice stays primary) and stays disabled until the session connects. Hidden in developer mode, which keeps its own dedicated text input. Toggle with `ENABLE_TEXT_INPUT` (default on).
+- **Identity lockup** — top-left of the stage, a branding block with the avatar's **name** (bold) and an optional **tagline** (italic, e.g. "Your MTN Digital Assistant"). Plain text on a subtle top scrim — kept separate from the controls so it reads as branding, not a button. Set the tagline with `AVATAR_TAGLINE` (empty hides it).
+- **Bottom control row** — a single row along the bottom of the stage: the **text composer** fills the left and the **docked mic button** (a circular mic with a volume-reactive ring; tap to talk — barge-in is supported, so start speaking to interrupt the avatar) sits in the right corner. They share a height and scale together with the avatar across screen sizes.
+- **Text composer** *(optional)* — a "Type a message…" pill that fills the left of the bottom row, so users can type instead of (or alongside) talking. It reuses the existing text path (voice stays primary) and stays disabled until the session connects. Hidden in developer mode, which keeps its own dedicated text input. Toggle with `ENABLE_TEXT_INPUT` (default on).
 - **Thinking indicator** — shows between the user's turn and the avatar's first words, with rotating status captions and a failsafe timeout so it can never get stuck.
 - **Connection & permission states** — a status pill (and toasts) surface normal-mode states that would otherwise be invisible: connecting, microphone blocked/denied (with an actionable message), reconnecting after a dropped transport, session ended (tap to restart), and avatar/transport errors.
 - **Live captions** *(optional)* — a frosted subtitle band **below** the avatar (aligned to its width) that mirrors the streamed transcript of what the avatar is saying, and optionally the user's last utterance. Reuses the existing transcript stream — no extra model calls.
@@ -130,8 +131,9 @@ The avatar feature is currently available in the following service regions: Sout
    - `ENABLE_CAPTIONS` (default `false`) — show the live caption band under the avatar.
    - `CAPTIONS_SHOW_USER` (default `false`) — also briefly show the user's last utterance in the caption band (only applies when `ENABLE_CAPTIONS=true`).
    - `ENABLE_SUGGESTED_PROMPTS` (default `true`) — show the first-load onboarding hint + example chips.
-   - `ONBOARDING_HINT` (default `Tap the mic and ask me anything`) — the one-line hint shown above the chips.
+   - `ONBOARDING_HINT` — the one-line hint shown above the chips. Default is modality-aware: `Tap the mic or type to ask me anything` when the text composer is on, otherwise `Tap the mic and ask me anything`. Set explicitly to override.
    - `SUGGESTED_PROMPTS` — pipe-separated list of tappable example questions (2–3 recommended), e.g. `What can you help me with?|Tell me about your services|How do I get started?`.
+   - `AVATAR_TAGLINE` (default `Your MTN Digital Assistant`) — italic tagline shown under the avatar's name in the top-left identity lockup. Empty hides the tagline line.
    - `ENABLE_TEXT_INPUT` (default `true`) — show a text composer on the avatar stage in normal mode so users can type as well as talk. Reuses the existing text path (voice stays primary) and stays disabled until the session connects. Developer mode is unaffected — it keeps its own dedicated text input.
 
 3. **Run the server:**
