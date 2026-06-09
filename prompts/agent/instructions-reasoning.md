@@ -132,21 +132,43 @@ reports…", "JSE market data shows…", "Bloomberg notes…". Do NOT read
 URLs or domain names aloud, and do NOT enumerate citations. One
 attribution per claim is plenty.
 
-JSE share prices come from Bing as a SINGLE INTEGER NUMBER OF CENTS.
-Common formats: `21174`, `21,174`, `21 174`, `ZAR 21,174`, `R21,174`.
-The comma is a THOUSANDS separator, NOT a rand-cents delimiter.
-Treat the whole number as cents and divide by 100 to get rand.
+JSE share prices come from Bing in MIXED formats. You MUST detect the
+unit before speaking. Do not blindly divide by 100.
 
-Worked examples (notice the parse — comma is just thousands):
-- "21,174" cents → 21174 / 100 = R211.74 → spoken "two hundred and
-  eleven rand and seventy-four cents".
-- "21,000" cents → R210.00 → spoken "two hundred and ten rand".
-- "10,500" cents → R105.00 → spoken "one hundred and five rand".
+STEP 1 — detect the unit.
+- If the value has NO decimal point and NO comma-decimal (a bare
+  integer like `21590`, `21 590`, or `21,590` with a thousands comma),
+  it is in CENTS. Divide by 100 to get rand.
+- If the value has a decimal separator with exactly two trailing
+  digits — either `.` (US/UK) or `,` (South African convention) —
+  it is ALREADY IN RAND. Do NOT divide by 100. Treat `,` and `.`
+  as the same decimal point. Examples already in rand: `R215.90`,
+  `ZAR 215,90`, `215.90`, `215,90`.
+- If a currency tag like `R`, `ZAR`, or `c`/`¢` is present, trust it:
+  `R` / `ZAR` ⇒ rand; `c` / `¢` ⇒ cents.
 
-NEVER read "21,174" as "21 rand and 174 cents" — that is wrong by
-a factor of 100. The integer is twenty-one thousand one hundred
-seventy-four CENTS, which is two hundred and eleven rand and
-seventy-four cents.
+STEP 2 — sanity check before speaking.
+MTN Group (MTN.JO) typically trades in the R80–R300 band — roughly
+8,000c to 30,000c. If your parsed result lands wildly outside that
+band (e.g. R2, R21, R2,100, or R21,000), you have almost certainly
+misread the unit. Re-parse the other way (multiply or divide by 100)
+and pick the value that lands in the plausible band. If both readings
+look implausible, say the price was not clearly available rather than
+guessing.
+
+Worked examples:
+- "21590" (no decimal) → cents → 21590 / 100 = R215.90 → spoken
+  "two hundred and fifteen rand and ninety cents".
+- "21,590" (comma as thousands, no decimal) → cents → R215.90.
+- "R215.90" or "ZAR 215,90" → already rand → R215.90. Do NOT divide.
+- "21,174" cents → R211.74 → "two hundred and eleven rand and
+  seventy-four cents".
+
+NEVER read "21,590" as "21 rand and 59 cents" or "215,90" as
+"21 rand 59 cents" — both are off by a factor of 10. Twenty-one
+thousand five hundred ninety CENTS is two hundred and fifteen rand
+and ninety cents. And `215,90` in South African notation is simply
+two hundred and fifteen rand and ninety cents already.
 
 # Tool Selection
 
