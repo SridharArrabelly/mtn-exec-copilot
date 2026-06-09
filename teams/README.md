@@ -1,12 +1,18 @@
 # Avatar Forge — Microsoft Teams app (Phase 1, scope 1A)
 
 This folder packages the Avatar Forge web app as an **anonymous Microsoft Teams
-personal tab**. Scope **1A** is intentionally minimal:
+personal tab**. Scope **1A** is a **prototype** with one goal: **make it run in Teams
+via sideload, with no Teams-admin access required.**
 
 - Personal-scope **static tab** that embeds the existing web UI (mic + WebRTC avatar).
-- **No SSO** and **no org/targeted publishing** — those land in **1B**.
+- **No SSO** and **no org/admin publishing** — those are a later phase you'll drive
+  from the Teams admin center once the prototype works.
 - Additive only: a templated manifest, two icons, a build script, a no-op-unless-in-Teams
   frontend init (`frontend/teams.js`), and one `frame-ancestors` CSP header in the backend.
+
+> The same package built here is reused unchanged when you later publish it through the
+> admin center — so the manifest stays templated and the zip stays valid (manifest + 2
+> icons at the archive root).
 
 ## Contents
 
@@ -37,13 +43,37 @@ Optional flags (env var equivalents in parentheses):
 Output: `teams/build/avatar-forge-teams.zip` containing `manifest.json`,
 `color.png`, and `outline.png` at the archive root.
 
-## Sideload into Teams
+## Run it in Teams (no admin access needed)
+
+You do **not** need to publish to an org catalog. Two sideload routes — try A first; if
+your tenant has custom-app upload disabled, use B.
+
+### Route A — Upload a custom app (personal scope)
 
 1. In Teams, go to **Apps → Manage your apps → Upload an app → Upload a custom app**.
-   (Custom app upload must be enabled for your tenant/account by a Teams admin.)
 2. Select `teams/build/avatar-forge-teams.zip`.
 3. Add the app; open the **Avatar** personal tab.
 4. When prompted, **allow microphone** (and camera if requested) for the tab.
+
+> ⚠️ Even this basic, personal sideload can be blocked: the **"Upload a custom app"**
+> option only appears if the tenant policy *Allow uploading custom apps* is enabled. If you
+> don't see it, you're not doing anything wrong — use Route B instead.
+
+### Route B — Teams Developer Portal "Preview in Teams" (admin-free fallback)
+
+The Developer Portal lets you preview a sideloaded app without the upload-custom-app
+policy, and is the recommended no-admin path for this prototype.
+
+1. Open the **Teams Developer Portal** — <https://dev.teams.microsoft.com> (also available
+   as the **Developer Portal** app inside Teams).
+2. **Apps → Import app** and select `teams/build/avatar-forge-teams.zip`.
+3. Open the imported app and click **Preview in Teams** (top right). Teams opens and adds
+   the app for you.
+4. Open the **Avatar** personal tab and **allow microphone** (and camera if requested).
+
+If neither route is available, the last admin-free option is to **add the app to a team
+you own** (some tenants allow app uploads scoped to a team even when personal upload is
+off) — but for this prototype Route B is the simplest.
 
 ## Validation checklist (run in Teams **web** AND **desktop**)
 
@@ -81,8 +111,11 @@ Content-Security-Policy: frame-ancestors 'self' \
 Only `frame-ancestors` is set on purpose — a full CSP (`script-src`/`connect-src`/
 `media-src`) would break inline JS, the WSS voice socket, and WebRTC.
 
-## Coming in 1B (not in this scope)
+## Deferred to a later phase (not in this prototype)
 
 - Entra app registration + AAD SSO inside the Teams context.
-- Targeted-user / org-catalog publishing and admin approval.
-- Real privacy policy and terms-of-use pages (the manifest currently points at repo pages).
+- Publishing through the **Teams admin center** (org catalog / targeted release / admin
+  approval) — you'll do this from the admin portal once the sideloaded prototype works.
+  The package built here is reused unchanged for that step.
+- Real privacy-policy and terms-of-use pages (the manifest currently points at repo pages,
+  which is fine for sideload).
