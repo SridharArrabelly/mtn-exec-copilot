@@ -382,6 +382,11 @@
             <!-- Content area -->
             <div class="content-area" id="contentArea">
                 <div id="toastContainer" class="toast-container"></div>
+                <!-- Normal-mode connection/permission status pill. Lives in
+                     contentArea (not the avatar stage) so it stays visible even
+                     when the stage is hidden on disconnect. Clickable in the
+                     "ended" state to restart the session. -->
+                <button id="stageStatus" class="stage-status hidden" type="button" aria-live="polite"></button>
                 <!-- Avatar video (WebRTC) -->
                 <div id="avatarVideoContainer" class="avatar-container hidden">
                     <!-- Column sized to the avatar width: video on top, caption /
@@ -393,21 +398,41 @@
                                 <div class="avatar-thinking-dots"><span></span><span></span><span></span></div>
                                 <div id="avatarThinkingText" class="avatar-thinking-text">Looking through the records…</div>
                             </div>
-                            <div id="avatarNameLabel" class="avatar-name-label"></div>
-                            <button id="avatarMicBtn" class="avatar-mic-btn hidden" onclick="toggleMicrophone()"
-                                    aria-label="Turn on microphone" title="Turn on/off microphone">
-                                <span class="avatar-mic-ring" aria-hidden="true"></span>
-                                <!-- Off icon: mic with slash (default state) -->
-                                <svg class="mic-off-icon" viewBox="0 0 20 20" width="22" height="22" fill="#242424">
-                                    <path d="M10 13a3 3 0 003-3V5a3 3 0 00-6 0v5a3 3 0 003 3z"/>
-                                    <path d="M15 10a5 5 0 01-10 0H3a7 7 0 006 6.92V20h2v-3.08A7 7 0 0017 10h-2z"/>
-                                    <line x1="3" y1="3" x2="17" y2="17" stroke="#242424" stroke-width="2" stroke-linecap="round"/>
-                                </svg>
-                                <!-- Recording icon: red circle (active state) -->
-                                <svg class="mic-on-icon hidden" viewBox="0 0 20 20" width="22" height="22">
-                                    <circle cx="10" cy="10" r="6" fill="#A80000"/>
-                                </svg>
-                            </button>
+                            <!-- Bottom dock: a single flex row spanning the stage
+                                 bottom — avatar name, then the mic, then the text
+                                 composer which flex-grows to fill all remaining width
+                                 out to the right edge. One row keeps the three
+                                 controls aligned and lets them scale together. -->
+                            <div class="avatar-dock">
+                                <div id="avatarNameLabel" class="avatar-name-label"></div>
+                                <button id="avatarMicBtn" class="avatar-mic-btn hidden" onclick="toggleMicrophone()"
+                                        aria-label="Turn on microphone" title="Turn on/off microphone">
+                                    <span class="avatar-mic-ring" aria-hidden="true"></span>
+                                    <!-- Off icon: mic with slash (default state) -->
+                                    <svg class="mic-off-icon" viewBox="0 0 20 20" width="22" height="22" fill="#242424">
+                                        <path d="M10 13a3 3 0 003-3V5a3 3 0 00-6 0v5a3 3 0 003 3z"/>
+                                        <path d="M15 10a5 5 0 01-10 0H3a7 7 0 006 6.92V20h2v-3.08A7 7 0 0017 10h-2z"/>
+                                        <line x1="3" y1="3" x2="17" y2="17" stroke="#242424" stroke-width="2" stroke-linecap="round"/>
+                                    </svg>
+                                    <!-- Recording icon: red circle (active state) -->
+                                    <svg class="mic-on-icon hidden" viewBox="0 0 20 20" width="22" height="22">
+                                        <circle cx="10" cy="10" r="6" fill="#A80000"/>
+                                    </svg>
+                                </button>
+                                <!-- Text composer (normal mode, env-gated). Voice (the
+                                     mic to its left) stays primary; this fills the rest
+                                     of the row so there's room to type. -->
+                                <div id="stageComposer" class="stage-composer hidden">
+                                    <input type="text" id="stageTextInput" class="stage-text-input"
+                                           placeholder="Type a message…" autocomplete="off"
+                                           aria-label="Type a message"
+                                           onkeydown="if(event.key==='Enter')sendStageMessage()" disabled />
+                                    <button class="stage-send-btn" onclick="sendStageMessage()"
+                                            aria-label="Send message" title="Send message">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                         <!-- Below-the-avatar strip (caption + onboarding hint/chips) -->
                         <div class="avatar-below">

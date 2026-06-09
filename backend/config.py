@@ -125,6 +125,7 @@ def get_ui_defaults() -> dict:
         "photoAvatarName": _str("PHOTO_AVATAR_NAME", "Anika"),
         "avatarBackgroundImageUrl": _str("AVATAR_BACKGROUND_IMAGE_URL", ""),
         # Avatar UX (additive, env-gated)
+        "enableTextInput": _bool("ENABLE_TEXT_INPUT", True),
         "enableCaptions": _bool("ENABLE_CAPTIONS", False),
         "captionsShowUser": _bool("CAPTIONS_SHOW_USER", False),
         "enableSuggestedPrompts": _bool("ENABLE_SUGGESTED_PROMPTS", True),

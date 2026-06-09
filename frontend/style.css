@@ -22,6 +22,93 @@
     --radius-sm: 6px;
     --sidebar-width: 320px;
     --sound-wave-color: #5765CA;
+
+    /* Avatar stage + overlays (token-driven so they adapt to dark mode). */
+    --stage-bg: #ffffff;
+    --stage-loading-from: #f5f4f7;
+    --stage-loading-to: #e8eef6;
+    --stage-loading-text: #5b5b66;
+    --overlay-surface: rgba(255, 255, 255, 0.72);
+    --overlay-surface-strong: rgba(255, 255, 255, 0.92);
+    --overlay-border: rgba(255, 255, 255, 0.6);
+    --overlay-shadow: rgba(0, 0, 0, 0.12);
+    --overlay-text: #1b1b1f;
+    --caption-text: #15151a;
+    --caption-bg: rgba(245, 246, 250, 0.92);
+    --caption-border: rgba(0, 0, 0, 0.06);
+}
+
+/* Dark palette. Applied automatically when the OS prefers dark AND the user
+   has not made an explicit choice (`:not([data-theme])`), or explicitly via
+   the [data-theme="dark"] attribute set by applyTheme(). Keeping both in one
+   place avoids a dark-OS media query overriding an explicit light choice. */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+        color-scheme: dark;
+        --bg-primary: #161616;
+        --bg-secondary: #1f1f1f;
+        --bg-tertiary: #2a2a2a;
+        --bg-hover: #333333;
+        --bg-input: #1f1f1f;
+        --text-primary: #f5f5f5;
+        --text-secondary: #b5b5b5;
+        --text-muted: #8a8a8a;
+        --border-color: #3a3a3a;
+        --accent: #f5f5f5;
+        --accent-hover: #d4d4d4;
+        --accent-dim: #ffffff14;
+        --danger-dim: #ef444422;
+        --success-dim: #22c55e22;
+
+        --stage-bg: #161616;
+        --stage-loading-from: #1c1d22;
+        --stage-loading-to: #20262f;
+        --stage-loading-text: #b9b9c4;
+        --overlay-surface: rgba(40, 40, 44, 0.72);
+        --overlay-surface-strong: rgba(56, 56, 62, 0.92);
+        --overlay-border: rgba(255, 255, 255, 0.12);
+        --overlay-shadow: rgba(0, 0, 0, 0.5);
+        --overlay-text: #f0f0f3;
+        --caption-text: #ececf1;
+        --caption-bg: rgba(38, 40, 48, 0.92);
+        --caption-border: rgba(255, 255, 255, 0.1);
+    }
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg-primary: #161616;
+    --bg-secondary: #1f1f1f;
+    --bg-tertiary: #2a2a2a;
+    --bg-hover: #333333;
+    --bg-input: #1f1f1f;
+    --text-primary: #f5f5f5;
+    --text-secondary: #b5b5b5;
+    --text-muted: #8a8a8a;
+    --border-color: #3a3a3a;
+    --accent: #f5f5f5;
+    --accent-hover: #d4d4d4;
+    --accent-dim: #ffffff14;
+    --danger-dim: #ef444422;
+    --success-dim: #22c55e22;
+
+    --stage-bg: #161616;
+    --stage-loading-from: #1c1d22;
+    --stage-loading-to: #20262f;
+    --stage-loading-text: #b9b9c4;
+    --overlay-surface: rgba(40, 40, 44, 0.72);
+    --overlay-surface-strong: rgba(56, 56, 62, 0.92);
+    --overlay-border: rgba(255, 255, 255, 0.12);
+    --overlay-shadow: rgba(0, 0, 0, 0.5);
+    --overlay-text: #f0f0f3;
+    --caption-text: #ececf1;
+    --caption-bg: rgba(38, 40, 48, 0.92);
+    --caption-border: rgba(255, 255, 255, 0.1);
+}
+
+/* Explicit light choice always wins over a dark-OS media query. */
+:root[data-theme="light"] {
+    color-scheme: light;
 }
 
 /* Prevent FOUC: HTML hidden attr is overridden by explicit display rules, force it. */
@@ -455,7 +542,7 @@ input[type="range"]::-webkit-slider-thumb {
     align-items: center;
     justify-content: center;
     position: relative;
-    background: #fff;
+    background: var(--stage-bg);
     overflow: hidden;
 }
 
@@ -587,7 +674,7 @@ input[type="range"]::-webkit-slider-thumb {
     align-items: center;
     justify-content: center;
     gap: 20px;
-    background: linear-gradient(135deg, #f5f4f7 0%, #e8eef6 100%);
+    background: linear-gradient(135deg, var(--stage-loading-from) 0%, var(--stage-loading-to) 100%);
     z-index: 1;
     opacity: 1;
     transition: opacity 0.5s ease;
@@ -618,7 +705,7 @@ input[type="range"]::-webkit-slider-thumb {
 .avatar-loading-text {
     font-size: 1.05rem;
     font-weight: 500;
-    color: #5b5b66;
+    color: var(--stage-loading-text);
     letter-spacing: 0.04em;
     text-transform: none;
 }
@@ -687,9 +774,9 @@ input[type="range"]::-webkit-slider-thumb {
     font-weight: 500;
     line-height: 1.4;
     text-align: center;
-    color: #15151a;
-    background: rgba(245, 246, 250, 0.92);
-    border: 1px solid rgba(0, 0, 0, 0.06);
+    color: var(--caption-text);
+    background: var(--caption-bg);
+    border: 1px solid var(--caption-border);
     border-radius: 14px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
     opacity: 0;
@@ -732,7 +819,7 @@ input[type="range"]::-webkit-slider-thumb {
 .avatar-onboarding-hint {
     font-size: 1.1rem;
     font-weight: 600;
-    color: #1b1b1f;
+    color: var(--text-primary);
     text-align: center;
 }
 .avatar-onboarding-hint:empty { display: none; }
@@ -763,6 +850,12 @@ input[type="range"]::-webkit-slider-thumb {
 @media (prefers-reduced-motion: reduce) {
     .avatar-caption,
     .avatar-onboarding { transition: opacity 0.2s ease; }
+    .stage-composer,
+    .avatar-dock,
+    .avatar-mic-btn,
+    .avatar-name-label { animation: none; }
+    .stage-status { transition: none; }
+    .stage-send-btn { transition: none; }
 }
 
 /* ===== Volume Animation ===== */
@@ -1019,25 +1112,53 @@ input[type="range"]::-webkit-slider-thumb {
 .btn-faded { opacity: 0.5; }
 
 
-.avatar-name-label {
+/* Bottom dock: a single full-width flex row across the stage bottom holding
+   the name, the mic, then the composer (which flex-grows to the right edge).
+   All sizes use vmin-based clamp() so the controls scale up on large screens
+   and shrink on small ones, staying proportional to the avatar.
+   pointer-events:none on the bar itself keeps the empty gaps from blocking
+   clicks on the avatar; interactive children re-enable it. */
+.avatar-dock {
     position: absolute;
-    bottom: 14px;
-    left: 18px;
-    font-size: 1.35rem;
-    font-weight: 600;
-    color: #1b1b1f;
-    background: rgba(255, 255, 255, 0.72);
-    -webkit-backdrop-filter: blur(10px);
-    backdrop-filter: blur(10px);
-    padding: 7px 22px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.6);
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
-    letter-spacing: 0.01em;
-    pointer-events: none;
+    bottom: clamp(10px, 2.2vmin, 16px);
+    left: clamp(10px, 2.2vmin, 18px);
+    right: clamp(10px, 2.2vmin, 18px);
     z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: clamp(6px, 1.4vmin, 10px);
+    pointer-events: none;
     animation: avatar-name-in 0.5s ease both;
 }
+.avatar-dock > * { pointer-events: auto; }
+.avatar-name-label {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    height: clamp(34px, 6.4vmin, 46px);
+    box-sizing: border-box;
+    font-size: clamp(0.82rem, 2.3vmin, 1.02rem);
+    font-weight: 600;
+    color: var(--overlay-text);
+    background: var(--overlay-surface);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    padding: 0 clamp(12px, 2vmin, 18px);
+    border-radius: 999px;
+    border: 1px solid var(--overlay-border);
+    box-shadow: 0 4px 18px var(--overlay-shadow);
+    letter-spacing: 0.01em;
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 40%;
+}
+@keyframes avatar-name-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.avatar-name-label:empty { display: none; }
 @keyframes avatar-name-in {
     from { opacity: 0; transform: translateY(8px); }
     to   { opacity: 1; transform: translateY(0); }
@@ -1046,29 +1167,27 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* ===== Docked avatar mic button ===== */
 .avatar-mic-btn {
-    position: absolute;
-    bottom: 14px;
-    right: 18px;
-    width: 56px;
-    height: 56px;
+    position: relative;
+    flex-shrink: 0;
+    width: clamp(34px, 6.4vmin, 46px);
+    height: clamp(34px, 6.4vmin, 46px);
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.72);
+    background: var(--overlay-surface);
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.6);
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+    border: 1px solid var(--overlay-border);
+    box-shadow: 0 4px 18px var(--overlay-shadow);
     cursor: pointer;
-    z-index: 2;
     /* Driven by JS from the mic analyser (0..1) to size the listening ring. */
     --mic-level: 0;
     transition: background 0.2s ease, border-color 0.2s ease, transform 0.12s ease;
-    animation: avatar-name-in 0.5s ease both;
 }
-.avatar-mic-btn:hover { background: rgba(255, 255, 255, 0.92); }
+.avatar-mic-btn svg { width: 48%; height: 48%; }
+.avatar-mic-btn:hover { background: var(--overlay-surface-strong); }
 .avatar-mic-btn:active { transform: scale(0.94); }
 .avatar-mic-btn:disabled { opacity: 0.5; cursor: default; }
 .avatar-mic-btn.recording {
@@ -1094,6 +1213,98 @@ input[type="range"]::-webkit-slider-thumb {
         0 0 0 2px rgba(168, 0, 0, 0.65),
         0 0 calc(6px + 22px * var(--mic-level)) calc(2px + 7px * var(--mic-level)) rgba(168, 0, 0, 0.45);
 }
+
+/* Mic icons read from tokens so they stay visible in light AND dark themes.
+   CSS fill/stroke override the inline presentation attributes on the SVGs. */
+.mic-off-icon { fill: var(--text-primary); }
+.mic-off-icon line { stroke: var(--text-primary); }
+.avatar-mic-btn .mic-off-icon { fill: var(--overlay-text); }
+.avatar-mic-btn .mic-off-icon line { stroke: var(--overlay-text); }
+
+/* ===== Stage text composer (normal mode) — flex child of .avatar-dock ===== */
+.stage-composer {
+    /* Grows to fill the row from just right of the mic out to the stage's
+       right edge, giving plenty of room to type. */
+    flex: 1 1 auto;
+    min-width: 0;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: clamp(34px, 6.4vmin, 46px);
+    padding: 4px 4px 4px clamp(12px, 2vmin, 16px);
+    border-radius: 999px;
+    background: var(--overlay-surface-strong);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--overlay-border);
+    box-shadow: 0 4px 18px var(--overlay-shadow);
+}
+
+.stage-text-input {
+    flex: 1;
+    min-width: 0;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: 5px 0 !important;
+    font-size: clamp(13px, 1.9vmin, 15px);
+    color: var(--overlay-text);
+}
+.stage-text-input::placeholder { color: var(--text-muted); }
+.stage-text-input:focus { outline: none; box-shadow: none !important; }
+.stage-text-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.stage-send-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: clamp(28px, 5vmin, 38px);
+    height: clamp(28px, 5vmin, 38px);
+    border: none;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--bg-primary);
+    cursor: pointer;
+    transition: background 0.18s ease, transform 0.12s ease, opacity 0.18s ease;
+}
+.stage-send-btn svg { width: 50%; height: 50%; }
+.stage-send-btn:hover { background: var(--accent-hover); }
+.stage-send-btn:active { transform: scale(0.94); }
+.stage-send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ===== Normal-mode connection / permission status pill ===== */
+.stage-status {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 50;
+    max-width: min(92%, 460px);
+    padding: 10px 20px;
+    border: 1px solid var(--overlay-border);
+    border-radius: 999px;
+    background: var(--overlay-surface-strong);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 26px var(--overlay-shadow);
+    color: var(--overlay-text);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    text-align: center;
+    cursor: default;
+    transition: opacity 0.25s ease;
+}
+.stage-status.clickable { cursor: pointer; }
+.stage-status.clickable:hover { background: var(--overlay-surface); }
+.stage-status.warning { border-color: var(--warning); }
+.stage-status.error { border-color: var(--danger); }
 
 /* ===== Toast Alerts ===== */
 .toast-container {

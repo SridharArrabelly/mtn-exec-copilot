@@ -52,14 +52,15 @@ The browser UI has two modes, selected by `DEVELOPER_MODE` and delivered to the 
 Everything the end user sees is anchored to the avatar:
 
 - **Avatar video** — the WebRTC (or WebSocket/MSE) photo or standard avatar.
-- **Name pill** — a frosted-glass label (bottom-left) showing the avatar's name.
-- **Docked mic button** — a circular mic (bottom-right) with a volume-reactive ring; tap to talk. Barge-in is supported (start speaking to interrupt the avatar).
+- **Bottom control row** — a single row anchored along the bottom of the stage holds the avatar's **name pill** (a frosted-glass label), the **docked mic button** (a circular mic with a volume-reactive ring; tap to talk — barge-in is supported, so start speaking to interrupt the avatar), and the **text composer** (next). All three share a height and scale together with the avatar across screen sizes.
+- **Text composer** *(optional)* — a "Type a message…" pill that fills the rest of the bottom row out to the right edge, so users can type instead of (or alongside) talking. It reuses the existing text path (voice stays primary) and stays disabled until the session connects. Hidden in developer mode, which keeps its own dedicated text input. Toggle with `ENABLE_TEXT_INPUT` (default on).
 - **Thinking indicator** — shows between the user's turn and the avatar's first words, with rotating status captions and a failsafe timeout so it can never get stuck.
+- **Connection & permission states** — a status pill (and toasts) surface normal-mode states that would otherwise be invisible: connecting, microphone blocked/denied (with an actionable message), reconnecting after a dropped transport, session ended (tap to restart), and avatar/transport errors.
 - **Live captions** *(optional)* — a frosted subtitle band **below** the avatar (aligned to its width) that mirrors the streamed transcript of what the avatar is saying, and optionally the user's last utterance. Reuses the existing transcript stream — no extra model calls.
 - **Speaking glow** *(optional)* — a soft halo around the avatar while it is actually speaking. It is driven by real-playback signals — the avatar's WebRTC data-channel `EVENT_TYPE_SWITCH_TO_SPEAKING` / `EVENT_TYPE_SWITCH_TO_IDLE` events plus an `AnalyserNode` tapping the live audio track — rather than the response lifecycle, so it persists for the avatar's whole spoken turn (a watchdog failsafe guarantees it never sticks on).
 - **Suggested prompts + onboarding hint** *(optional)* — on first load, a one-line hint and 2–3 tappable example-question chips (below the avatar). Tapping a chip sends that question through the normal text path; the hint and chips fade out after the first interaction and don't reappear for the rest of the session.
 
-The captions, glow, and suggested-prompt features are additive and individually configurable via env (captions default off, suggested prompts default on) — see [Avatar UX (frontend)](#avatar-ux-frontend). The new animations respect `prefers-reduced-motion`.
+The captions, glow, suggested-prompt, and text-input features are additive and individually configurable via env (captions default off; suggested prompts and text input default on) — see [Avatar UX (frontend)](#avatar-ux-frontend). The UI is fully themeable through CSS custom properties and ships a **dark variant** that follows the OS `prefers-color-scheme` (with a small `applyTheme(light|dark|system)` hook for explicit overrides). All new animations respect `prefers-reduced-motion`.
 
 ## Getting Started
 
@@ -131,6 +132,7 @@ The avatar feature is currently available in the following service regions: Sout
    - `ENABLE_SUGGESTED_PROMPTS` (default `true`) — show the first-load onboarding hint + example chips.
    - `ONBOARDING_HINT` (default `Tap the mic and ask me anything`) — the one-line hint shown above the chips.
    - `SUGGESTED_PROMPTS` — pipe-separated list of tappable example questions (2–3 recommended), e.g. `What can you help me with?|Tell me about your services|How do I get started?`.
+   - `ENABLE_TEXT_INPUT` (default `true`) — show a text composer on the avatar stage in normal mode so users can type as well as talk. Reuses the existing text path (voice stays primary) and stays disabled until the session connects. Developer mode is unaffected — it keeps its own dedicated text input.
 
 3. **Run the server:**
 
