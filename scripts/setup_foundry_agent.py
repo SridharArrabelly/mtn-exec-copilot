@@ -183,7 +183,7 @@ def build_bing_tool(
     curated sources. The configuration is provisioned out of band (Bing Custom
     Search portal); we reference it by name here via ``instance_name``.
 
-    count=5 keeps the snippet budget tight for voice answers; market/set_lang
+    count=7 keeps the snippet budget tight for voice answers; market/set_lang
     pin South-Africa-first English. freshness is intentionally left unset —
     forcing recency would drop legitimate non-news lookups.
 
@@ -198,7 +198,7 @@ def build_bing_tool(
                     instance_name=bing_custom_config_name,
                     market="en-ZA",
                     set_lang="en",
-                    count=5,
+                    count=7,
                 ),
             ]
         )
@@ -220,7 +220,7 @@ def build_tools(
     server rejects that query type for this tool. Stick with SIMPLE_HYBRID
     until the SDK exposes the field; recall on this small corpus is strong.
 
-    top_k=5: enough chunks to summarise from when several come from the
+    top_k=6: enough chunks to summarise from when several come from the
     same meeting. top_k=3 broke summary queries in earlier rounds (only
     one chunk from the right meeting reached the model).
     """
@@ -234,7 +234,7 @@ def build_tools(
                     project_connection_id=search_connection_id,
                     index_name=search_index_name,
                     query_type=AzureAISearchQueryType.VECTOR_SIMPLE_HYBRID,
-                    top_k=5,
+                    top_k=6,
                 ),
             ]
         )
