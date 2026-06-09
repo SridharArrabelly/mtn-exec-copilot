@@ -183,8 +183,10 @@ def build_bing_tool(
     curated sources. The configuration is provisioned out of band (Bing Custom
     Search portal); we reference it by name here via ``instance_name``.
 
-    count=7 keeps the snippet budget tight for voice answers; market/set_lang
-    pin South-Africa-first English. freshness is intentionally left unset —
+    count defaults to 8 (env: ``BING_COUNT``) — the validated production value;
+    enough snippet budget to answer completely while staying tight for voice.
+    market/set_lang pin South-Africa-first English. freshness is intentionally
+    left unset —
     forcing recency would drop legitimate non-news lookups.
 
     Compliance: the formulated query leaves the Azure compliance/Geo boundary
@@ -198,7 +200,7 @@ def build_bing_tool(
                     instance_name=bing_custom_config_name,
                     market="en-ZA",
                     set_lang="en",
-                    count=7,
+                    count=int(os.getenv("BING_COUNT", "8") or "8"),
                 ),
             ]
         )
@@ -220,9 +222,10 @@ def build_tools(
     server rejects that query type for this tool. Stick with SIMPLE_HYBRID
     until the SDK exposes the field; recall on this small corpus is strong.
 
-    top_k=6: enough chunks to summarise from when several come from the
-    same meeting. top_k=3 broke summary queries in earlier rounds (only
-    one chunk from the right meeting reached the model).
+    top_k defaults to 8 (env: ``AI_SEARCH_TOP_K``) — the validated production
+    value. It is enough chunks to summarise from when several come from the
+    one chunk from the right meeting reached the model); top_k=8 widens
+    completeness on summary questions without hurting meeting scoping.
     """
     # Tool ORDER matters: gpt-4.1-mini biases hard toward the first tool. Put
     # azure_ai_search first so MTN-meeting questions ground in the index
@@ -234,7 +237,7 @@ def build_tools(
                     project_connection_id=search_connection_id,
                     index_name=search_index_name,
                     query_type=AzureAISearchQueryType.VECTOR_SIMPLE_HYBRID,
-                    top_k=6,
+                    top_k=int(os.getenv("AI_SEARCH_TOP_K", "8") or "8"),
                 ),
             ]
         )
