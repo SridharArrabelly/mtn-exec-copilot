@@ -98,6 +98,14 @@ def get_ui_defaults() -> dict:
     (DEVELOPER_MODE=false) where the side panel is hidden and the session
     auto-starts with whatever is configured here.
     """
+    # The onboarding hint default is modality-aware: when the text composer is
+    # enabled, invite typing too. An explicit ONBOARDING_HINT always wins.
+    _text_input = _bool("ENABLE_TEXT_INPUT", True)
+    _hint_default = (
+        "Tap the mic or type to ask me anything"
+        if _text_input
+        else "Tap the mic and ask me anything"
+    )
     return {
         # Conversation
         "srModel": _str("SR_MODEL", "mai-transcribe-1"),
@@ -124,11 +132,15 @@ def get_ui_defaults() -> dict:
         "customAvatarName": _str("CUSTOM_AVATAR_NAME", ""),
         "photoAvatarName": _str("PHOTO_AVATAR_NAME", "Anika"),
         "avatarBackgroundImageUrl": _str("AVATAR_BACKGROUND_IMAGE_URL", ""),
+        # Avatar identity tagline shown under the name (top-left of the stage).
+        # Empty hides the tagline line.
+        "avatarTagline": _str("AVATAR_TAGLINE", "Your MTN Digital Assistant"),
         # Avatar UX (additive, env-gated)
+        "enableTextInput": _bool("ENABLE_TEXT_INPUT", True),
         "enableCaptions": _bool("ENABLE_CAPTIONS", False),
         "captionsShowUser": _bool("CAPTIONS_SHOW_USER", False),
         "enableSuggestedPrompts": _bool("ENABLE_SUGGESTED_PROMPTS", True),
-        "onboardingHint": _str("ONBOARDING_HINT", "Tap the mic and ask me anything"),
+        "onboardingHint": _str("ONBOARDING_HINT", _hint_default),
         "suggestedPrompts": _list(
             "SUGGESTED_PROMPTS",
             [

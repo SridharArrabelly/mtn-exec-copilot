@@ -62,7 +62,17 @@ let peerConnectionQueue = [];
 let captionsEnabled = false;
 let captionsShowUser = false;
 let suggestedPromptsEnabled = true;
+// Text composer (bottom-center of the avatar stage) in normal mode. Env-gated
+// via ENABLE_TEXT_INPUT (/api/config defaults -> enableTextInput).
+let textInputEnabled = true;
+// Normal-mode connection/permission status surfaced on #stageStatus. One of:
+// null, 'reconnecting', 'ended', 'mic-blocked', 'mic-missing', 'error'.
+let connectionState = null;
+// Set true right before a user-initiated stop so the socket's later onclose
+// doesn't mistake an intentional disconnect for an unexpected drop.
+let intentionalDisconnect = false;
 let onboardingHintText = 'Tap the mic and ask me anything';
+let avatarTaglineText = '';
 let suggestedPrompts = [];
 // Onboarding lifecycle: dismissed permanently after the first real user action;
 // hidden temporarily while the avatar speaks (e.g. the proactive greeting).
@@ -119,12 +129,36 @@ const clientId = 'client-' + Math.random().toString(36).substr(2, 9);
 
 // ===== DOM Ready =====
 document.addEventListener('DOMContentLoaded', () => {
+    initTheme();
     setupUIBindings();
     updateConditionalFields();
     updateControlStates();
     fetchServerConfig();
     warmWebRTCEngine();
 });
+
+// ===== Theme =====
+// Lightweight theme hook. 'system' (default) removes the data-theme attribute so
+// the `prefers-color-scheme` media query in style.css decides; 'light'/'dark'
+// set an explicit attribute that overrides the OS preference. Teams theme wiring
+// (issue #28) can later call applyTheme() directly — no SDK is loaded here.
+function applyTheme(theme) {
+    const root = document.documentElement;
+    if (theme === 'light' || theme === 'dark') {
+        root.setAttribute('data-theme', theme);
+    } else {
+        theme = 'system';
+        root.removeAttribute('data-theme');
+    }
+    try { localStorage.setItem('avatarForgeTheme', theme); } catch (e) {}
+    return theme;
+}
+
+function initTheme() {
+    let stored = null;
+    try { stored = localStorage.getItem('avatarForgeTheme'); } catch (e) {}
+    applyTheme(stored || 'system');
+}
 
 // Construct (and immediately close) a throwaway RTCPeerConnection at page load
 // so the browser loads/initializes its WebRTC native code, codec backends, and
@@ -175,8 +209,12 @@ async function fetchServerConfig() {
         const d = config.defaults || {};
         captionsEnabled = d.enableCaptions ?? false;
         captionsShowUser = d.captionsShowUser ?? false;
+        textInputEnabled = d.enableTextInput ?? true;
         suggestedPromptsEnabled = d.enableSuggestedPrompts ?? true;
         onboardingHintText = d.onboardingHint ?? onboardingHintText;
+        avatarTaglineText = d.avatarTagline ?? avatarTaglineText;
+        const taglineEl = document.getElementById('avatarTagline');
+        if (taglineEl) taglineEl.textContent = avatarTaglineText || '';
         suggestedPrompts = Array.isArray(d.suggestedPrompts) ? d.suggestedPrompts : [];
         buildOnboarding();
 
@@ -514,6 +552,10 @@ async function toggleConnection() {
 
 async function connectSession() {
     setConnecting(true);
+    // Fresh session: clear any prior status pill and reset the intentional-stop
+    // guard so a later unexpected drop is correctly surfaced.
+    intentionalDisconnect = false;
+    setConnectionState(null);
     // Logged to the (dev-only) chat as a status line, but no toast — the avatar
     // spinner already signals "connecting", so the top-right toast was redundant.
     addMessage('system', 'Session started, click on the mic button to start conversation! debug id: connecting...', false, true);
@@ -559,26 +601,39 @@ async function connectSession() {
 
         ws.onerror = (err) => {
             console.error('WebSocket error', err);
-            addMessage('system', 'WebSocket error');
+            notifySystem('Connection error', 'error');
             setConnecting(false);
         };
 
         ws.onclose = () => {
             console.log('WebSocket closed');
+            // Distinguish a user-initiated stop from an unexpected drop. An
+            // unexpected drop while we believed we were connected/connecting is
+            // surfaced as a tap-to-restart state (the chat line is invisible in
+            // production mode).
+            const wasIntentional = intentionalDisconnect;
+            const wasLive = isConnected || isConnecting;
             if (isConnected) {
                 addMessage('system', 'Disconnected');
             }
             handleDisconnect();
+            if (!wasIntentional && wasLive) {
+                setConnectionState('ended');
+            }
+            intentionalDisconnect = false;
         };
 
     } catch (err) {
         console.error('Connection error', err);
-        addMessage('system', 'Failed to connect: ' + err.message);
+        notifySystem('Failed to connect: ' + err.message, 'error');
         setConnecting(false);
+        setConnectionState('error');
     }
 }
 
 async function disconnect() {
+    intentionalDisconnect = true;
+    setConnectionState(null);
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'stop_session' }));
     }
@@ -633,11 +688,12 @@ function handleServerMessage(msg) {
             onSessionStarted(msg);
             break;
         case 'session_error':
-            addMessage('system', 'Error: ' + (msg.error || 'Unknown error'));
+            notifySystem('Error: ' + (msg.error || 'Unknown error'), 'error');
             setConnecting(false);
             avatarConnecting = false;
             pendingAvatarEnabled = false;
             clearAvatarLoading();
+            setConnectionState('error');
             updateDeveloperModeLayout();
             break;
         case 'ice_servers':
@@ -893,6 +949,7 @@ const SETTINGS_CONTROLS = [
 // Controls that should be disabled when NOT connected (chat interaction)
 const CHAT_CONTROLS = [
     'textInput',
+    'stageTextInput',
 ];
 
 function updateControlStates() {
@@ -1329,6 +1386,15 @@ function updateDeveloperModeLayout() {
     if (avatarMicBtn) hide(avatarMicBtn, !avatarReady);
     if (avatarReady) hide(footerArea, true);
 
+    // Bottom-center stage composer: normal (production) mode only, env-gated,
+    // and only once the avatar is on screen (same readiness as the docked mic).
+    // Never shown in developer mode so the dev #inputArea layout is untouched.
+    const stageComposer = document.getElementById('stageComposer');
+    if (stageComposer) {
+        const showComposer = !isDeveloperMode && textInputEnabled && avatarReady;
+        hide(stageComposer, !showComposer);
+    }
+
     // Visibility may have changed while recording; sync the listening ring loop.
     updateAvatarMicRing();
 }
@@ -1587,8 +1653,22 @@ registerProcessor('pcm16-processor', PCM16Processor);
         console.log('[Audio] Capture started (24kHz PCM16)');
     } catch (err) {
         console.error('Audio capture error', err);
-        addMessage('system', 'Microphone access denied or not available');
+        // Surface an actionable, normal-mode-visible state instead of a chat
+        // line the user can't see in production.
+        const name = err && err.name;
+        if (name === 'NotAllowedError' || name === 'SecurityError') {
+            notifySystem('Microphone access was blocked. Allow mic access in your browser, then retry.', 'error');
+            setConnectionState('mic-blocked');
+        } else if (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'DevicesNotFoundError') {
+            notifySystem('No microphone was found. Connect a mic, then retry.', 'error');
+            setConnectionState('mic-missing');
+        } else {
+            notifySystem('Microphone could not be started. Please retry.', 'error');
+            setConnectionState('error');
+        }
+        return false;
     }
+    return true;
 }
 
 function stopAudioCapture() {
@@ -2091,11 +2171,11 @@ function handleAvatarSdpAnswer(serverSdpBase64) {
             // A failed setRemoteDescription leaves the avatar permanently frozen
             // with no video. Surface it instead of swallowing it silently.
             console.error('SDP answer error', err);
-            addMessage('system', 'The avatar could not start (connection negotiation failed). You can keep talking with audio, or reconnect to retry the avatar.');
+            notifySystem('The avatar could not start (connection negotiation failed). You can keep talking with audio, or reconnect to retry the avatar.', 'warning');
         });
     } catch (e) {
         console.error('Failed to parse server SDP', e);
-        addMessage('system', 'The avatar could not start (invalid connection answer). You can keep talking with audio, or reconnect to retry the avatar.');
+        notifySystem('The avatar could not start (invalid connection answer). You can keep talking with audio, or reconnect to retry the avatar.', 'warning');
     }
 }
 
@@ -2110,7 +2190,7 @@ function attachAvatarConnectionMonitor(pc) {
         if (notified) return;
         notified = true;
         console.error('[WebRTC] avatar connection ' + label);
-        addMessage('system', 'The avatar connection dropped. You can keep talking with audio, or reconnect to retry the avatar.');
+        notifySystem('The avatar connection dropped. You can keep talking with audio, or reconnect to retry the avatar.', 'warning');
     };
     pc.addEventListener('iceconnectionstatechange', () => {
         if (pc.iceConnectionState === 'failed') onFail('iceConnectionState=failed');
@@ -2165,12 +2245,70 @@ function toggleMicrophone() {
     }
 }
 
+// ===== Connection / permission status (normal mode) =====
+// Single source of truth for the normal-mode status pill (#stageStatus). The
+// avatar spinner already covers "connecting", so this surfaces the states the
+// user would otherwise never see in production (chat is hidden): reconnecting,
+// session ended, and microphone permission problems. In the 'ended' state the
+// pill is clickable to restart the session.
+function setConnectionState(state) {
+    connectionState = state || null;
+    const el = document.getElementById('stageStatus');
+    if (!el) return;
+
+    const map = {
+        reconnecting: { text: 'Reconnecting…', cls: 'warning', clickable: false },
+        ended: { text: 'Session ended — tap to restart', cls: '', clickable: true },
+        'mic-blocked': { text: 'Microphone blocked — allow mic access in your browser, then tap to retry', cls: 'error', clickable: true },
+        'mic-missing': { text: 'No microphone found — connect one, then tap to retry', cls: 'error', clickable: true },
+        error: { text: 'Something went wrong — tap to restart', cls: 'error', clickable: true },
+    };
+    const cfg = map[connectionState];
+
+    // Developer mode keeps its own chat-based feedback; don't overlay the pill.
+    if (!cfg || isDeveloperMode) {
+        el.classList.add('hidden');
+        el.classList.remove('clickable', 'warning', 'error');
+        el.onclick = null;
+        return;
+    }
+
+    el.textContent = cfg.text;
+    el.classList.remove('warning', 'error', 'clickable');
+    if (cfg.cls) el.classList.add(cfg.cls);
+    el.classList.toggle('clickable', cfg.clickable);
+    el.classList.remove('hidden');
+
+    el.onclick = null;
+    if (cfg.clickable) {
+        const action = connectionState;
+        el.onclick = () => {
+            setConnectionState(null);
+            if (action === 'mic-blocked' || action === 'mic-missing') {
+                // Session is still up; just retry capturing the mic.
+                if (isConnected) { startAudioCapture(); return; }
+            }
+            // 'ended' / 'error' (or mic retry with no session): restart.
+            if (!isConnected && !isConnecting) {
+                connectSession().catch(err => console.error('Restart failed', err));
+            }
+        };
+    }
+}
+
+// Surface a system message so it's visible in BOTH modes: the chat line (dev)
+// plus a toast in normal mode where the chat area is hidden.
+function notifySystem(message, type = 'error') {
+    addMessage('system', message);
+    if (!isDeveloperMode) showToast(message, type, 6000);
+}
+
 // ===== Send Text =====
-// Shared text path used by both the dev text input and the suggested-prompt
-// chips. Returns true if the message was actually sent.
+// Shared text path used by the dev text input, the stage composer, and the
+// suggested-prompt chips. Returns true if the message was actually sent.
 function sendQuery(text) {
     const q = (text || '').trim();
-    if (!q || !isConnected || !ws) return false;
+    if (!q || !isConnected || !ws || ws.readyState !== WebSocket.OPEN) return false;
     addMessage('user', q);
     ws.send(JSON.stringify({ type: 'send_text', text: q }));
     return true;
@@ -2178,6 +2316,17 @@ function sendQuery(text) {
 
 function sendTextMessage() {
     const input = document.getElementById('textInput');
+    if (sendQuery(input.value)) {
+        input.value = '';
+        dismissOnboarding();
+    }
+}
+
+// Bottom-center stage composer (normal/production mode). Reuses the shared
+// sendQuery() path so there is no duplicate send logic.
+function sendStageMessage() {
+    const input = document.getElementById('stageTextInput');
+    if (!input) return;
     if (sendQuery(input.value)) {
         input.value = '';
         dismissOnboarding();
