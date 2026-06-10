@@ -102,6 +102,27 @@ app.add_middleware(
 )
 
 
+# Allow the app to be framed by the Microsoft Teams clients (web + desktop) so it
+# can run as a personal tab (issue #28). We intentionally set ONLY frame-ancestors
+# — a full CSP (script-src/connect-src/media-src) would break inline JS, the WSS
+# voice/avatar socket, and WebRTC. No X-Frame-Options is sent (it cannot express a
+# multi-origin allow-list and would conflict with this directive).
+_TEAMS_FRAME_ANCESTORS = (
+    "frame-ancestors 'self' "
+    "https://teams.microsoft.com https://*.teams.microsoft.com "
+    "https://teams.live.com https://*.teams.live.com "
+    "https://*.skype.com"
+)
+
+
+@app.middleware("http")
+async def teams_frame_ancestors(request, call_next):
+    """Permit embedding in the Teams clients while leaving everything else intact."""
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = _TEAMS_FRAME_ANCESTORS
+    return response
+
+
 @app.middleware("http")
 async def no_cache_static(request, call_next):
     """Disable caching for static assets during development."""

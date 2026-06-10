@@ -1,0 +1,42 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "{{VERSION}}",
+  "id": "{{APP_ID}}",
+  "developer": {
+    "name": "Avatar Forge",
+    "websiteUrl": "https://github.com/SridharArrabelly/avatar-forge",
+    "privacyUrl": "https://github.com/SridharArrabelly/avatar-forge/blob/main/README.md",
+    "termsOfUseUrl": "https://github.com/SridharArrabelly/avatar-forge/blob/main/LICENSE"
+  },
+  "name": {
+    "short": "Avatar Forge",
+    "full": "Avatar Forge — Azure Voice Live Avatar"
+  },
+  "description": {
+    "short": "Talk to a real-time voice avatar.",
+    "full": "Avatar Forge embeds the Azure Voice Live avatar experience as a personal tab. Speak with a real-time, lip-synced avatar powered by Azure. Microphone access is required for the conversation."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#5B5FC7",
+  "staticTabs": [
+    {
+      "entityId": "avatarForgeHome",
+      "name": "Avatar",
+      "contentUrl": "https://{{HOSTNAME}}/?inTeams=1",
+      "websiteUrl": "https://{{HOSTNAME}}/",
+      "scopes": [
+        "personal"
+      ]
+    }
+  ],
+  "devicePermissions": [
+    "media"
+  ],
+  "validDomains": [
+    "{{HOSTNAME}}"
+  ]
+}
