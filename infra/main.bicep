@@ -51,7 +51,7 @@ param bingConnectionName string = ''
 param bingCustomConfigName string = ''
 
 // App runtime extras
-param agentModel string = 'gpt-4.1-mini'
+param agentModel string = 'gpt-5.4'
 param embeddingDeployment string = 'text-embedding-3-small'
 param avatarName string = 'Lisa-casual-sitting'
 param customAvatarName string = ''
@@ -63,9 +63,9 @@ param srModel string = 'mai-transcribe-1'
 param recognitionLanguage string = 'auto'
 
 // ───────── Model deployment (used only when creating Foundry) ─────────
-param modelName string = 'gpt-4.1-mini'
-param modelVersion string = '2025-04-14'
-param modelDeploymentName string = 'gpt-4.1-mini'
+param modelName string = 'gpt-5.4'
+param modelVersion string = '2026-03-05'
+param modelDeploymentName string = 'gpt-5.4'
 @allowed([ 'GlobalStandard', 'Standard', 'DataZoneStandard' ])
 param modelSkuName string = 'GlobalStandard'
 param modelCapacity int = 50

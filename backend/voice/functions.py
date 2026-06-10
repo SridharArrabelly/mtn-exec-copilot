@@ -2,7 +2,6 @@
 
 import json
 import logging
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +28,3 @@ async def execute_function(name: str, arguments: str) -> dict:
             return {"expression": expression, "error": "Could not evaluate"}
     else:
         return {"error": f"Unknown function: {name}"}
-
-_audio_chunk_count = 0
-

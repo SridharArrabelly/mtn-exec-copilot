@@ -9,7 +9,7 @@ This sample demonstrates the usage of Azure Voice Live API with avatar, implemen
 │    Browser (Frontend)   │◄──WS───►│   Python Server (FastAPI)   │◄──SDK──►│ Azure Voice Live │◄───────►│    Foundry Agent Service     │
 │                         │         │                             │         │     Service      │ agent_  │     (your Foundry agent)     │
 │  • Audio capture (mic)  │         │  • Session management       │         └──────────────────┘ config  │  • Instructions (variant)    │
-│  • Audio playback       │         │  • Voice Live SDK calls     │                                       │  • gpt-5.4-mini deployment   │
+│  • Audio playback       │         │  • Voice Live SDK calls     │                                       │  • gpt-5.4 deployment        │
 │  • Avatar video         │◄─WebRTC (peer-to-peer video)──────────────────────────────┘                  │  • Azure AI Search tool      │
 │  • Settings UI          │         │  • Event relay              │                                      │  • Grounding w/ Bing Custom  │
 │  • Chat messages        │         │  • Meeting catalogue inject │                                      └──────────────────────────────┘
@@ -21,7 +21,7 @@ This sample demonstrates the usage of Azure Voice Live API with avatar, implemen
 Two backend features improve tool-calling accuracy for this voice workload:
 
 - **Meeting catalogue injection** — at session start the backend fetches a compact catalogue of every indexed meeting (date + title) from AI Search and injects it as a system message. This lets the agent answer "how many meetings / first / last / list them" with **no** search call, and lets it phrase precise content searches using exact dates. See [`backend/voice/catalog.py`](backend/voice/catalog.py).
-- **`gpt-4.1-mini` + Grounding with Bing Custom Search** — the agent's model and external tool were chosen for tool-calling precision. See [Tool Calling Accuracy](#tool-calling-accuracy).
+- **`gpt-5.4` (reasoning effort `none`) + Grounding with Bing Custom Search** — the agent's model and external tool were chosen for tool-calling precision. See [Tool Calling Accuracy](#tool-calling-accuracy).
 
 All SDK operations (session creation, configuration, audio forwarding, event processing) happen in Python. The browser only handles:
 - Microphone capture → sends PCM16 audio via WebSocket
@@ -34,7 +34,7 @@ All SDK operations (session creation, configuration, audio forwarding, event pro
 
 The avatar's usefulness hinges on calling the **right tool** for each question: the Azure AI Search index (board-meeting minutes) for internal questions, **Grounding with Bing Custom Search** for live external facts from a curated domain allow-list (share price, competitor news), or **both** for comparisons ("how does our revenue compare to what analysts expected?").
 
-The original agent decided tools entirely on its own and reached only **~70%** first-tool accuracy, frequently **fanning out** multiple external web calls (≈45% of web turns), which inflated latency and token cost. Switching to **`gpt-4.1-mini` + Grounding with Bing Custom Search** (a single hosted Bing call instead of an open-ended web tool) lifted first-tool accuracy to **~93.5%** and cut fan-out to ≈3%.
+The original agent decided tools entirely on its own and reached only **~70%** first-tool accuracy, frequently **fanning out** multiple external web calls (≈45% of web turns), which inflated latency and token cost. Adopting **Grounding with Bing Custom Search** (a single hosted Bing call instead of an open-ended web tool) and pinning the model lifted first-tool accuracy to **~93.5%** on the original `gpt-4.1-mini` baseline and cut fan-out to ≈3%. The **current production model is `gpt-5.4` with `AGENT_REASONING_EFFORT=none`**, which scores **30/30** on the routing harness ([`prompts/agent/routing-test-questions.md`](prompts/agent/routing-test-questions.md)) with cleaner numeric synthesis; `gpt-5.4-mini` is a faster, cheaper fallback and `gpt-4.1-mini` remains the documented baseline.
 
 > **Note on the web tool:** the agent's only external tool is **`bing_custom_search`** (Grounding with Bing Custom Search) — a single grounded round-trip that returns curated snippets restricted to a server-side domain allow-list (the "configuration" provisioned in the Bing Custom Search portal, referenced by `BING_CUSTOM_CONFIG_NAME`). An open-ended web-search tool on `gpt-4.1-mini` either fans out into many calls or bloats the context; `bing_custom_search` resolves a turn in one call. It is wired by setting `BING_CONNECTION_NAME` (the Foundry connection) and `BING_CUSTOM_CONFIG_NAME` (the Bing Custom Search instance) when running `scripts/setup_foundry_agent.py`.
 
@@ -104,10 +104,10 @@ The avatar feature is currently available in the following service regions: Sout
    - `PROJECT_ENDPOINT` - **Required.** Foundry project endpoint, e.g. `https://<resource>.services.ai.azure.com/api/projects/<project-name>`
    - `SEARCH_CONNECTION_NAME` - **Required.** Name of the Azure AI Search connection in the Foundry project
    - `SEARCH_INDEX_NAME` - **Required.** Azure AI Search index to expose to the agent
-   - `AGENT_MODEL` - Foundry model deployment the agent runs on. Two configs are validated for voice: `gpt-4.1-mini` (fast, non-reasoning — the original baseline used to measure tool-calling accuracy below) and `gpt-5.4-mini` with `AGENT_REASONING_EFFORT=none` (the current recommended config — same first-token latency, better synthesis on fiscal-period questions and share-price conversion). Must match a deployment in your project.
+   - `AGENT_MODEL` - Foundry model deployment the agent runs on. The current recommended config is **`gpt-5.4` with `AGENT_REASONING_EFFORT=none`** (best tool-routing accuracy and numeric synthesis — see [Tool Calling Accuracy](#tool-calling-accuracy)); `gpt-5.4-mini` is a faster, cheaper fallback and `gpt-4.1-mini` is the original non-reasoning baseline the accuracy numbers were first measured on. Must match a deployment in your project.
    - `BING_CONNECTION_NAME` - **Required.** Name of the Grounding-with-Bing-Custom-Search connection in the Foundry project (the agent's only external tool).
    - `BING_CUSTOM_CONFIG_NAME` - **Required.** Bing Custom Search configuration (instance) name — the curated domain allow-list the web tool is restricted to.
-   - `AGENT_REASONING_EFFORT` - Reasoning-effort setting passed to the agent. Valid values depend on the model: `gpt-4.x` / `gpt-4o` reject this parameter entirely (leave **unset** — they 400 on every response, which manifests as a silently non-speaking avatar); `gpt-5.4-mini` accepts `none | low | medium | high | xhigh`; o-series models accept `low | medium | high`. For voice latency the validated value is `none` on `gpt-5.4-mini` — actual reasoning steps add 4–5 seconds to first-token. The provisioning script (`scripts/setup_foundry_agent.py`) warns and ignores the value if the model doesn't support it.
+   - `AGENT_REASONING_EFFORT` - Reasoning-effort setting passed to the agent. Valid values depend on the model: `gpt-4.x` / `gpt-4o` reject this parameter entirely (leave **unset** — they 400 on every response, which manifests as a silently non-speaking avatar); the `gpt-5.x` models (`gpt-5.4` / `gpt-5.4-mini`) accept `none | low | medium | high | xhigh`; o-series models accept `low | medium | high`. For voice latency the validated value is `none` on the `gpt-5.x` models — actual reasoning steps add 4–5 seconds to first-token. The provisioning script (`scripts/setup_foundry_agent.py`) warns and ignores the value if the model doesn't support it.
 
    Search index build/test (only needed when running [`scripts/setup_aisearch_index.py`](scripts/setup_aisearch_index.py) or [`scripts/test_aisearch_query.py`](scripts/test_aisearch_query.py)):
    - `AZURE_SEARCH_ENDPOINT` - **Required.** `https://<service>.search.windows.net`
@@ -305,7 +305,7 @@ azd env set APPINSIGHTS_RESOURCE_GROUP rg-shared-observability
 # (optional) Pin the agent / search / bing names that the container reads at runtime.
 # Defaults are fine if your existing Foundry agent + connections use these names.
 azd env set AGENT_NAME              MtnAvatarAgent
-azd env set AGENT_MODEL             gpt-5.4-mini
+azd env set AGENT_MODEL             gpt-5.4
 azd env set AGENT_REASONING_EFFORT  none
 azd env set SEARCH_CONNECTION_NAME  aisearch-connection
 azd env set BING_CONNECTION_NAME    groundingwithbingcustquraml
@@ -407,9 +407,9 @@ The Bicep template accepts overrides via azd environment variables — set any o
 | `SEARCH_CONNECTION_NAME`  | `aisearch-connection`            | Foundry AI Search connection name        |
 | `SEARCH_INDEX_NAME`       | `knowledge-index`                | AI Search index name                     |
 | `VOICELIVE_VOICE`         | `en-US-AvaMultilingualNeural`    | Default avatar voice                     |
-| `MODEL_NAME`              | `gpt-4.1-mini`                   | OpenAI model to deploy in Foundry        |
-| `MODEL_VERSION`           | `2025-04-14`                     | Model version                            |
-| `MODEL_DEPLOYMENT_NAME`   | `gpt-4.1-mini`                   | Deployment name (used by the agent)      |
+| `MODEL_NAME`              | `gpt-5.4`                        | OpenAI model to deploy in Foundry        |
+| `MODEL_VERSION`           | `2026-03-05`                     | Model version (must match `MODEL_NAME`)  |
+| `MODEL_DEPLOYMENT_NAME`   | `gpt-5.4`                        | Deployment name (used by the agent)      |
 | `MODEL_SKU_NAME`          | `GlobalStandard`                 | Deployment SKU                           |
 | `MODEL_CAPACITY`          | `50`                             | TPM (thousands) capacity                 |
 
@@ -439,6 +439,43 @@ A ready-to-use OIDC-based workflow lives at [.github/workflows/azure-dev.yml](.g
    - **Secrets:** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
    - **Variables:** `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP_NAME` (required); optionally `FOUNDRY_*` / `SEARCH_*` / `APPINSIGHTS_*` / `AGENT_*` / `MODEL_*` overrides
 4. Push to `main` (or run the workflow manually) — it will `azd provision` then `azd deploy`.
+
+## Run in Microsoft Teams (sideload)
+
+The app can also run as a **Microsoft Teams personal tab** that embeds the same web UI (mic + WebRTC avatar). This is **Phase 1 / scope 1A**: an anonymous, sideloaded prototype — **no Teams-admin access, no SSO, and no org publishing required**. Everything lives in [`teams/`](teams/); see [`teams/README.md`](teams/README.md) for the full walkthrough and validation checklist.
+
+How it fits together (all additive — the standalone web app is unaffected):
+
+- [`teams/manifest.template.json`](teams/manifest.template.json) — Teams manifest (schema v1.17) with `{{HOSTNAME}}` / `{{VERSION}}` / `{{APP_ID}}` placeholders; personal static tab with `devicePermissions: ["media"]` for mic/camera.
+- [`teams/build_package.py`](teams/build_package.py) — stdlib-only script that renders the manifest and zips a sideloadable package (`manifest.json` + both icons at the archive root).
+- [`frontend/teams.js`](frontend/teams.js) — **no-op unless running inside Teams** (detected via the `?inTeams=1` param the manifest carries). Inside Teams it loads the pinned Teams JS SDK and mirrors the host light/dark theme into the existing `applyTheme()` hook; outside Teams the SDK is never fetched.
+- A single `Content-Security-Policy: frame-ancestors` response header (FastAPI middleware in [`backend/main.py`](backend/main.py)) so the Teams web/desktop clients can frame the app. Only `frame-ancestors` is set on purpose — a full CSP would break inline JS, the WSS voice socket, and WebRTC.
+
+Build the package against your deployed app's hostname, then sideload it:
+
+```bash
+# 1. Build (bare host of your Container App — no https://, no path, no port)
+uv run python teams/build_package.py --hostname <your-app>.<region>.azurecontainerapps.io
+# -> teams/build/avatar-forge-teams.zip
+
+# For the current deployment the host is:
+#   ca-mtn-agent-forge-hz3cp52lid6xq.whitedune-5a2336c6.swedencentral.azurecontainerapps.io
+# A normal `azd deploy` reuses the same host, so you only rebuild + re-sideload
+# the zip if the Container App is recreated (the host changes).
+```
+
+```text
+# 2. Sideload (no admin needed). Try Route A; if your tenant has custom-app
+#    upload disabled, use Route B:
+#   A. Teams -> Apps -> Manage your apps -> Upload an app -> Upload a custom app
+#   B. Teams Developer Portal (https://dev.teams.microsoft.com) -> Apps ->
+#      Import app -> Preview in Teams
+```
+
+Then open the **Avatar** personal tab, allow the microphone, and verify the avatar video + voice work in both the Teams **web** and **desktop** clients.
+
+> **Deferred to a later phase:** Entra SSO inside Teams, backend token enforcement, and admin-center / targeted-user publishing. The same package built here is reused unchanged when you later publish from the Teams admin center.
+
 ## Project Structure
 
 ```
@@ -463,14 +500,29 @@ avatar-forge/
 ├── frontend/                      # Static client assets (served at /)
 │   ├── index.html                 # UI page (avatar stage: video, name pill, docked mic, thinking, captions, onboarding)
 │   ├── style.css                  # Styles (incl. speaking glow, caption band, suggested-prompt chips)
-│   └── app.js                     # Audio capture/playback, WebRTC, WebSocket, UI logic (captions, glow, onboarding)
+│   ├── app.js                     # Audio capture/playback, WebRTC, WebSocket, UI logic (captions, glow, onboarding)
+│   └── teams.js                   # No-op unless in Teams: loads Teams JS SDK, mirrors host theme into applyTheme()
 │
 ├── scripts/                       # Utility / one-off scripts (not part of the server)
 │   ├── setup_foundry_agent.py     # Creates the Foundry agent with AI Search + Grounding-with-Bing-Custom-Search tools
 │   ├── setup_aisearch_index.py    # Creates/updates the AI Search index and ingests data/ (docx/pdf/md/txt)
 │   ├── test_aisearch_query.py     # Smoke-tests the index with a hybrid + semantic query
 │   ├── test_foundry_agent.py      # Smoke-tests the live agent end-to-end (tool calls + answer)
+│   ├── grant_byo_rbac.py          # Idempotently grants BYO runtime RBAC (brownfield Foundry/Search)
 │   └── preflight.py               # Region/capability checks (Voice Live + Avatar) before azd up
+│
+├── teams/                         # Microsoft Teams personal-tab package (Phase 1, scope 1A)
+│   ├── README.md                  # Sideload walkthrough (no-admin routes) + validation checklist
+│   ├── manifest.template.json     # Teams manifest (schema v1.17) with {{HOSTNAME}}/{{VERSION}}/{{APP_ID}} placeholders
+│   ├── build_package.py           # Stdlib-only: renders the manifest and zips a sideloadable package
+│   └── icons/                     # color.png (192×192) + outline.png (32×32) app icons
+│
+├── infra/                         # Bicep IaC consumed by azd (azure.yaml)
+│   ├── main.bicep                 # Deployment entry point
+│   ├── main.parameters.json       # azd parameter bindings (env-var driven)
+│   ├── resources.bicep            # Resource composition
+│   ├── abbreviations.json         # Azure resource-name abbreviations
+│   └── modules/                   # Per-resource modules (containerApp, foundry, aiSearch, identity, RBAC, ...)
 │
 ├── assets/                        # Non-code, non-corpus assets (not consumed at runtime)
 │   └── avatar/                    # Source photo(s) used to train custom photo avatars in Speech Studio
@@ -484,8 +536,10 @@ avatar-forge/
 │   └── agent/
 │       ├── description.md                  # Short agent description
 │       ├── instructions-nonreasoning.md    # System prompt for gpt-4.x / gpt-4o (literal, hard rules)
-│       └── instructions-reasoning.md       # System prompt for o-series / gpt-5 (deliberate, multi-step)
+│       ├── instructions-reasoning.md       # System prompt for o-series / gpt-5 (deliberate, multi-step)
+│       └── routing-test-questions.md       # Tool-routing test checklist + harness + model-shootout results
 │
+├── azure.yaml                     # azd service + hooks definition (infra path, postprovision/predeploy)
 ├── pyproject.toml                 # Project metadata, dependencies, [project.scripts] entry point
 ├── uv.lock                        # Locked dependency versions
 ├── Dockerfile                     # Container build (python:3.12-slim + uv)
