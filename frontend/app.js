@@ -173,7 +173,6 @@ function warmWebRTCEngine() {
         const warm = new RTCPeerConnection({});
         // Closing immediately is fine — we just wanted the constructor to run.
         warm.close();
-        console.log('[WebRTC] engine warmed at page load');
     } catch (e) {
         // Ignore — older browsers / restrictive policies. Not fatal.
     }
@@ -248,7 +247,7 @@ async function fetchServerConfig() {
             catch (err) { console.error('Auto-connect failed', err); }
         }
     } catch (e) {
-        console.log('No server config available, using defaults', e);
+        console.warn('No server config available, using defaults:', e?.message || e);
     }
 }
 

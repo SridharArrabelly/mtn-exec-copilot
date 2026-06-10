@@ -34,6 +34,21 @@ Azure Container App, e.g. `avatar-forge.<region>.azurecontainerapps.io` (no
 uv run python teams/build_package.py --hostname <your-app>.azurecontainerapps.io
 ```
 
+For the **current deployment** the bare host is
+`ca-mtn-agent-forge-hz3cp52lid6xq.whitedune-5a2336c6.swedencentral.azurecontainerapps.io`,
+so the exact rebuild command is:
+
+```bash
+uv run python teams/build_package.py \
+  --hostname ca-mtn-agent-forge-hz3cp52lid6xq.whitedune-5a2336c6.swedencentral.azurecontainerapps.io
+```
+
+> **Rebuild after a redeploy:** the hostname only changes if the Container App is
+> recreated (a fresh `azd up` into a new environment). A normal `azd deploy` /
+> image push keeps the same host, so the existing `avatar-forge-teams.zip` stays
+> valid and you do **not** need to rebuild or re-sideload. Rebuild only when the
+> host changes — then re-run the command above and re-upload the new zip.
+
 Optional flags (env var equivalents in parentheses):
 
 - `--version` (`TEAMS_APP_VERSION`) — manifest version, default `1.0.0`.

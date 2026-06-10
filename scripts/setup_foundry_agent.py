@@ -13,8 +13,10 @@ The agent's system prompt, model, and tool wiring live here; the runtime
 backend (``backend/``) only references the agent by ``AGENT_NAME`` /
 ``AGENT_PROJECT_NAME`` and lets Foundry resolve the rest server-side.
 
-The agent runs on ``gpt-4.1-mini`` + Grounding-with-Bing-Custom-Search: the
-validated voice config (single grounded round-trip, no web_search fan-out).
+The validated voice config is ``gpt-5.4`` (``AGENT_REASONING_EFFORT=none``) +
+Grounding-with-Bing-Custom-Search: a single grounded round-trip, no web_search
+fan-out. The model is chosen via ``AGENT_MODEL``; ``gpt-5.4-mini`` and the
+original ``gpt-4.1-mini`` baseline are also supported.
 
 Run ``scripts/test_foundry_agent.py`` after provisioning to smoke-test the
 agent end-to-end.
@@ -25,7 +27,7 @@ Required environment variables (see ``.env.example``):
     SEARCH_CONNECTION_NAME    Name of the Azure AI Search connection in the project
     SEARCH_INDEX_NAME         Azure AI Search index to expose to the agent
     AGENT_NAME                Name of the Foundry agent to create / version (e.g. ``MtnAvatarAgent``)
-    AGENT_MODEL               Model deployment name to bind to the agent (e.g. ``gpt-4.1-mini``)
+    AGENT_MODEL               Model deployment name to bind to the agent (e.g. ``gpt-5.4``)
     BING_CONNECTION_NAME      Name of the Grounding-with-Bing-Custom-Search connection in the project
     BING_CUSTOM_CONFIG_NAME   Bing Custom Search configuration (instance) name — the curated
                               allow-list of sites that the tool is restricted to.
@@ -223,13 +225,14 @@ def build_tools(
     until the SDK exposes the field; recall on this small corpus is strong.
 
     top_k defaults to 8 (env: ``AI_SEARCH_TOP_K``) — the validated production
-    value. It is enough chunks to summarise from when several come from the
-    one chunk from the right meeting reached the model); top_k=8 widens
-    completeness on summary questions without hurting meeting scoping.
+    value. It pulls enough chunks to summarise from when several meetings are
+    relevant, widening completeness on summary questions without hurting
+    single-meeting scoping.
     """
-    # Tool ORDER matters: gpt-4.1-mini biases hard toward the first tool. Put
-    # azure_ai_search first so MTN-meeting questions ground in the index
-    # instead of falling through to the web tool.
+    # Tool ORDER matters: smaller / non-reasoning models (e.g. the gpt-4.1-mini
+    # baseline) bias hard toward the first tool, and even gpt-5.x benefits from
+    # the hint. Put azure_ai_search first so MTN-meeting questions ground in the
+    # index instead of falling through to the web tool.
     ai_search = AzureAISearchTool(
         azure_ai_search=AzureAISearchToolResource(
             indexes=[
@@ -282,16 +285,20 @@ def create_agent(project: AIProjectClient, settings: dict):
 
     The validated voice configs are:
 
-      * gpt-4.1-mini                              — leave AGENT_REASONING_EFFORT
-                                                    unset. gpt-4.x reject it.
-      * gpt-5.4-mini + AGENT_REASONING_EFFORT=none — RECOMMENDED. Same first-
-                                                    token latency as gpt-4.1-mini
-                                                    with better synthesis. Any
+      * gpt-5.4 + AGENT_REASONING_EFFORT=none      — RECOMMENDED (production).
+                                                    Best tool-routing accuracy
+                                                    and numeric synthesis. Any
                                                     other effort value (low,
                                                     medium, high, xhigh) adds
                                                     4-5 seconds to first-token,
                                                     which is too laggy for
                                                     conversational voice use.
+      * gpt-5.4-mini + AGENT_REASONING_EFFORT=none — faster first token; a fine
+                                                    cost-saving fallback.
+      * gpt-4.1-mini                               — original non-reasoning
+                                                    baseline. Leave
+                                                    AGENT_REASONING_EFFORT unset
+                                                    (gpt-4.x reject it).
     """
     azs_connection = project.connections.get(settings["search_connection_name"])
 

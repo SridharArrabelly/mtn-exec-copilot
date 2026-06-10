@@ -26,7 +26,7 @@
     "bingConnectionName":  { "value": "${BING_CONNECTION_NAME=}" },
     "bingCustomConfigName":{ "value": "${BING_CUSTOM_CONFIG_NAME=}" },
 
-    "agentModel":             { "value": "${AGENT_MODEL=gpt-4.1-mini}" },
+    "agentModel":             { "value": "${AGENT_MODEL=gpt-5.4}" },
     "embeddingDeployment":    { "value": "${EMBEDDING_DEPLOYMENT=text-embedding-3-small}" },
     "avatarName":             { "value": "${AVATAR_NAME=Lisa-casual-sitting}" },
     "customAvatarName":       { "value": "${CUSTOM_AVATAR_NAME=}" },
@@ -37,9 +37,9 @@
     "srModel":             { "value": "${SR_MODEL=mai-transcribe-1}" },
     "recognitionLanguage": { "value": "${RECOGNITION_LANGUAGE=auto}" },
 
-    "modelName":           { "value": "${MODEL_NAME=gpt-4.1-mini}" },
-    "modelVersion":        { "value": "${MODEL_VERSION=2025-04-14}" },
-    "modelDeploymentName": { "value": "${MODEL_DEPLOYMENT_NAME=gpt-4.1-mini}" },
+    "modelName":           { "value": "${MODEL_NAME=gpt-5.4}" },
+    "modelVersion":        { "value": "${MODEL_VERSION=2026-03-05}" },
+    "modelDeploymentName": { "value": "${MODEL_DEPLOYMENT_NAME=gpt-5.4}" },
     "modelSkuName":        { "value": "${MODEL_SKU_NAME=GlobalStandard}" },
     "modelCapacity":       { "value": 50 }
   }
