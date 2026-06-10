@@ -439,6 +439,38 @@ A ready-to-use OIDC-based workflow lives at [.github/workflows/azure-dev.yml](.g
    - **Secrets:** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
    - **Variables:** `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP_NAME` (required); optionally `FOUNDRY_*` / `SEARCH_*` / `APPINSIGHTS_*` / `AGENT_*` / `MODEL_*` overrides
 4. Push to `main` (or run the workflow manually) — it will `azd provision` then `azd deploy`.
+
+## Run in Microsoft Teams (sideload)
+
+The app can also run as a **Microsoft Teams personal tab** that embeds the same web UI (mic + WebRTC avatar). This is **Phase 1 / scope 1A**: an anonymous, sideloaded prototype — **no Teams-admin access, no SSO, and no org publishing required**. Everything lives in [`teams/`](teams/); see [`teams/README.md`](teams/README.md) for the full walkthrough and validation checklist.
+
+How it fits together (all additive — the standalone web app is unaffected):
+
+- [`teams/manifest.template.json`](teams/manifest.template.json) — Teams manifest (schema v1.17) with `{{HOSTNAME}}` / `{{VERSION}}` / `{{APP_ID}}` placeholders; personal static tab with `devicePermissions: ["media"]` for mic/camera.
+- [`teams/build_package.py`](teams/build_package.py) — stdlib-only script that renders the manifest and zips a sideloadable package (`manifest.json` + both icons at the archive root).
+- [`frontend/teams.js`](frontend/teams.js) — **no-op unless running inside Teams** (detected via the `?inTeams=1` param the manifest carries). Inside Teams it loads the pinned Teams JS SDK and mirrors the host light/dark theme into the existing `applyTheme()` hook; outside Teams the SDK is never fetched.
+- A single `Content-Security-Policy: frame-ancestors` response header (FastAPI middleware in [`backend/main.py`](backend/main.py)) so the Teams web/desktop clients can frame the app. Only `frame-ancestors` is set on purpose — a full CSP would break inline JS, the WSS voice socket, and WebRTC.
+
+Build the package against your deployed app's hostname, then sideload it:
+
+```bash
+# 1. Build (bare host of your Container App — no https://, no path, no port)
+uv run python teams/build_package.py --hostname <your-app>.<region>.azurecontainerapps.io
+# -> teams/build/avatar-forge-teams.zip
+```
+
+```text
+# 2. Sideload (no admin needed). Try Route A; if your tenant has custom-app
+#    upload disabled, use Route B:
+#   A. Teams -> Apps -> Manage your apps -> Upload an app -> Upload a custom app
+#   B. Teams Developer Portal (https://dev.teams.microsoft.com) -> Apps ->
+#      Import app -> Preview in Teams
+```
+
+Then open the **Avatar** personal tab, allow the microphone, and verify the avatar video + voice work in both the Teams **web** and **desktop** clients.
+
+> **Deferred to a later phase:** Entra SSO inside Teams, backend token enforcement, and admin-center / targeted-user publishing. The same package built here is reused unchanged when you later publish from the Teams admin center.
+
 ## Project Structure
 
 ```
@@ -463,14 +495,29 @@ avatar-forge/
 ├── frontend/                      # Static client assets (served at /)
 │   ├── index.html                 # UI page (avatar stage: video, name pill, docked mic, thinking, captions, onboarding)
 │   ├── style.css                  # Styles (incl. speaking glow, caption band, suggested-prompt chips)
-│   └── app.js                     # Audio capture/playback, WebRTC, WebSocket, UI logic (captions, glow, onboarding)
+│   ├── app.js                     # Audio capture/playback, WebRTC, WebSocket, UI logic (captions, glow, onboarding)
+│   └── teams.js                   # No-op unless in Teams: loads Teams JS SDK, mirrors host theme into applyTheme()
 │
 ├── scripts/                       # Utility / one-off scripts (not part of the server)
 │   ├── setup_foundry_agent.py     # Creates the Foundry agent with AI Search + Grounding-with-Bing-Custom-Search tools
 │   ├── setup_aisearch_index.py    # Creates/updates the AI Search index and ingests data/ (docx/pdf/md/txt)
 │   ├── test_aisearch_query.py     # Smoke-tests the index with a hybrid + semantic query
 │   ├── test_foundry_agent.py      # Smoke-tests the live agent end-to-end (tool calls + answer)
+│   ├── grant_byo_rbac.py          # Idempotently grants BYO runtime RBAC (brownfield Foundry/Search)
 │   └── preflight.py               # Region/capability checks (Voice Live + Avatar) before azd up
+│
+├── teams/                         # Microsoft Teams personal-tab package (Phase 1, scope 1A)
+│   ├── README.md                  # Sideload walkthrough (no-admin routes) + validation checklist
+│   ├── manifest.template.json     # Teams manifest (schema v1.17) with {{HOSTNAME}}/{{VERSION}}/{{APP_ID}} placeholders
+│   ├── build_package.py           # Stdlib-only: renders the manifest and zips a sideloadable package
+│   └── icons/                     # color.png (192×192) + outline.png (32×32) app icons
+│
+├── infra/                         # Bicep IaC consumed by azd (azure.yaml)
+│   ├── main.bicep                 # Deployment entry point
+│   ├── main.parameters.json       # azd parameter bindings (env-var driven)
+│   ├── resources.bicep            # Resource composition
+│   ├── abbreviations.json         # Azure resource-name abbreviations
+│   └── modules/                   # Per-resource modules (containerApp, foundry, aiSearch, identity, RBAC, ...)
 │
 ├── assets/                        # Non-code, non-corpus assets (not consumed at runtime)
 │   └── avatar/                    # Source photo(s) used to train custom photo avatars in Speech Studio
@@ -484,8 +531,10 @@ avatar-forge/
 │   └── agent/
 │       ├── description.md                  # Short agent description
 │       ├── instructions-nonreasoning.md    # System prompt for gpt-4.x / gpt-4o (literal, hard rules)
-│       └── instructions-reasoning.md       # System prompt for o-series / gpt-5 (deliberate, multi-step)
+│       ├── instructions-reasoning.md       # System prompt for o-series / gpt-5 (deliberate, multi-step)
+│       └── routing-test-questions.md       # Tool-routing test checklist + harness + model-shootout results
 │
+├── azure.yaml                     # azd service + hooks definition (infra path, postprovision/predeploy)
 ├── pyproject.toml                 # Project metadata, dependencies, [project.scripts] entry point
 ├── uv.lock                        # Locked dependency versions
 ├── Dockerfile                     # Container build (python:3.12-slim + uv)
