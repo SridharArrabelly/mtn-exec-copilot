@@ -374,25 +374,6 @@ azd up
 uv run python scripts/setup_aisearch_index.py
 ```
 
-##### BYO with GitHub Actions
-
-Same idea, but configure the values as GitHub **Variables** instead of `azd env set`. The workflow at [.github/workflows/azure-dev.yml](.github/workflows/azure-dev.yml) already passes them through:
-
-```
-FOUNDRY_ACCOUNT_NAME
-FOUNDRY_RESOURCE_GROUP
-FOUNDRY_PROJECT_ENDPOINT
-SEARCH_SERVICE_NAME
-SEARCH_RESOURCE_GROUP
-SEARCH_INDEX_NAME
-APPINSIGHTS_NAME
-APPINSIGHTS_RESOURCE_GROUP
-BING_CONNECTION_NAME
-BING_CUSTOM_CONFIG_NAME
-```
-
-Set them under **Settings → Secrets and variables → Actions → Variables**, push to `main`, and the deploy reuses the existing resources.
-
 #### Tune the runtime config / model deployment
 
 The Bicep template accepts overrides via azd environment variables — set any of them before `azd provision`:
@@ -425,17 +406,6 @@ You can always rerun them manually (point your local `.env` at the deployed endp
 uv run python scripts/setup_aisearch_index.py     # rebuild the index
 uv run python scripts/setup_foundry_agent.py      # re-register the agent + tools
 ```
-
-#### CI/CD with GitHub Actions
-
-A ready-to-use OIDC-based workflow lives at [.github/workflows/azure-dev.yml](.github/workflows/azure-dev.yml). To wire it up:
-
-1. Create a Microsoft Entra application + service principal and configure a [federated credential](https://learn.microsoft.com/azure/active-directory/workload-identities/workload-identity-federation) for the repository / environment.
-2. Assign that SP **Owner** (or Contributor + User Access Administrator) on the target subscription.
-3. In **GitHub → Settings → Secrets and variables → Actions**, add:
-   - **Secrets:** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
-   - **Variables:** `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP_NAME` (required); optionally `FOUNDRY_*` / `SEARCH_*` / `APPINSIGHTS_*` / `AGENT_*` / `MODEL_*` overrides
-4. Push to `main` (or run the workflow manually) — it will `azd provision` then `azd deploy`.
 
 ## Run in Microsoft Teams (sideload)
 
