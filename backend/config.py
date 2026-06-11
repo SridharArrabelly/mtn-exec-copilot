@@ -88,15 +88,17 @@ BOT_APP_ID = os.getenv(
 # (ack-then-background-run), this is NOT bound by the Teams ~15s turn window.
 BOT_RUN_TIMEOUT_S = float(os.getenv("BOT_RUN_TIMEOUT_S", "60"))
 
-# The assistant's persona / brand name shown in the bot's welcome message (and
-# used as the Teams app display name at build time). This is a DEDICATED,
-# purely cosmetic label — it does NOT select the avatar model (that is
-# AVATAR_NAME / CUSTOM_AVATAR_NAME / PHOTO_AVATAR_NAME, gated by IS_*). It is
-# intentionally NOT derived from CUSTOM_AVATAR_NAME: that variable is a Speech
-# custom-avatar *model* identifier, valid only when IS_CUSTOM_AVATAR=true and
+# The assistant's persona / brand name. This is the SINGLE branding knob: it
+# names the Teams bot (welcome message + manifest) AND, when set, the bold name
+# shown top-left on the avatar stage in the web app / Tab (see get_ui_defaults'
+# "avatarDisplayName"). It is a purely cosmetic label — it does NOT select the
+# avatar model (that is AVATAR_NAME / CUSTOM_AVATAR_NAME / PHOTO_AVATAR_NAME,
+# gated by IS_*). It is intentionally NOT derived from CUSTOM_AVATAR_NAME: that
+# is a Speech custom-avatar *model* id, valid only when IS_CUSTOM_AVATAR=true and
 # empty/stale otherwise, so coupling them would let an avatar-model change
-# silently rename the bot. Set AVATAR_DISPLAY_NAME explicitly to brand it;
-# otherwise it falls back to the neutral "Avatar".
+# silently rename the assistant. For the bot, unset falls back to "Avatar"; for
+# the stage label, unset means "derive from the selected avatar model" (so the
+# web app keeps its existing behavior when the knob is not set).
 AVATAR_DISPLAY_NAME = os.getenv("AVATAR_DISPLAY_NAME", "").strip() or "Avatar"
 
 
@@ -164,8 +166,11 @@ def get_ui_defaults() -> dict:
         "customAvatarName": _str("CUSTOM_AVATAR_NAME", ""),
         "photoAvatarName": _str("PHOTO_AVATAR_NAME", "Anika"),
         "avatarBackgroundImageUrl": _str("AVATAR_BACKGROUND_IMAGE_URL", ""),
-        # Avatar identity tagline shown under the name (top-left of the stage).
-        # Empty hides the tagline line.
+        # Avatar identity shown top-left on the stage. The bold name line prefers
+        # AVATAR_DISPLAY_NAME (the single branding knob, also used for the Teams
+        # bot); empty here means "derive from the selected avatar model" (the
+        # default behavior). The tagline shows under it; empty hides that line.
+        "avatarDisplayName": os.getenv("AVATAR_DISPLAY_NAME", "").strip(),
         "avatarTagline": _str("AVATAR_TAGLINE", "Your Digital Assistant"),
         # Avatar UX (additive, env-gated)
         "enableTextInput": _bool("ENABLE_TEXT_INPUT", True),

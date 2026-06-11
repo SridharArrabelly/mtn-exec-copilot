@@ -73,6 +73,7 @@ let connectionState = null;
 let intentionalDisconnect = false;
 let onboardingHintText = 'Tap the mic and ask me anything';
 let avatarTaglineText = '';
+let avatarDisplayNameText = '';
 let suggestedPrompts = [];
 // Onboarding lifecycle: dismissed permanently after the first real user action;
 // hidden temporarily while the avatar speaks (e.g. the proactive greeting).
@@ -212,6 +213,7 @@ async function fetchServerConfig() {
         suggestedPromptsEnabled = d.enableSuggestedPrompts ?? true;
         onboardingHintText = d.onboardingHint ?? onboardingHintText;
         avatarTaglineText = d.avatarTagline ?? avatarTaglineText;
+        avatarDisplayNameText = d.avatarDisplayName ?? avatarDisplayNameText;
         const taglineEl = document.getElementById('avatarTagline');
         if (taglineEl) taglineEl.textContent = avatarTaglineText || '';
         suggestedPrompts = Array.isArray(d.suggestedPrompts) ? d.suggestedPrompts : [];
@@ -994,6 +996,12 @@ function shouldShowAvatarPanel() {
 function setAvatarNameLabelFromConfig() {
     const labelEl = document.getElementById('avatarNameLabel');
     if (!labelEl) return;
+    // AVATAR_DISPLAY_NAME (the single branding knob) wins when set, shown
+    // verbatim. Otherwise derive a friendly name from the selected avatar model.
+    if (avatarDisplayNameText) {
+        labelEl.textContent = avatarDisplayNameText;
+        return;
+    }
     const isCustomA = document.getElementById('isCustomAvatar')?.checked;
     const isPhotoA = document.getElementById('isPhotoAvatar')?.checked;
     const rawName = isCustomA
