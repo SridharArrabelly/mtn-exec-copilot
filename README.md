@@ -615,3 +615,9 @@ Audio uses **binary WebSocket frames** for the hot path in both directions (raw 
 | `speech_stopped` | User stopped speaking |
 | `avatar_connecting` | Avatar WebRTC connection in progress |
 | `session_closed` | Session ended |
+
+## License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for the full text.
+
+Copyright (c) 2026 Sridhar Arrabelly
