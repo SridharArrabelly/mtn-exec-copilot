@@ -1251,9 +1251,11 @@ input[type="range"]::-webkit-slider-thumb {
 .avatar-mic-btn .mic-off-icon line { stroke: var(--overlay-text); }
 
 /* ===== Stop-speaking button (normal mode) — env-gated (ENABLE_STOP_BUTTON).
-   Docked next to the mic whenever the avatar is on screen; neutral/greyed while
-   idle and red+actionable only while the avatar is speaking. margin-left:auto
-   keeps the stop+mic pair pinned right even when the composer is hidden. ===== */
+   Docked immediately left of the mic whenever the avatar is on screen;
+   neutral/greyed while idle and red+actionable only while the avatar is
+   speaking. The stop button carries the margin-left:auto that right-pins the
+   pair; when it's visible we zero the mic's own auto-margin so the two cluster
+   together instead of splitting across the row. ===== */
 .avatar-stop-btn {
     position: relative;
     flex-shrink: 0;
@@ -1274,6 +1276,10 @@ input[type="range"]::-webkit-slider-thumb {
     opacity: 0.55;
     transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.12s ease;
 }
+/* When the stop button is shown, it owns the auto-margin — drop the mic's so
+   the mic sits flush beside it (otherwise both autos split the free space and
+   leave a gap, stranding the stop button mid-row). */
+.avatar-stop-btn:not(.hidden) + .avatar-mic-btn { margin-left: 0; }
 .avatar-stop-btn svg { width: 44%; height: 44%; fill: var(--overlay-text); }
 .avatar-stop-btn.active {
     background: rgba(168, 0, 0, 0.9);
