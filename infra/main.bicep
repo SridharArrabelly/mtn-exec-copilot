@@ -55,6 +55,8 @@ param agentModel string = 'gpt-5.4'
 param embeddingDeployment string = 'text-embedding-3-small'
 param avatarName string = 'Lisa-casual-sitting'
 param customAvatarName string = ''
+@description('Assistant persona / display name (e.g. "Nuru"). Decoupled from the avatar model; empty falls back to CUSTOM_AVATAR_NAME at runtime.')
+param avatarDisplayName string = ''
 param photoAvatarName string = ''
 param isPhotoAvatar string = 'false'
 param isCustomAvatar string = 'false'
@@ -133,6 +135,7 @@ module resources 'resources.bicep' = {
     embeddingDeployment: embeddingDeployment
     avatarName: avatarName
     customAvatarName: customAvatarName
+    avatarDisplayName: avatarDisplayName
     photoAvatarName: photoAvatarName
     isPhotoAvatar: isPhotoAvatar
     isCustomAvatar: isCustomAvatar

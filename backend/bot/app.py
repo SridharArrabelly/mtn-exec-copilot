@@ -35,14 +35,14 @@ from microsoft_agents.hosting.core import (
 )
 from microsoft_agents.hosting.fastapi import CloudAdapter, start_agent_process
 
-from ..config import BOT_APP_ID, BOT_RUN_TIMEOUT_S
+from ..config import AVATAR_DISPLAY_NAME, BOT_APP_ID, BOT_RUN_TIMEOUT_S
 from .agent_runtime import ask_agent, close_agent_client
 from .cards import answer_card
 
 logger = logging.getLogger(__name__)
 
 WELCOME = (
-    "👋 Hi! I'm the Avatar Forge assistant. Ask me a question and I'll answer "
+    f"👋 Hi! I'm {AVATAR_DISPLAY_NAME}. Ask me a question and I'll answer "
     "from our knowledge base with sources. In a channel or group chat, "
     "**@mention me** to get my attention."
 )

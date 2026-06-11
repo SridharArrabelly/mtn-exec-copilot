@@ -88,6 +88,20 @@ BOT_APP_ID = os.getenv(
 # (ack-then-background-run), this is NOT bound by the Teams ~15s turn window.
 BOT_RUN_TIMEOUT_S = float(os.getenv("BOT_RUN_TIMEOUT_S", "60"))
 
+# The assistant's persona / brand name (e.g. shown in the bot's welcome message
+# and used as the Teams app display name at build time). This is intentionally a
+# DEDICATED knob, decoupled from CUSTOM_AVATAR_NAME — that variable binds the
+# Azure Voice Live custom-avatar *model* and is empty outside custom-avatar mode,
+# so it is the wrong thing to brand with. Resolution order:
+#   1. AVATAR_DISPLAY_NAME (explicit override)
+#   2. CUSTOM_AVATAR_NAME  (sensible default when a named custom avatar is in use)
+#   3. "Avatar"           (neutral fallback)
+AVATAR_DISPLAY_NAME = (
+    os.getenv("AVATAR_DISPLAY_NAME", "").strip()
+    or os.getenv("CUSTOM_AVATAR_NAME", "").strip()
+    or "Avatar"
+)
+
 
 def _bool(name: str, default: bool) -> bool:
     return os.getenv(name, str(default)).strip().lower() in ("1", "true", "yes", "on")

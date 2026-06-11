@@ -21,6 +21,8 @@ param agentModel string = ''
 param embeddingDeployment string = ''
 param avatarName string = ''
 param customAvatarName string = ''
+@description('Assistant persona / display name (e.g. "Nuru"). Decoupled from the avatar-model binding; used by the bot welcome message. Empty falls back to CUSTOM_AVATAR_NAME at runtime.')
+param avatarDisplayName string = ''
 param photoAvatarName string = ''
 @description('"true"/"false" string — frontend treats prebuilt as photo avatar when "true".')
 param isPhotoAvatar string = ''
@@ -143,6 +145,7 @@ resource app 'Microsoft.App/containerApps@2024-10-02-preview' = {
             { name: 'BING_CUSTOM_CONFIG_NAME', value: bingCustomConfigName }
             { name: 'AVATAR_NAME', value: avatarName }
             { name: 'CUSTOM_AVATAR_NAME', value: customAvatarName }
+            { name: 'AVATAR_DISPLAY_NAME', value: avatarDisplayName }
             { name: 'PHOTO_AVATAR_NAME', value: photoAvatarName }
             { name: 'IS_PHOTO_AVATAR', value: isPhotoAvatar }
             { name: 'IS_CUSTOM_AVATAR', value: isCustomAvatar }

@@ -20,6 +20,10 @@ Inputs (CLI flag overrides env var):
     --bot-id   / TEAMS_BOT_ID        Optional. Azure Bot / Entra app GUID. When omitted the
                                      build is tab-only (Phase 1) — the additive `bots` entry
                                      is dropped so the Tab package always builds.
+    --name     / TEAMS_APP_NAME      Optional. Assistant persona / display name shown in Teams
+                                     (default "Nuru"). The full name + description are derived
+                                     from it. This is the brand name, decoupled from the avatar
+                                     model binding (CUSTOM_AVATAR_NAME).
 
 Output:
     teams/build/avatar-forge-teams.zip
@@ -88,17 +92,57 @@ def _resolve_bot_id(raw: str | None) -> str:
         sys.exit(f"error: --bot-id must be a valid GUID, got {bot!r}")
 
 
+def _json_inner(s: str) -> str:
+    """JSON-escape a string for safe substitution inside a JSON string literal."""
+    return json.dumps(s)[1:-1]
+
+
+def _resolve_names(raw_name: str | None, raw_full: str | None) -> dict[str, str]:
+    """Derive the manifest name/description fields from the persona name.
+
+    The display name is the assistant's brand/persona (e.g. "Nuru"), kept
+    deliberately separate from the avatar-model binding (CUSTOM_AVATAR_NAME).
+    Enforces the Teams v1.17 length limits (short name 30, full name 100,
+    short description 80, full description 4000).
+    """
+    name = (raw_name or "").strip() or "Nuru"
+    full = (raw_full or "").strip() or f"{name} — Azure Voice Live Avatar"
+    desc_short = f"Chat with {name}, a real-time voice avatar."
+    desc_full = (
+        f"{name} brings the Azure Voice Live avatar experience to Microsoft Teams. "
+        "Ask questions in chat and get grounded answers with sources, or open the "
+        "personal tab to talk with a real-time, lip-synced avatar. Microphone access "
+        "is required for the live avatar conversation."
+    )
+    limits = {"name": (name, 30), "full name": (full, 100),
+              "short description": (desc_short, 80), "full description": (desc_full, 4000)}
+    for label, (value, cap) in limits.items():
+        if not value:
+            sys.exit(f"error: manifest {label} must not be empty")
+        if len(value) > cap:
+            sys.exit(f"error: manifest {label} exceeds {cap} chars ({len(value)}): {value!r}")
+    return {
+        "APP_NAME": name,
+        "APP_FULL_NAME": full,
+        "APP_DESC_SHORT": desc_short,
+        "APP_DESC_FULL": desc_full,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build the Teams app package (scope 1A).")
     parser.add_argument("--hostname", default=os.getenv("TEAMS_HOSTNAME"))
     parser.add_argument("--version", default=os.getenv("TEAMS_APP_VERSION", "1.0.0"))
     parser.add_argument("--app-id", default=os.getenv("TEAMS_APP_ID"))
     parser.add_argument("--bot-id", default=os.getenv("TEAMS_BOT_ID"))
+    parser.add_argument("--name", default=os.getenv("TEAMS_APP_NAME"))
+    parser.add_argument("--full-name", default=os.getenv("TEAMS_APP_FULL_NAME"))
     args = parser.parse_args(argv)
 
     hostname = _normalize_hostname(args.hostname)
     app_id = _resolve_app_id(args.app_id, hostname)
     bot_id = _resolve_bot_id(args.bot_id)
+    names = _resolve_names(args.name, args.full_name)
     version = args.version.strip()
 
     with open(TEMPLATE, "r", encoding="utf-8") as f:
@@ -109,6 +153,10 @@ def main(argv: list[str] | None = None) -> int:
         .replace("{{HOSTNAME}}", hostname)
         .replace("{{VERSION}}", version)
         .replace("{{APP_ID}}", app_id)
+        .replace("{{APP_NAME}}", _json_inner(names["APP_NAME"]))
+        .replace("{{APP_FULL_NAME}}", _json_inner(names["APP_FULL_NAME"]))
+        .replace("{{APP_DESC_SHORT}}", _json_inner(names["APP_DESC_SHORT"]))
+        .replace("{{APP_DESC_FULL}}", _json_inner(names["APP_DESC_FULL"]))
         # When building tab-only (no bot id), substitute a throwaway GUID so the
         # template parses; the whole ``bots`` entry is dropped right after.
         .replace("{{BOT_ID}}", bot_id or "00000000-0000-0000-0000-000000000000")
@@ -147,6 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         zf.write(outline, "outline.png")
 
     print(f"Built {OUTPUT_ZIP}")
+    print(f"  name:     {names['APP_NAME']}")
     print(f"  hostname: {hostname}")
     print(f"  version:  {version}")
     print(f"  app id:   {app_id}")
