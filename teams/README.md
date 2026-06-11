@@ -234,10 +234,13 @@ the tab and the bot.
 
 ## Known gating risks
 
-- **Turn latency:** a grounded answer can take several seconds. The bot sends a typing
-  indicator and waits up to `BOT_RUN_TIMEOUT_S` (default 12s); if exceeded it returns a
-  "still working" holding reply. A proactive "answer arrives later" flow is a planned
-  enhancement, not in the MVP.
+- **Turn latency:** a grounded answer can take several seconds (AI Search + Bing). To stay
+  within the Teams ~15s activity-response window, the bot **acknowledges immediately** (typing
+  indicator) and runs the Foundry agent in the **background**, then posts the answer (Adaptive
+  Card with sources) as a **proactive message** to the same conversation. `BOT_RUN_TIMEOUT_S`
+  (default 60s) caps the background run; on timeout the bot posts a brief "took too long" reply.
+  This requires the bot's app id (`CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID`) to be
+  set so proactive `continue_conversation` can authenticate.
 - **Conversational memory:** the MVP treats each turn statelessly. Multi-turn memory
   (threading via the Responses API) is wired but off by default to avoid cross-user
   context bleed in group/meeting chats.

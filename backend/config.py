@@ -76,10 +76,17 @@ AGENT_ID = os.getenv("AGENT_ID", "")
 TEAMS_APP_ID = os.getenv("TEAMS_APP_ID", "")
 # entityId of the personal static tab in teams/manifest.template.json.
 TEAMS_TAB_ENTITY_ID = os.getenv("TEAMS_TAB_ENTITY_ID", "avatarForgeHome")
-# Seconds to poll a Foundry run synchronously inside a Teams turn before
-# returning a "still working" holding reply (proactive continuation is a later
-# enhancement). Keep well under the Teams ~15s activity timeout.
-BOT_RUN_TIMEOUT_S = float(os.getenv("BOT_RUN_TIMEOUT_S", "12"))
+# The bot's Entra app (client) id, used to send proactive messages back to a
+# conversation. Read from the same env var the Agents SDK uses for the service
+# connection so there is a single source of truth (set by infra/containerApp).
+BOT_APP_ID = os.getenv(
+    "CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID",
+    os.getenv("BOT_APP_ID", ""),
+)
+# Max seconds to let a Foundry run execute in the background before giving up and
+# posting a "took too long" reply. Because answers are delivered proactively
+# (ack-then-background-run), this is NOT bound by the Teams ~15s turn window.
+BOT_RUN_TIMEOUT_S = float(os.getenv("BOT_RUN_TIMEOUT_S", "60"))
 
 
 def _bool(name: str, default: bool) -> bool:
