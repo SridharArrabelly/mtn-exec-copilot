@@ -1,8 +1,16 @@
-# Avatar Forge — Microsoft Teams app (Phase 1, scope 1A)
+# Avatar Forge — Microsoft Teams app (tab + conversational bot)
 
-This folder packages the Avatar Forge web app as an **anonymous Microsoft Teams
-personal tab**. Scope **1A** is a **prototype** with one goal: **make it run in Teams
-via sideload, with no Teams-admin access required.**
+This folder packages the Avatar Forge web app as a **Microsoft Teams app** with two
+surfaces in **one package**: a personal **tab** that embeds the web UI (Phase 1,
+scope 1A) and an installable, @mentionable **conversational bot** (Phase 2a, issue
+#53). Both are additive and sideloadable with **no Teams-admin access required**.
+
+- **Phase 1 — personal tab** (below): an anonymous, sideloaded prototype that embeds
+  the existing web UI (mic + WebRTC avatar). No SSO, no org publishing.
+- **Phase 2a — conversational bot** ([jump down](#phase-2a--conversational-bot-issue-53)):
+  a bot that answers via the same Foundry agent and deep-links back into the tab.
+
+Start with the tab walkthrough, then the bot section if you're enabling it.
 
 - Personal-scope **static tab** that embeds the existing web UI (mic + WebRTC avatar).
 - **No SSO** and **no org/admin publishing** — those are a later phase you'll drive
