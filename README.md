@@ -540,7 +540,7 @@ AUTH_EXCLUDE_MANAGED_IDENTITY=true
 
 ### What this env var does NOT fix
 
-Even with the IMDS probe skipped, `AzureCliCredential` has no in-memory token cache and shells out to `az account get-access-token` (~1.5s per Windows subprocess spawn) every time an SDK requests a token. You will still see one extra `AzureCliCredential.get_token_info succeeded` log line per scope when (a) the catalogue's `SearchClient.search()` runs and (b) the Voice Live SDK opens a session. These are dev-laptop only — in Azure with managed identity the tokens are cached in-process for ~1 hour and these duplicate acquisitions disappear.
+Even with the IMDS probe skipped, `AzureCliCredential` itself has no in-memory token cache — each acquisition shells out to `az account get-access-token` (~1.5s per Windows subprocess spawn). To avoid paying that on every token request, `auth.py` wraps `DefaultAzureCredential` in a process-wide `_CachingCredentialWrapper` that acquires **one token per scope and reuses it** until ~5 min before expiry (serving both the Voice Live `get_token` path and the AI Search `get_token_info` path from the same cache). Startup pre-warm is also sequenced — credential first, then the catalogue fetch — so the catalogue's `SearchClient` reuses the already-warmed `search.azure.com` token instead of spawning its own `az` call. Net effect on a dev laptop: roughly one `az account get-access-token` per distinct scope at startup, not one per SDK call. In Azure with managed identity those acquisitions are in-process HTTP calls to IMDS (cached ~1 hour) rather than subprocess spawns.
 
 ## WebSocket Protocol
 
