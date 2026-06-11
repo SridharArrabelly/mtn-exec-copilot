@@ -542,47 +542,6 @@ AUTH_EXCLUDE_MANAGED_IDENTITY=true
 
 Even with the IMDS probe skipped, `AzureCliCredential` itself has no in-memory token cache — each acquisition shells out to `az account get-access-token` (~1.5s per Windows subprocess spawn). To avoid paying that on every token request, `auth.py` wraps `DefaultAzureCredential` in a process-wide `_CachingCredentialWrapper` that acquires **one token per scope and reuses it** until ~5 min before expiry (serving both the Voice Live `get_token` path and the AI Search `get_token_info` path from the same cache). Startup pre-warm is also sequenced — credential first, then the catalogue fetch — so the catalogue's `SearchClient` reuses the already-warmed `search.azure.com` token instead of spawning its own `az` call. Net effect on a dev laptop: roughly one `az account get-access-token` per distinct scope at startup, not one per SDK call. In Azure with managed identity those acquisitions are in-process HTTP calls to IMDS (cached ~1 hour) rather than subprocess spawns.
 
-## WebSocket Protocol
-
-Audio uses **binary WebSocket frames** for the hot path in both directions (raw PCM16 bytes — no base64, no JSON wrap). The `audio_chunk` / `audio_data` JSON message types below are retained only as a legacy fallback for older clients.
-
-### Frontend → Backend
-
-| Message Type | Description |
-|---|---|
-| *(binary frame)* | Microphone audio — raw PCM16 bytes (24kHz, mono). **Primary path.** |
-| `start_session` | Start Voice Live session with configuration |
-| `stop_session` | Stop the active session |
-| `audio_chunk` | *Legacy:* microphone audio as base64 PCM16 in JSON (fallback) |
-| `send_text` | Send a text message |
-| `avatar_sdp_offer` | Forward WebRTC SDP offer for avatar |
-| `interrupt` | Cancel current assistant response |
-| `update_scene` | Update photo avatar scene settings (live) |
-
-### Backend → Frontend
-
-| Message Type | Description |
-|---|---|
-| *(binary frame)* | Assistant audio — raw PCM16 bytes (24kHz, mono). **Primary path.** |
-| `session_started` | Session ready |
-| `session_error` | Error starting/during session |
-| `ice_servers` | ICE server config for avatar WebRTC |
-| `avatar_sdp_answer` | Server's SDP answer for avatar WebRTC |
-| `audio_data` | *Legacy:* assistant audio as base64 PCM16 in JSON (fallback) |
-| `video_data` | Avatar video chunk (base64 fMP4, WebSocket mode) |
-| `transcript_delta` | Streaming transcript text |
-| `transcript_done` | Completed transcript |
-| `transcript_empty` | User turn produced no recognized speech — UI drops the dangling placeholder (and restores the onboarding hint) |
-| `text_delta` | Streaming text response |
-| `text_done` | Text response completed |
-| `response_created` | New response started |
-| `response_done` | Response completed (end of generation — in WebRTC avatar mode the avatar keeps speaking after this) |
-| `audio_done` | Assistant audio generation finished |
-| `speech_started` | User started speaking (barge-in) |
-| `speech_stopped` | User stopped speaking |
-| `avatar_connecting` | Avatar WebRTC connection in progress |
-| `session_closed` | Session ended |
-
 ## License
 
 This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for the full text.
