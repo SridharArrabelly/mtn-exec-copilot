@@ -439,16 +439,34 @@ class VoiceSessionHandler:
                 logger.error(f"Error sending avatar SDP offer: {e}")
 
     async def interrupt(self):
-        """Interrupt current response."""
-        if self.connection:
-            try:
-                await self.connection.response.cancel()
-                await self.send_message({
-                    "type": "stop_playback",
-                    "reason": "manual_interrupt",
-                })
-            except Exception as e:
-                logger.error(f"Error interrupting: {e}")
+        """Interrupt the current response — mirror what server-VAD barge-in does.
+
+        Two steps, each best-effort:
+          1. response.cancel() stops in-flight generation. On its own this is a
+             no-op once a turn has finished generating but the avatar is still
+             rendering buffered speech (long answers play for seconds after
+             response.done), which is why a manual stop "did nothing".
+          2. output_audio_buffer.clear() truncates the server-side audio output
+             immediately — this is what actually stops the WebRTC avatar
+             mid-sentence, matching auto_truncate barge-in behaviour.
+        """
+        if not self.connection:
+            return
+        try:
+            await self.connection.response.cancel()
+        except Exception as e:
+            logger.debug(f"response.cancel during interrupt (often no active response): {e}")
+        try:
+            await self.connection.output_audio_buffer.clear()
+        except Exception as e:
+            logger.warning(f"output_audio_buffer.clear during interrupt failed: {e}")
+        try:
+            await self.send_message({
+                "type": "stop_playback",
+                "reason": "manual_interrupt",
+            })
+        except Exception as e:
+            logger.error(f"Error notifying client of interrupt: {e}")
 
     async def update_avatar_scene(self, avatar_data: dict):
         """Send a raw session.update with avatar scene config.

@@ -764,6 +764,11 @@ function handleServerMessage(msg) {
         case 'speech_stopped':
             onSpeechStopped();
             break;
+        case 'stop_playback':
+            // Server truncated the output audio (manual Stop button). Clear any
+            // local PCM playback and drop the speaking glow immediately.
+            stopAudioPlayback();
+            break;
         case 'transcript_empty':
             onTranscriptEmpty(msg.itemId);
             break;
