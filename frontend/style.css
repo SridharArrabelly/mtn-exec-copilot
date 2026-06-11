@@ -1250,10 +1250,10 @@ input[type="range"]::-webkit-slider-thumb {
 .avatar-mic-btn .mic-off-icon { fill: var(--overlay-text); }
 .avatar-mic-btn .mic-off-icon line { stroke: var(--overlay-text); }
 
-/* ===== Stop-speaking button (normal mode) — env-gated (ENABLE_STOP_BUTTON),
-   shown only while the avatar is talking. Sits just left of the mic in the
-   dock; margin-left:auto keeps the stop+mic pair pinned to the right even when
-   the text composer is hidden. ===== */
+/* ===== Stop-speaking button (normal mode) — env-gated (ENABLE_STOP_BUTTON).
+   Docked next to the mic whenever the avatar is on screen; neutral/greyed while
+   idle and red+actionable only while the avatar is speaking. margin-left:auto
+   keeps the stop+mic pair pinned right even when the composer is hidden. ===== */
 .avatar-stop-btn {
     position: relative;
     flex-shrink: 0;
@@ -1265,17 +1265,25 @@ input[type="range"]::-webkit-slider-thumb {
     justify-content: center;
     padding: 0;
     border-radius: 999px;
-    background: rgba(168, 0, 0, 0.9);
+    background: var(--overlay-surface);
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(168, 0, 0, 0.6);
+    border: 1px solid var(--overlay-border);
     box-shadow: 0 4px 18px var(--overlay-shadow);
-    cursor: pointer;
-    transition: background 0.2s ease, border-color 0.2s ease, transform 0.12s ease;
+    cursor: default;
+    opacity: 0.55;
+    transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.12s ease;
 }
-.avatar-stop-btn svg { width: 44%; height: 44%; fill: #fff; }
-.avatar-stop-btn:hover { background: rgba(196, 0, 0, 0.95); }
-.avatar-stop-btn:active { transform: scale(0.94); }
+.avatar-stop-btn svg { width: 44%; height: 44%; fill: var(--overlay-text); }
+.avatar-stop-btn.active {
+    background: rgba(168, 0, 0, 0.9);
+    border-color: rgba(168, 0, 0, 0.6);
+    opacity: 1;
+    cursor: pointer;
+}
+.avatar-stop-btn.active svg { fill: #fff; }
+.avatar-stop-btn.active:hover { background: rgba(196, 0, 0, 0.95); }
+.avatar-stop-btn.active:active { transform: scale(0.94); }
 
 /* ===== Stage text composer (normal mode) — flex child of .avatar-dock ===== */
 .stage-composer {

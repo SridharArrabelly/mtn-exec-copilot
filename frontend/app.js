@@ -1179,18 +1179,20 @@ function setAvatarSpeaking(on) {
     }
 }
 
-// Show the stop-speaking button only while the avatar is talking AND the
-// feature is enabled (ENABLE_STOP_BUTTON). Purely additive normal-mode control.
+// The stop button stays docked next to the mic while the avatar is on screen
+// (presence handled in updateDeveloperModeLayout); here we just toggle whether
+// it's actionable — enabled only while the avatar is actually speaking.
 function updateStopButton() {
     const btn = document.getElementById('avatarStopBtn');
     if (!btn) return;
-    const show = avatarSpeaking && stopButtonEnabled;
-    btn.classList.toggle('hidden', !show);
+    btn.disabled = !avatarSpeaking;
+    btn.classList.toggle('active', avatarSpeaking);
 }
 
 // User pressed Stop: tell the server to cancel the in-flight response (reuses
 // the existing barge-in interrupt path) and halt local audio immediately.
 function stopAvatarSpeaking() {
+    if (!avatarSpeaking) return;
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'interrupt' }));
     }
@@ -1418,6 +1420,14 @@ function updateDeveloperModeLayout() {
     const avatarReady = showAvatar && !avatarConnecting;
     if (avatarMicBtn) hide(avatarMicBtn, !avatarReady);
     if (avatarReady) hide(footerArea, true);
+
+    // Docked stop-speaking button: lives next to the mic with the same
+    // readiness as the docked mic (env-gated by ENABLE_STOP_BUTTON). It stays
+    // visible while the avatar is on screen but is only *enabled* while she's
+    // actually speaking — see updateStopButton().
+    const avatarStopBtn = document.getElementById('avatarStopBtn');
+    if (avatarStopBtn) hide(avatarStopBtn, !(avatarReady && stopButtonEnabled));
+    updateStopButton();
 
     // Bottom-center stage composer: normal (production) mode only, env-gated,
     // and only once the avatar is on screen (same readiness as the docked mic).
