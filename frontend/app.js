@@ -76,7 +76,7 @@ let connectionState = null;
 // Set true right before a user-initiated stop so the socket's later onclose
 // doesn't mistake an intentional disconnect for an unexpected drop.
 let intentionalDisconnect = false;
-let onboardingHintText = 'Tap the mic and ask me anything';
+let onboardingHintText = 'Tap the mic to ask me anything';
 let avatarTaglineText = '';
 let avatarDisplayNameText = '';
 let suggestedPrompts = [];

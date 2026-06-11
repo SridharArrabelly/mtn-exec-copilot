@@ -138,7 +138,7 @@ def get_ui_defaults() -> dict:
     _hint_default = (
         "Tap the mic or type to ask me anything"
         if _text_input
-        else "Tap the mic and ask me anything"
+        else "Tap the mic to ask me anything"
     )
     return {
         # Conversation
