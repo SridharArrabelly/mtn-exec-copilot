@@ -67,6 +67,20 @@ PROACTIVE_GREETING = os.getenv(
 
 PROJECT_ENDPOINT = os.getenv("PROJECT_ENDPOINT", "")
 
+# ───────── Teams bot (issue #53, Phase 2a) ─────────
+# The Foundry agent is resolved by ID when available (durable identifier), with
+# AGENT_NAME as a dev-only fallback (fails fast on zero/multiple matches).
+AGENT_ID = os.getenv("AGENT_ID", "")
+# Teams app id used to build deep links back to the Phase 1 static tab (#28).
+# Defaults to TEAMS_APP_ID if that is what the package was built with.
+TEAMS_APP_ID = os.getenv("TEAMS_APP_ID", "")
+# entityId of the personal static tab in teams/manifest.template.json.
+TEAMS_TAB_ENTITY_ID = os.getenv("TEAMS_TAB_ENTITY_ID", "avatarForgeHome")
+# Seconds to poll a Foundry run synchronously inside a Teams turn before
+# returning a "still working" holding reply (proactive continuation is a later
+# enhancement). Keep well under the Teams ~15s activity timeout.
+BOT_RUN_TIMEOUT_S = float(os.getenv("BOT_RUN_TIMEOUT_S", "12"))
+
 
 def _bool(name: str, default: bool) -> bool:
     return os.getenv(name, str(default)).strip().lower() in ("1", "true", "yes", "on")

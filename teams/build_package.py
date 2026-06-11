@@ -68,15 +68,37 @@ def _resolve_app_id(raw: str | None, hostname: str) -> str:
     return str(uuid.uuid5(_APP_ID_NAMESPACE, hostname))
 
 
+def _resolve_bot_id(raw: str | None) -> str:
+    """Validate the bot id (the Azure Bot / Entra app GUID) used in the manifest.
+
+    Unlike the app id this cannot be derived — it must come from the Azure Bot
+    registration created for issue #53. Required because the manifest now ships
+    a ``bots`` entry.
+    """
+    bot = (raw or "").strip()
+    if not bot:
+        sys.exit(
+            "error: bot id is required (pass --bot-id or set TEAMS_BOT_ID).\n"
+            "It is the Microsoft App ID (GUID) of the Azure Bot registration "
+            "created for the Teams bot — see teams/README.md."
+        )
+    try:
+        return str(uuid.UUID(bot))
+    except ValueError:
+        sys.exit(f"error: --bot-id must be a valid GUID, got {bot!r}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build the Teams app package (scope 1A).")
     parser.add_argument("--hostname", default=os.getenv("TEAMS_HOSTNAME"))
     parser.add_argument("--version", default=os.getenv("TEAMS_APP_VERSION", "1.0.0"))
     parser.add_argument("--app-id", default=os.getenv("TEAMS_APP_ID"))
+    parser.add_argument("--bot-id", default=os.getenv("TEAMS_BOT_ID"))
     args = parser.parse_args(argv)
 
     hostname = _normalize_hostname(args.hostname)
     app_id = _resolve_app_id(args.app_id, hostname)
+    bot_id = _resolve_bot_id(args.bot_id)
     version = args.version.strip()
 
     with open(TEMPLATE, "r", encoding="utf-8") as f:
@@ -87,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         .replace("{{HOSTNAME}}", hostname)
         .replace("{{VERSION}}", version)
         .replace("{{APP_ID}}", app_id)
+        .replace("{{BOT_ID}}", bot_id)
     )
 
     # Fail fast if any placeholder slipped through or the result is not valid JSON.
@@ -120,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  hostname: {hostname}")
     print(f"  version:  {version}")
     print(f"  app id:   {app_id}")
+    print(f"  bot id:   {bot_id}")
     print("Sideload it in Teams via: Apps -> Manage your apps -> Upload an app -> Upload a custom app")
     return 0
 

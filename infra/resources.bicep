@@ -48,6 +48,15 @@ param avatarBackgroundImageUrl string = ''
 param srModel string = 'mai-transcribe-1'
 param recognitionLanguage string = 'auto'
 
+// ───────── Teams bot (issue #53) ─────────
+param botAppId string = ''
+param botAppTenantId string = ''
+@secure()
+param botAppPassword string = ''
+param botDisplayName string = 'Avatar Forge'
+param teamsAppId string = ''
+param agentId string = ''
+
 var abbrs = loadJsonContent('abbreviations.json')
 
 // ───────── Identity ─────────
@@ -210,6 +219,26 @@ module app 'modules/containerApp.bicep' = {
     avatarBackgroundImageUrl: avatarBackgroundImageUrl
     srModel: srModel
     recognitionLanguage: recognitionLanguage
+    botAppId: botAppId
+    botAppTenantId: empty(botAppTenantId) ? tenant().tenantId : botAppTenantId
+    botAppPassword: botAppPassword
+    teamsAppId: teamsAppId
+    agentId: agentId
+  }
+}
+
+// ───────── Teams bot (issue #53, Phase 2a) ─────────
+// Only provisioned when a bot app id is supplied. The messaging endpoint is the
+// Container App HTTPS URL + /api/messages.
+module botService 'modules/botService.bicep' = if (!empty(botAppId)) {
+  name: 'bot'
+  params: {
+    name: '${abbrs.botService}-${environmentName}-${resourceToken}'
+    botDisplayName: botDisplayName
+    tags: tags
+    msaAppId: botAppId
+    msaAppTenantId: empty(botAppTenantId) ? tenant().tenantId : botAppTenantId
+    endpoint: '${app.outputs.uri}/api/messages'
   }
 }
 
@@ -225,4 +254,5 @@ output foundryProjectEndpoint string = foundryProjectEndpointEffective
 output searchEndpoint string = searchEndpointEffective
 output appInsightsConnectionString string = appInsightsConnectionStringEffective
 output effectiveAgentProjectName string = createFoundry ? 'proj-${environmentName}' : agentProjectName
+output botMessagingEndpoint string = !empty(botAppId) ? '${app.outputs.uri}/api/messages' : ''
 
