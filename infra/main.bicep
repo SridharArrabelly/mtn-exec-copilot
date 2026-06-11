@@ -55,7 +55,7 @@ param agentModel string = 'gpt-5.4'
 param embeddingDeployment string = 'text-embedding-3-small'
 param avatarName string = 'Lisa-casual-sitting'
 param customAvatarName string = ''
-@description('Assistant persona / display name (e.g. "Nuru"). Decoupled from the avatar model; empty falls back to CUSTOM_AVATAR_NAME at runtime.')
+@description('Assistant persona / display name (e.g. "Nuru") for the bot welcome message. Purely cosmetic; does NOT select the avatar model. Empty falls back to "Avatar".')
 param avatarDisplayName string = ''
 @description('Identity tagline under the avatar name (e.g. "Your MTN Digital Assistant"). Empty uses the company-agnostic default.')
 param avatarTagline string = ''
