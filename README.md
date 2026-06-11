@@ -270,8 +270,6 @@ var createSearch  = empty(searchServiceName)  || empty(searchResourceGroup)
 
 A resource is treated as BYO **only when its identifying env vars are set** (all three `FOUNDRY_*` for Foundry, both `SEARCH_*` for Search) — otherwise the template provisions a new one. The two switches are independent: you can BYO Foundry while letting the template create Search, or vice versa.
 
-> **Migration note:** the old `EXISTING_*` env vars have been renamed (e.g. `EXISTING_FOUNDRY_PROJECT_ENDPOINT` → `FOUNDRY_PROJECT_ENDPOINT`). If you have an azd environment from a previous deploy, re-set the values under the new names with `azd env set` before your next `azd up`. The `EXISTING_SEARCH_INDEX_NAME` slot has been folded into the single `SEARCH_INDEX_NAME` var (point it at your existing index for BYO).
-
 ##### Full BYO walkthrough (existing Foundry + existing AI Search)
 
 ```bash
@@ -305,8 +303,6 @@ azd env set APPINSIGHTS_RESOURCE_GROUP rg-shared-observability
 # (optional) Pin the agent / search / bing names that the container reads at runtime.
 # Defaults are fine if your existing Foundry agent + connections use these names.
 azd env set AGENT_NAME              MtnAvatarAgent
-azd env set AGENT_MODEL             gpt-5.4
-azd env set AGENT_REASONING_EFFORT  none
 azd env set SEARCH_CONNECTION_NAME  aisearch-connection
 azd env set BING_CONNECTION_NAME    groundingwithbingcustquraml
 azd env set BING_CUSTOM_CONFIG_NAME mtn-avatar-search
@@ -353,7 +349,7 @@ var foundryProjectEndpointEffective = createFoundry ? foundry!.outputs.projectEn
 var searchEndpointEffective         = createSearch  ? search!.outputs.endpoint         : 'https://${existingSearchServiceName}.search.windows.net/'
 ```
 
-These flow into the container app as `AZURE_VOICELIVE_ENDPOINT`, `PROJECT_ENDPOINT`, and `SEARCH_INDEX_NAME` — the same env vars your local `.env` uses, so `backend/config.py` and the voice handler don't notice any difference between BYO and freshly-created resources.
+These flow into the container app as `AZURE_VOICELIVE_ENDPOINT`, `PROJECT_ENDPOINT`, and `AZURE_SEARCH_ENDPOINT` — the same env vars your local `.env` uses, so `backend/config.py` and the voice handler don't notice any difference between BYO and freshly-created resources.
 
 ##### What you *don't* need to re-run for BYO
 
@@ -378,24 +374,6 @@ azd up
 uv run python scripts/setup_aisearch_index.py
 ```
 
-##### BYO with GitHub Actions
-
-Same idea, but configure the values as GitHub **Variables** instead of `azd env set`. The workflow at [.github/workflows/azure-dev.yml](.github/workflows/azure-dev.yml) already passes them through:
-
-```
-FOUNDRY_ACCOUNT_NAME
-FOUNDRY_RESOURCE_GROUP
-FOUNDRY_PROJECT_ENDPOINT
-SEARCH_SERVICE_NAME
-SEARCH_RESOURCE_GROUP
-SEARCH_INDEX_NAME
-APPINSIGHTS_NAME
-APPINSIGHTS_RESOURCE_GROUP
-BING_CONNECTION_NAME
-BING_CUSTOM_CONFIG_NAME
-```
-
-Set them under **Settings → Secrets and variables → Actions → Variables**, push to `main`, and the deploy reuses the existing resources.
 #### Tune the runtime config / model deployment
 
 The Bicep template accepts overrides via azd environment variables — set any of them before `azd provision`:
@@ -428,17 +406,6 @@ You can always rerun them manually (point your local `.env` at the deployed endp
 uv run python scripts/setup_aisearch_index.py     # rebuild the index
 uv run python scripts/setup_foundry_agent.py      # re-register the agent + tools
 ```
-
-#### CI/CD with GitHub Actions
-
-A ready-to-use OIDC-based workflow lives at [.github/workflows/azure-dev.yml](.github/workflows/azure-dev.yml). To wire it up:
-
-1. Create a Microsoft Entra application + service principal and configure a [federated credential](https://learn.microsoft.com/azure/active-directory/workload-identities/workload-identity-federation) for the repository / environment.
-2. Assign that SP **Owner** (or Contributor + User Access Administrator) on the target subscription.
-3. In **GitHub → Settings → Secrets and variables → Actions**, add:
-   - **Secrets:** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
-   - **Variables:** `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP_NAME` (required); optionally `FOUNDRY_*` / `SEARCH_*` / `APPINSIGHTS_*` / `AGENT_*` / `MODEL_*` overrides
-4. Push to `main` (or run the workflow manually) — it will `azd provision` then `azd deploy`.
 
 ## Run in Microsoft Teams (sideload)
 
