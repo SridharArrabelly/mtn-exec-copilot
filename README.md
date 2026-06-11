@@ -58,10 +58,10 @@ Everything the end user sees is anchored to the avatar:
 - **Thinking indicator** — shows between the user's turn and the avatar's first words, with rotating status captions and a failsafe timeout so it can never get stuck.
 - **Connection & permission states** — a status pill (and toasts) surface normal-mode states that would otherwise be invisible: connecting, microphone blocked/denied (with an actionable message), reconnecting after a dropped transport, session ended (tap to restart), and avatar/transport errors.
 - **Live captions** *(optional)* — a frosted subtitle band **below** the avatar (aligned to its width) that mirrors the streamed transcript of what the avatar is saying, and optionally the user's last utterance. Reuses the existing transcript stream — no extra model calls.
-- **Speaking glow** *(optional)* — a soft halo around the avatar while it is actually speaking. It is driven by real-playback signals — the avatar's WebRTC data-channel `EVENT_TYPE_SWITCH_TO_SPEAKING` / `EVENT_TYPE_SWITCH_TO_IDLE` events plus an `AnalyserNode` tapping the live audio track — rather than the response lifecycle, so it persists for the avatar's whole spoken turn (a watchdog failsafe guarantees it never sticks on).
+- **Speaking-state colour shift** — the avatar renders in **grayscale while idle** and **shifts to full colour (with a warm tint on the stage)** while it is actually speaking, returning to grayscale when quiet. The on/off state is driven by real-playback signals — the avatar's WebRTC data-channel `EVENT_TYPE_SWITCH_TO_SPEAKING` / `EVENT_TYPE_SWITCH_TO_IDLE` events plus an `AnalyserNode` tapping the live audio track — rather than the response lifecycle, so it tracks the avatar's whole spoken turn (a watchdog failsafe guarantees it never sticks on).
 - **Suggested prompts + onboarding hint** *(optional)* — on first load, a one-line hint and 2–3 tappable example-question chips (below the avatar). Tapping a chip sends that question through the normal text path; the hint and chips fade out after the first interaction and don't reappear for the rest of the session.
 
-The captions, glow, suggested-prompt, and text-input features are additive and individually configurable via env (captions default off; suggested prompts and text input default on) — see [Avatar UX (frontend)](#avatar-ux-frontend). The UI is fully themeable through CSS custom properties and ships a **dark variant** that follows the OS `prefers-color-scheme` (with a small `applyTheme(light|dark|system)` hook for explicit overrides). All new animations respect `prefers-reduced-motion`.
+The captions, suggested-prompt, and text-input features are additive and individually configurable via env (captions default off; suggested prompts and text input default on) — see [Avatar UX (frontend)](#avatar-ux-frontend); the speaking-state colour shift is always on. The UI is fully themeable through CSS custom properties and ships a **dark variant** that follows the OS `prefers-color-scheme` (with a small `applyTheme(light|dark|system)` hook for explicit overrides). All new animations respect `prefers-reduced-motion`.
 
 ## Getting Started
 
@@ -499,8 +499,8 @@ avatar-forge/
 │
 ├── frontend/                      # Static client assets (served at /)
 │   ├── index.html                 # UI page (avatar stage: video, name pill, docked mic, thinking, captions, onboarding)
-│   ├── style.css                  # Styles (incl. speaking glow, caption band, suggested-prompt chips)
-│   ├── app.js                     # Audio capture/playback, WebRTC, WebSocket, UI logic (captions, glow, onboarding)
+│   ├── style.css                  # Styles (incl. speaking-state colour shift, caption band, suggested-prompt chips)
+│   ├── app.js                     # Audio capture/playback, WebRTC, WebSocket, UI logic (captions, speaking-state colour, onboarding)
 │   └── teams.js                   # No-op unless in Teams: loads Teams JS SDK, mirrors host theme into applyTheme()
 │
 ├── scripts/                       # Utility / one-off scripts (not part of the server)
