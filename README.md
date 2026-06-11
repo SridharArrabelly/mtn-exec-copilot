@@ -270,8 +270,6 @@ var createSearch  = empty(searchServiceName)  || empty(searchResourceGroup)
 
 A resource is treated as BYO **only when its identifying env vars are set** (all three `FOUNDRY_*` for Foundry, both `SEARCH_*` for Search) — otherwise the template provisions a new one. The two switches are independent: you can BYO Foundry while letting the template create Search, or vice versa.
 
-> **Migration note:** the old `EXISTING_*` env vars have been renamed (e.g. `EXISTING_FOUNDRY_PROJECT_ENDPOINT` → `FOUNDRY_PROJECT_ENDPOINT`). If you have an azd environment from a previous deploy, re-set the values under the new names with `azd env set` before your next `azd up`. The `EXISTING_SEARCH_INDEX_NAME` slot has been folded into the single `SEARCH_INDEX_NAME` var (point it at your existing index for BYO).
-
 ##### Full BYO walkthrough (existing Foundry + existing AI Search)
 
 ```bash
@@ -305,8 +303,6 @@ azd env set APPINSIGHTS_RESOURCE_GROUP rg-shared-observability
 # (optional) Pin the agent / search / bing names that the container reads at runtime.
 # Defaults are fine if your existing Foundry agent + connections use these names.
 azd env set AGENT_NAME              MtnAvatarAgent
-azd env set AGENT_MODEL             gpt-5.4
-azd env set AGENT_REASONING_EFFORT  none
 azd env set SEARCH_CONNECTION_NAME  aisearch-connection
 azd env set BING_CONNECTION_NAME    groundingwithbingcustquraml
 azd env set BING_CUSTOM_CONFIG_NAME mtn-avatar-search
@@ -353,7 +349,7 @@ var foundryProjectEndpointEffective = createFoundry ? foundry!.outputs.projectEn
 var searchEndpointEffective         = createSearch  ? search!.outputs.endpoint         : 'https://${existingSearchServiceName}.search.windows.net/'
 ```
 
-These flow into the container app as `AZURE_VOICELIVE_ENDPOINT`, `PROJECT_ENDPOINT`, and `SEARCH_INDEX_NAME` — the same env vars your local `.env` uses, so `backend/config.py` and the voice handler don't notice any difference between BYO and freshly-created resources.
+These flow into the container app as `AZURE_VOICELIVE_ENDPOINT`, `PROJECT_ENDPOINT`, and `AZURE_SEARCH_ENDPOINT` — the same env vars your local `.env` uses, so `backend/config.py` and the voice handler don't notice any difference between BYO and freshly-created resources.
 
 ##### What you *don't* need to re-run for BYO
 
@@ -396,6 +392,7 @@ BING_CUSTOM_CONFIG_NAME
 ```
 
 Set them under **Settings → Secrets and variables → Actions → Variables**, push to `main`, and the deploy reuses the existing resources.
+
 #### Tune the runtime config / model deployment
 
 The Bicep template accepts overrides via azd environment variables — set any of them before `azd provision`:
