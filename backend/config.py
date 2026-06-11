@@ -174,6 +174,7 @@ def get_ui_defaults() -> dict:
         "avatarTagline": _str("AVATAR_TAGLINE", "Your Digital Assistant"),
         # Avatar UX (additive, env-gated)
         "enableTextInput": _bool("ENABLE_TEXT_INPUT", True),
+        "enableStopButton": _bool("ENABLE_STOP_BUTTON", True),
         "enableCaptions": _bool("ENABLE_CAPTIONS", False),
         "captionsShowUser": _bool("CAPTIONS_SHOW_USER", False),
         "enableSuggestedPrompts": _bool("ENABLE_SUGGESTED_PROMPTS", True),

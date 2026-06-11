@@ -65,6 +65,10 @@ let suggestedPromptsEnabled = true;
 // Text composer (bottom-center of the avatar stage) in normal mode. Env-gated
 // via ENABLE_TEXT_INPUT (/api/config defaults -> enableTextInput).
 let textInputEnabled = true;
+// Stop-speaking button (next to the mic) in normal mode. Env-gated via
+// ENABLE_STOP_BUTTON (/api/config defaults -> enableStopButton). Shown only
+// while the avatar is actually talking.
+let stopButtonEnabled = true;
 // Normal-mode connection/permission status surfaced on #stageStatus. One of:
 // null, 'reconnecting', 'ended', 'mic-blocked', 'mic-missing', 'error'.
 let connectionState = null;
@@ -210,6 +214,7 @@ async function fetchServerConfig() {
         captionsEnabled = d.enableCaptions ?? false;
         captionsShowUser = d.captionsShowUser ?? false;
         textInputEnabled = d.enableTextInput ?? true;
+        stopButtonEnabled = d.enableStopButton ?? true;
         suggestedPromptsEnabled = d.enableSuggestedPrompts ?? true;
         onboardingHintText = d.onboardingHint ?? onboardingHintText;
         avatarTaglineText = d.avatarTagline ?? avatarTaglineText;
@@ -1158,6 +1163,7 @@ function setAvatarSpeaking(on) {
         if (stage) stage.classList.add('speaking');
         // The avatar is talking — tuck the onboarding hint away (temporarily).
         hideOnboardingTemporarily();
+        updateStopButton();
     } else {
         if (speakingWatchdogTimer) { clearTimeout(speakingWatchdogTimer); speakingWatchdogTimer = null; }
         if (!avatarSpeaking) return;
@@ -1168,7 +1174,26 @@ function setAvatarSpeaking(on) {
         clearAvatarCaption(900);
         // Restore onboarding if the user hasn't actually interacted yet.
         maybeRestoreOnboarding();
+        updateStopButton();
     }
+}
+
+// Show the stop-speaking button only while the avatar is talking AND the
+// feature is enabled (ENABLE_STOP_BUTTON). Purely additive normal-mode control.
+function updateStopButton() {
+    const btn = document.getElementById('avatarStopBtn');
+    if (!btn) return;
+    const show = avatarSpeaking && stopButtonEnabled;
+    btn.classList.toggle('hidden', !show);
+}
+
+// User pressed Stop: tell the server to cancel the in-flight response (reuses
+// the existing barge-in interrupt path) and halt local audio immediately.
+function stopAvatarSpeaking() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'interrupt' }));
+    }
+    stopAudioPlayback();
 }
 
 // Reset on every audio chunk; if audio stops arriving for SPEAKING_WATCHDOG_MS
