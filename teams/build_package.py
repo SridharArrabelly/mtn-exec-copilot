@@ -17,6 +17,9 @@ Inputs (CLI flag overrides env var):
     --version  / TEAMS_APP_VERSION   Optional. Manifest version (default 1.0.0).
     --app-id   / TEAMS_APP_ID        Optional. Stable GUID. Defaults to a deterministic
                                      uuid5 derived from the hostname so rebuilds match.
+    --bot-id   / TEAMS_BOT_ID        Optional. Azure Bot / Entra app GUID. When omitted the
+                                     build is tab-only (Phase 1) — the additive `bots` entry
+                                     is dropped so the Tab package always builds.
 
 Output:
     teams/build/avatar-forge-teams.zip
@@ -71,17 +74,14 @@ def _resolve_app_id(raw: str | None, hostname: str) -> str:
 def _resolve_bot_id(raw: str | None) -> str:
     """Validate the bot id (the Azure Bot / Entra app GUID) used in the manifest.
 
-    Unlike the app id this cannot be derived — it must come from the Azure Bot
-    registration created for issue #53. Required because the manifest now ships
-    a ``bots`` entry.
+    Optional: when omitted, the build produces a **tab-only** package (the
+    Phase 1 behaviour) by dropping the ``bots`` entry — the bot is purely
+    additive and must never gate the always-working Tab. When supplied it must
+    be the Microsoft App ID (GUID) of the Azure Bot registration (issue #53).
     """
     bot = (raw or "").strip()
     if not bot:
-        sys.exit(
-            "error: bot id is required (pass --bot-id or set TEAMS_BOT_ID).\n"
-            "It is the Microsoft App ID (GUID) of the Azure Bot registration "
-            "created for the Teams bot — see teams/README.md."
-        )
+        return ""
     try:
         return str(uuid.UUID(bot))
     except ValueError:
@@ -109,7 +109,9 @@ def main(argv: list[str] | None = None) -> int:
         .replace("{{HOSTNAME}}", hostname)
         .replace("{{VERSION}}", version)
         .replace("{{APP_ID}}", app_id)
-        .replace("{{BOT_ID}}", bot_id)
+        # When building tab-only (no bot id), substitute a throwaway GUID so the
+        # template parses; the whole ``bots`` entry is dropped right after.
+        .replace("{{BOT_ID}}", bot_id or "00000000-0000-0000-0000-000000000000")
     )
 
     # Fail fast if any placeholder slipped through or the result is not valid JSON.
@@ -120,6 +122,11 @@ def main(argv: list[str] | None = None) -> int:
         manifest = json.loads(manifest_text)
     except json.JSONDecodeError as e:
         sys.exit(f"error: rendered manifest is not valid JSON: {e}")
+
+    # Tab-only build: drop the additive bot so the package matches Phase 1 and
+    # never gates the always-working Tab. The bot is opt-in via --bot-id.
+    if not bot_id:
+        manifest.pop("bots", None)
 
     # Defensive: validDomains entries must stay scheme/path free.
     for d in manifest.get("validDomains", []):
@@ -143,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  hostname: {hostname}")
     print(f"  version:  {version}")
     print(f"  app id:   {app_id}")
-    print(f"  bot id:   {bot_id}")
+    print(f"  bot id:   {bot_id or '(none — tab-only package)'}")
     print("Sideload it in Teams via: Apps -> Manage your apps -> Upload an app -> Upload a custom app")
     return 0
 

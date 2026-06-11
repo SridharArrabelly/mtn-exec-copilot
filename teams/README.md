@@ -155,7 +155,7 @@ the existing ACA HTTPS URL + `/api/messages`.
 | Area | Change |
 | --- | --- |
 | `teams/manifest.template.json` | Added a `bots` entry (`personal` + `team` + `groupchat` scopes), a `commandLists`, a `{{BOT_ID}}` placeholder, and `token.botframework.com` to `validDomains`. The static tab is untouched. |
-| `teams/build_package.py` | New `--bot-id` / `TEAMS_BOT_ID` input fills `{{BOT_ID}}`. The zip stays flat (manifest + 2 icons). |
+| `teams/build_package.py` | Optional `--bot-id` / `TEAMS_BOT_ID` input fills `{{BOT_ID}}`. **When omitted, the build is tab-only** (the `bots` entry is dropped) so the Phase 1 Tab package always builds. The zip stays flat (manifest + 2 icons). |
 | `backend/bot/` | The bot: SDK app + `/api/messages` route (`app.py`), Foundry-agent bridge (`agent_runtime.py`), Adaptive Card + deep link (`cards.py`). |
 | `backend/main.py` | Mounts the bot router before the static SPA; closes the agent client on shutdown. |
 | `infra/` | New `modules/botService.bicep` (Azure Bot + Teams channel), conditional on a bot app id; container env + secret wiring. |
@@ -203,7 +203,8 @@ identity object), which lives outside the resource-group deployment:
 
 ## Build the package (with the bot id)
 
-The manifest now requires a bot id, so pass `--bot-id` (the bot app id from step 1):
+The bot is **additive and opt-in**: omit `--bot-id` to build the tab-only Phase 1 package
+(the `bots` entry is dropped). To include the bot, pass `--bot-id` (the bot app id from step 1):
 
 ```bash
 uv run python teams/build_package.py \
