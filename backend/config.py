@@ -134,7 +134,7 @@ def get_ui_defaults() -> dict:
     """
     # The onboarding hint default is modality-aware: when the text composer is
     # enabled, invite typing too. An explicit ONBOARDING_HINT always wins.
-    _text_input = _bool("ENABLE_TEXT_INPUT", True)
+    _text_input = _bool("ENABLE_TEXT_INPUT", False)
     _hint_default = (
         "Tap the mic or type to ask me anything"
         if _text_input
@@ -173,7 +173,7 @@ def get_ui_defaults() -> dict:
         "avatarDisplayName": os.getenv("AVATAR_DISPLAY_NAME", "").strip(),
         "avatarTagline": _str("AVATAR_TAGLINE", "Your Digital Assistant"),
         # Avatar UX (additive, env-gated)
-        "enableTextInput": _bool("ENABLE_TEXT_INPUT", True),
+        "enableTextInput": _bool("ENABLE_TEXT_INPUT", False),
         "enableStopButton": _bool("ENABLE_STOP_BUTTON", True),
         "enableCaptions": _bool("ENABLE_CAPTIONS", False),
         "captionsShowUser": _bool("CAPTIONS_SHOW_USER", False),

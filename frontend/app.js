@@ -63,8 +63,9 @@ let captionsEnabled = false;
 let captionsShowUser = false;
 let suggestedPromptsEnabled = true;
 // Text composer (bottom-center of the avatar stage) in normal mode. Env-gated
-// via ENABLE_TEXT_INPUT (/api/config defaults -> enableTextInput).
-let textInputEnabled = true;
+// via ENABLE_TEXT_INPUT (/api/config defaults -> enableTextInput). Default off
+// (voice-first); the Teams bot covers the text-chat modality.
+let textInputEnabled = false;
 // Stop-speaking button (next to the mic) in normal mode. Env-gated via
 // ENABLE_STOP_BUTTON (/api/config defaults -> enableStopButton). Shown only
 // while the avatar is actually talking.
@@ -213,7 +214,7 @@ async function fetchServerConfig() {
         const d = config.defaults || {};
         captionsEnabled = d.enableCaptions ?? false;
         captionsShowUser = d.captionsShowUser ?? false;
-        textInputEnabled = d.enableTextInput ?? true;
+        textInputEnabled = d.enableTextInput ?? false;
         stopButtonEnabled = d.enableStopButton ?? true;
         suggestedPromptsEnabled = d.enableSuggestedPrompts ?? true;
         onboardingHintText = d.onboardingHint ?? onboardingHintText;
