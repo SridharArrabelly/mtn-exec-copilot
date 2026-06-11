@@ -14,10 +14,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import Awaitable, Callable
 
 from fastapi import APIRouter, Request
-from microsoft_agents.activity import Activity, ActivityTypes, ConversationReference
+from fastapi.responses import JSONResponse
+from microsoft_agents.activity import (
+    Activity,
+    ActivityTypes,
+    ConversationReference,
+    load_configuration_from_env,
+)
+from microsoft_agents.authentication.msal import MsalConnectionManager
 from microsoft_agents.hosting.core import (
     AgentApplication,
     MemoryStorage,
@@ -46,12 +54,13 @@ _HOLDING = (
 
 _ERROR = "Sorry — I hit an error reaching the knowledge base. Please try again."
 
-# Built once at import; the adapter reads bot credentials from CONNECTIONS__*
-# env vars (set on the Container App from the Azure Bot registration).
-AGENT_APP: AgentApplication[TurnState] = AgentApplication[TurnState](
-    storage=MemoryStorage(),
-    adapter=CloudAdapter(),
-)
+# The bot is additive and opt-in: the AgentApplication (and its MSAL-backed
+# CloudAdapter) is only constructed when bot credentials are configured via the
+# CONNECTIONS__SERVICE_CONNECTION__SETTINGS__* env vars. When they are absent
+# (standalone web app / Phase 1 tab-only / offline), AGENT_APP stays None, the
+# module still imports cleanly, and POST /api/messages returns 503 — the bot
+# never gates the always-on surfaces (#53 additive guardrail).
+AGENT_APP: AgentApplication[TurnState] | None = None
 
 # Strong references to in-flight background delivery tasks so they are not
 # garbage-collected mid-run, and can be cancelled cleanly at shutdown.
@@ -123,8 +132,34 @@ async def _on_message(context: TurnContext, _state: TurnState) -> None:
 
 
 # Register handlers (decorator-style API mirrors the official samples).
-AGENT_APP.conversation_update("membersAdded")(_on_members_added)
-AGENT_APP.activity("message")(_on_message)
+def _build_agent_app() -> AgentApplication[TurnState] | None:
+    """Construct the AgentApplication + MSAL adapter from CONNECTIONS__* env config.
+
+    Returns None (bot disabled) when no service-connection client id is set, so
+    the bot stays purely additive and module import never fails on the always-on
+    web/tab surfaces. ``MsalConnectionManager`` raises if SERVICE_CONNECTION is
+    missing, so we gate on BOT_APP_ID (the same env var) before building it.
+    """
+    if not BOT_APP_ID:
+        logger.warning(
+            "Teams bot disabled: no CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID "
+            "configured — POST /api/messages will return 503 (web app + tab unaffected)."
+        )
+        return None
+
+    sdk_config = load_configuration_from_env(os.environ)
+    connection_manager = MsalConnectionManager(**sdk_config)
+    app = AgentApplication[TurnState](
+        storage=MemoryStorage(),
+        adapter=CloudAdapter(connection_manager=connection_manager),
+    )
+    app.conversation_update("membersAdded")(_on_members_added)
+    app.activity("message")(_on_message)
+    logger.info("Teams bot enabled (service connection configured).")
+    return app
+
+
+AGENT_APP = _build_agent_app()
 
 
 def build_bot_router() -> APIRouter:
@@ -134,12 +169,14 @@ def build_bot_router() -> APIRouter:
     @router.post("/api/messages")
     async def messages(request: Request):
         """Bot Framework / Teams channel messaging endpoint."""
+        if AGENT_APP is None:
+            return JSONResponse({"status": "bot not configured"}, status_code=503)
         return await start_agent_process(request, AGENT_APP, AGENT_APP.adapter)
 
     @router.get("/api/messages")
     async def messages_health():
         """Lightweight health check for the messaging endpoint."""
-        return {"status": "ok", "endpoint": "messages"}
+        return {"status": "ok", "endpoint": "messages", "configured": AGENT_APP is not None}
 
     return router
 
