@@ -132,14 +132,6 @@ def get_ui_defaults() -> dict:
     (DEVELOPER_MODE=false) where the side panel is hidden and the session
     auto-starts with whatever is configured here.
     """
-    # The onboarding hint default is modality-aware: when the text composer is
-    # enabled, invite typing too. An explicit ONBOARDING_HINT always wins.
-    _text_input = _bool("ENABLE_TEXT_INPUT", False)
-    _hint_default = (
-        "Tap the mic or type to ask me anything"
-        if _text_input
-        else "Tap the mic to ask me anything"
-    )
     return {
         # Conversation
         "srModel": _str("SR_MODEL", "mai-transcribe-1"),
@@ -172,13 +164,21 @@ def get_ui_defaults() -> dict:
         # default behavior). The tagline shows under it; empty hides that line.
         "avatarDisplayName": os.getenv("AVATAR_DISPLAY_NAME", "").strip(),
         "avatarTagline": _str("AVATAR_TAGLINE", "Your Digital Assistant"),
-        # Avatar UX (additive, env-gated)
-        "enableTextInput": _bool("ENABLE_TEXT_INPUT", False),
+        # Avatar UX (additive). The on-stage text composer shows on the
+        # standalone web app (default on); the frontend always hides it inside
+        # the Microsoft Teams client (the bot chat tab has Teams' native compose
+        # box, and the avatar tab is voice-first — type via the chat tab or, in
+        # a call, the meeting chat with an @mention). ENABLE_TEXT_INPUT is an
+        # optional web-only override; it can never force the composer on in Teams.
+        "enableTextInput": _bool("ENABLE_TEXT_INPUT", True),
         "enableStopButton": _bool("ENABLE_STOP_BUTTON", True),
         "enableCaptions": _bool("ENABLE_CAPTIONS", False),
         "captionsShowUser": _bool("CAPTIONS_SHOW_USER", False),
         "enableSuggestedPrompts": _bool("ENABLE_SUGGESTED_PROMPTS", True),
-        "onboardingHint": _str("ONBOARDING_HINT", _hint_default),
+        # Empty by default: the frontend derives a modality-aware hint ("…or
+        # type…" only when the composer is actually shown, which depends on the
+        # host — see enableTextInput). An explicit ONBOARDING_HINT always wins.
+        "onboardingHint": _str("ONBOARDING_HINT", ""),
         "suggestedPrompts": _list(
             "SUGGESTED_PROMPTS",
             [

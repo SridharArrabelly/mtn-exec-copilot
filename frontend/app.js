@@ -62,9 +62,12 @@ let peerConnectionQueue = [];
 let captionsEnabled = false;
 let captionsShowUser = false;
 let suggestedPromptsEnabled = true;
-// Text composer (bottom-center of the avatar stage) in normal mode. Env-gated
-// via ENABLE_TEXT_INPUT (/api/config defaults -> enableTextInput). Default off
-// (voice-first); the Teams bot covers the text-chat modality.
+// Text composer (bottom-center of the avatar stage) in normal mode. Shown on
+// the standalone web app; ALWAYS hidden inside the Microsoft Teams client (the
+// bot chat tab has Teams' native compose box, and the avatar tab is voice-first
+// — type via the chat tab or, in a call, the meeting chat with an @mention).
+// ENABLE_TEXT_INPUT (/api/config -> enableTextInput) is an optional web-only
+// override; isEmbeddedInTeams() can never be overridden on.
 let textInputEnabled = false;
 // Stop-speaking button (next to the mic) in normal mode. Env-gated via
 // ENABLE_STOP_BUTTON (/api/config defaults -> enableStopButton). Shown only
@@ -201,6 +204,20 @@ function applyServerDefaults(defaults) {
     }
 }
 
+// True when the SPA is embedded in the Microsoft Teams client (tab host now,
+// in-call later). Self-contained (mirrors teams.js) so it never depends on
+// teams.js load order. In Teams we hide the in-app text composer entirely; the
+// composer only ever appears on the standalone web app.
+function isEmbeddedInTeams() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('inTeams')) return true;
+        if (window.parent && window.parent !== window) return true;
+        if (window.nativeInterface) return true; // Teams desktop webview marker
+    } catch (e) {}
+    return false;
+}
+
 async function fetchServerConfig() {
     try {
         const resp = await fetch('/api/config');
@@ -214,10 +231,18 @@ async function fetchServerConfig() {
         const d = config.defaults || {};
         captionsEnabled = d.enableCaptions ?? false;
         captionsShowUser = d.captionsShowUser ?? false;
-        textInputEnabled = d.enableTextInput ?? false;
+        // Composer defaults on for the web app, but is always suppressed inside
+        // Teams (host wins over the env override).
+        textInputEnabled = (d.enableTextInput ?? true) && !isEmbeddedInTeams();
         stopButtonEnabled = d.enableStopButton ?? true;
         suggestedPromptsEnabled = d.enableSuggestedPrompts ?? true;
-        onboardingHintText = d.onboardingHint ?? onboardingHintText;
+        // Hint is modality-aware and follows the EFFECTIVE composer state above
+        // (so Teams, where the composer is hidden, never says "…or type…"). An
+        // explicit ONBOARDING_HINT from the backend always wins.
+        const explicitHint = typeof d.onboardingHint === 'string' ? d.onboardingHint.trim() : '';
+        onboardingHintText = explicitHint || (textInputEnabled
+            ? 'Tap the mic or type to ask me anything'
+            : 'Tap the mic to ask me anything');
         avatarTaglineText = d.avatarTagline ?? avatarTaglineText;
         avatarDisplayNameText = d.avatarDisplayName ?? avatarDisplayNameText;
         const taglineEl = document.getElementById('avatarTagline');
