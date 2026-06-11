@@ -215,7 +215,7 @@ The repository ships a complete [Azure Developer CLI](https://learn.microsoft.co
 
 Two things have caused silent failures in past deployments:
 
-1. **Voice Live (preview) is only available in a small set of regions** — `eastus2`, `swedencentral`, `southeastasia`, `centralindia`, `westus2`. Deploying the Foundry account anywhere else lets the WebSocket connect and the MI token succeed, then the server closes the socket within ~2 seconds with no error event. The app surfaces this as `SESSION_UPDATED event not received`.
+1. **Voice Live is only available in a small set of regions** — `eastus2`, `swedencentral`, `southeastasia`, `centralindia`, `westus2`. Deploying the Foundry account anywhere else lets the WebSocket connect and the MI token succeed, then the server closes the socket within ~2 seconds with no error event. The app surfaces this as `SESSION_UPDATED event not received`.
 2. **TTS Avatar is only available in** `eastus2`, `westus2`, `northeurope`, `westeurope`, `swedencentral`, `southeastasia`.
 
 Run the preflight before `azd up`:
