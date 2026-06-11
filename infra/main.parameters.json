@@ -31,6 +31,7 @@
     "avatarName":             { "value": "${AVATAR_NAME=Lisa-casual-sitting}" },
     "customAvatarName":       { "value": "${CUSTOM_AVATAR_NAME=}" },
     "avatarDisplayName":      { "value": "${AVATAR_DISPLAY_NAME=}" },
+    "avatarTagline":          { "value": "${AVATAR_TAGLINE=}" },
     "photoAvatarName":        { "value": "${PHOTO_AVATAR_NAME=}" },
     "isPhotoAvatar":          { "value": "${IS_PHOTO_AVATAR=true}" },
     "isCustomAvatar":         { "value": "${IS_CUSTOM_AVATAR=true}" },

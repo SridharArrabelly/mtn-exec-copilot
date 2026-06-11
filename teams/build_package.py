@@ -21,9 +21,10 @@ Inputs (CLI flag overrides env var):
                                      build is tab-only (Phase 1) — the additive `bots` entry
                                      is dropped so the Tab package always builds.
     --name     / TEAMS_APP_NAME      Optional. Assistant persona / display name shown in Teams
-                                     (default "Nuru"). The full name + description are derived
-                                     from it. This is the brand name, decoupled from the avatar
-                                     model binding (CUSTOM_AVATAR_NAME).
+                                     (default "Avatar"; pass e.g. "Nuru" for a branded build).
+                                     The full name + description are derived from it. This is
+                                     the brand name, decoupled from the avatar model binding
+                                     (CUSTOM_AVATAR_NAME).
 
 Output:
     teams/build/avatar-forge-teams.zip
@@ -105,7 +106,7 @@ def _resolve_names(raw_name: str | None, raw_full: str | None) -> dict[str, str]
     Enforces the Teams v1.17 length limits (short name 30, full name 100,
     short description 80, full description 4000).
     """
-    name = (raw_name or "").strip() or "Nuru"
+    name = (raw_name or "").strip() or "Avatar"
     full = (raw_full or "").strip() or f"{name} — Azure Voice Live Avatar"
     desc_short = f"Chat with {name}, a real-time voice avatar."
     desc_full = (

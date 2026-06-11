@@ -169,7 +169,7 @@ def get_ui_defaults() -> dict:
         "avatarBackgroundImageUrl": _str("AVATAR_BACKGROUND_IMAGE_URL", ""),
         # Avatar identity tagline shown under the name (top-left of the stage).
         # Empty hides the tagline line.
-        "avatarTagline": _str("AVATAR_TAGLINE", "Your MTN Digital Assistant"),
+        "avatarTagline": _str("AVATAR_TAGLINE", "Your Digital Assistant"),
         # Avatar UX (additive, env-gated)
         "enableTextInput": _bool("ENABLE_TEXT_INPUT", True),
         "enableCaptions": _bool("ENABLE_CAPTIONS", False),

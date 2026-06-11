@@ -42,6 +42,7 @@ param embeddingDeployment string = ''
 param avatarName string = ''
 param customAvatarName string = ''
 param avatarDisplayName string = ''
+param avatarTagline string = ''
 param photoAvatarName string = ''
 param isPhotoAvatar string = ''
 param isCustomAvatar string = ''
@@ -215,6 +216,7 @@ module app 'modules/containerApp.bicep' = {
     avatarName: avatarName
     customAvatarName: customAvatarName
     avatarDisplayName: avatarDisplayName
+    avatarTagline: avatarTagline
     photoAvatarName: photoAvatarName
     isPhotoAvatar: isPhotoAvatar
     isCustomAvatar: isCustomAvatar
