@@ -72,6 +72,16 @@ Full walkthrough — building the search index, smoke tests, developer mode — 
 | **[teams/README.md](teams/README.md)** | Microsoft Teams tab + conversational bot: build the package, sideload (no admin), Azure Bot setup, validation. |
 | **[prompts/README.md](prompts/README.md)** | Agent prompt content, the reasoning/non-reasoning variants, and the edit workflow. |
 
+## References & Acknowledgements
+
+Avatar Forge was built by referencing the following Microsoft samples and documentation. Thanks to the teams behind them.
+
+- **Azure AI VoiceLive samples** — the project started from and the real-time avatar/voice implementation is based on these official samples: [microsoft-foundry/voicelive-samples (Python)](https://github.com/microsoft-foundry/voicelive-samples/tree/main/python) ([`azure-ai-voicelive` SDK](https://pypi.org/project/azure-ai-voicelive/)).
+- **Azure AI Search** — retrieval/grounding index: [Azure AI Search documentation](https://learn.microsoft.com/en-us/azure/search/).
+- **Azure AI Foundry (Agent Service)** — agent orchestration and tool-calling: [Azure AI Foundry documentation](https://learn.microsoft.com/en-us/azure/ai-foundry/).
+- **Grounding with Bing Custom Search** — domain-scoped web grounding for the agent: [Bing Custom Search tool](https://learn.microsoft.com/en-us/azure/foundry-classic/agents/how-to/tools-classic/bing-custom-search).
+- **Foundry web search (Grounding with Bing Search) tool** — real-time web grounding: [Grounding with Bing Search tools](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/tools/bing-tools).
+
 ## License
 
 This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file
