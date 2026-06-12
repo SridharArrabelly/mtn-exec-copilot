@@ -49,8 +49,22 @@ param teamsAppId string = ''
 @description('Foundry agent id override. Empty means resolve the agent by AGENT_NAME.')
 param agentId string = ''
 
+// ───────── Phase 2b in-call media (#27) ─────────
+@description('ACS endpoint for the Call Automation media participant. Empty disables Phase 2b in the container.')
+param acsEndpoint string = ''
+
 @description('Placeholder image used on first provision; azd replaces it during `azd deploy`.')
 param containerImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+// Phase 2b ACS env (additive). Surfaces ACS_ENDPOINT only when enabled; the app
+// reads it to construct the Call Automation client (managed identity via
+// AZURE_CLIENT_ID). Empty -> Phase 2b stays off and the container behaves as today.
+var acsEnv = !empty(acsEndpoint) ? [
+  {
+    name: 'ACS_ENDPOINT'
+    value: acsEndpoint
+  }
+] : []
 
 var botEnabled = !empty(botAppId)
 var botSecrets = !empty(botAppPassword) ? [
@@ -156,7 +170,7 @@ resource app 'Microsoft.App/containerApps@2024-10-02-preview' = {
             { name: 'SR_MODEL', value: srModel }
             { name: 'RECOGNITION_LANGUAGE', value: recognitionLanguage }
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
-          ], botEnv)
+          ], concat(botEnv, acsEnv))
           probes: [
             {
               type: 'Liveness'

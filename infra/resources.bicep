@@ -59,6 +59,14 @@ param botDisplayName string = 'Avatar Forge'
 param teamsAppId string = ''
 param agentId string = ''
 
+// ───────── Phase 2b in-call media (#27) ─────────
+@description('Enable Phase 2b ACS Call Automation media participant ("true"/"false"). When not "true" (default), no ACS resource is created and the container behaves as today.')
+param enableAcs string = 'false'
+@description('ACS data residency geography (NOT an Azure region), e.g. "United States", "Europe", "Africa".')
+param acsDataLocation string = 'United States'
+
+var acsEnabled = toLower(enableAcs) == 'true'
+
 var abbrs = loadJsonContent('abbreviations.json')
 
 // ───────── Identity ─────────
@@ -185,6 +193,18 @@ module foundryRoleForSearch 'modules/foundryRoleForSearch.bicep' = if (createSea
   }
 }
 
+// ───────── Phase 2b in-call media (#27) ─────────
+// Only provisioned when Phase 2b is explicitly enabled. Additive + conditional,
+// mirroring the botService opt-in: a deploy with enableAcs=false never creates ACS.
+module acs 'modules/communicationServices.bicep' = if (acsEnabled) {
+  name: 'acs'
+  params: {
+    name: '${abbrs.communicationServices}-${environmentName}-${resourceToken}'
+    tags: tags
+    dataLocation: acsDataLocation
+  }
+}
+
 // ───────── Container App ─────────
 var foundryEndpointEffective = createFoundry ? foundry!.outputs.accountEndpoint : 'https://${existingFoundryAccountName}.services.ai.azure.com/'
 var foundryProjectEndpointEffective = createFoundry ? foundry!.outputs.projectEndpoint : existingFoundryProjectEndpoint
@@ -228,6 +248,7 @@ module app 'modules/containerApp.bicep' = {
     botAppPassword: botAppPassword
     teamsAppId: teamsAppId
     agentId: agentId
+    acsEndpoint: acsEnabled ? acs!.outputs.endpoint : ''
   }
 }
 
@@ -259,4 +280,5 @@ output searchEndpoint string = searchEndpointEffective
 output appInsightsConnectionString string = appInsightsConnectionStringEffective
 output effectiveAgentProjectName string = createFoundry ? 'proj-${environmentName}' : agentProjectName
 output botMessagingEndpoint string = !empty(botAppId) ? '${app.outputs.uri}/api/messages' : ''
+output acsEndpoint string = acsEnabled ? acs!.outputs.endpoint : ''
 

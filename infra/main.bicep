@@ -81,6 +81,12 @@ param teamsAppId string = ''
 @description('Foundry agent id override. Empty resolves the agent by AGENT_NAME.')
 param agentId string = ''
 
+// ───────── Phase 2b in-call media (#27) ─────────
+@description('Enable Phase 2b ACS Call Automation media participant ("true"/"false"). When not "true" (default), no ACS resource is created and the deployment behaves exactly as today.')
+param enableAcs string = 'false'
+@description('ACS data residency geography (NOT an Azure region), e.g. "United States", "Europe", "Africa".')
+param acsDataLocation string = 'United States'
+
 // ───────── Model deployment (used only when creating Foundry) ─────────
 param modelName string = 'gpt-5.4'
 param modelVersion string = '2026-03-05'
@@ -151,6 +157,8 @@ module resources 'resources.bicep' = {
     botDisplayName: botDisplayName
     teamsAppId: teamsAppId
     agentId: agentId
+    enableAcs: enableAcs
+    acsDataLocation: acsDataLocation
   }
 }
 
@@ -184,6 +192,9 @@ output APPLICATIONINSIGHTS_CONNECTION_STRING string = resources.outputs.appInsig
 output BOT_MESSAGING_ENDPOINT string = resources.outputs.botMessagingEndpoint
 output TEAMS_BOT_ID string = botAppId
 output TEAMS_APP_ID string = teamsAppId
+
+// Phase 2b in-call media (#27). Empty unless enableAcs=true.
+output ACS_ENDPOINT string = resources.outputs.acsEndpoint
 
 // Echo BYO inputs back as outputs so they end up in the azd env and the postprovision
 // RBAC script can read them without needing the original GitHub vars / .env values.
