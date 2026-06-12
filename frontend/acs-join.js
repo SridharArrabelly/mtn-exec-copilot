@@ -84,6 +84,7 @@ let captureFrames = 0;          // ScriptProcessor callbacks (diagnostics)
 let captureMaxRms = 0;          // peak RMS since last stats report (diagnostics)
 let playCursor = 0;             // scheduling cursor for outbound playback
 let scheduledSources = [];      // active outbound buffer sources (for barge-in flush)
+let captureMutedUntil = 0;      // half-duplex: drop mic capture until this ctx time
 
 function setupOutboundAudio(LocalAudioStream) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)({
@@ -133,7 +134,8 @@ function openMediaSocket() {
 // Voice Live PCM16 -> schedule into the outgoing call audio.
 // A small jitter buffer (lead time) absorbs network/WS timing variance so the
 // scheduled chunks play gap-free instead of underrunning into clicks/breakups.
-const PLAYBACK_LEAD = 0.18; // seconds of cushion ahead of the play clock
+const PLAYBACK_LEAD = 0.25; // seconds of cushion ahead of the play clock
+const CAPTURE_TAIL = 0.4;   // extra mic-mute time after playback drains (anti-echo)
 function playPcmChunk(int16) {
     if (!audioCtx || !outboundDest) return;
     const f32 = pcm16ToFloat(int16);
@@ -148,6 +150,10 @@ function playPcmChunk(int16) {
     if (playCursor < now + 0.02) playCursor = now + PLAYBACK_LEAD;
     node.start(playCursor);
     playCursor += buf.duration;
+    // Half-duplex: while Nuru is speaking (and for a short tail afterwards), the
+    // mic would otherwise capture her own voice from the Teams-client speaker and
+    // feed it back as a new "question". Suppress capture until playback drains.
+    captureMutedUntil = playCursor + CAPTURE_TAIL;
     scheduledSources.push(node);
     node.onended = () => {
         const i = scheduledSources.indexOf(node);
@@ -162,9 +168,23 @@ function flushPlayback() {
     }
     scheduledSources = [];
     playCursor = audioCtx ? audioCtx.currentTime : 0;
+    captureMutedUntil = 0; // playback cancelled — re-open the mic immediately
 }
 
 // Capture the meeting's remote audio and stream PCM16 to the server.
+function allHumansMuted() {
+    // From Nuru's leg, the humans are remote participants. If at least one is
+    // explicitly unmuted, someone may be talking to the meeting -> listen.
+    // If there are none yet, or all are muted, suppress capture.
+    try {
+        const parts = (call && call.remoteParticipants) ? call.remoteParticipants : [];
+        if (!parts.length) return true;
+        return !parts.some((p) => p && p.isMuted === false);
+    } catch (_) {
+        return false; // never hard-fail capture on an inspection error
+    }
+}
+
 function ensureCaptureNode() {
     if (captureNode) return;
     captureNode = audioCtx.createScriptProcessor(4096, 1, 1);
@@ -178,6 +198,16 @@ function ensureCaptureNode() {
         const rms = Math.sqrt(sum / samples.length);
         if (rms > captureMaxRms) captureMaxRms = rms;
         captureFrames++;
+        // Half-duplex gate: don't forward mic audio while Nuru is speaking, so
+        // her own voice (from the Teams-client speaker) can't loop back as a
+        // new question. Browser AEC can't cancel it (different app's output).
+        const selfTalking = !!(audioCtx && audioCtx.currentTime < captureMutedUntil);
+        // Privacy gate: Nuru taps the local mic directly, which is independent
+        // of the Teams client's mute. But from Nuru's leg the human is a *remote*
+        // participant, so we honour their Teams mute — if every human is muted,
+        // nothing is legitimately being said to the meeting, so stop listening.
+        const humanMuted = allHumansMuted();
+        const muted = selfTalking || humanMuted;
         if (captureFrames % 25 === 0) {
             try {
                 mediaWs.send(JSON.stringify({
@@ -185,6 +215,8 @@ function ensureCaptureNode() {
                     frames: captureFrames,
                     maxRms: Number(captureMaxRms.toFixed(5)),
                     ctxRate: audioCtx ? audioCtx.sampleRate : 0,
+                    selfTalking,
+                    humanMuted,
                     remoteStreams: (call && call.remoteAudioStreams)
                         ? call.remoteAudioStreams.length : 0,
                     wiredTracks: wiredRemoteTracks.size,
@@ -192,6 +224,7 @@ function ensureCaptureNode() {
             } catch (_) { /* ignore */ }
             captureMaxRms = 0;
         }
+        if (muted) return;
         const pcm = floatToPcm16(samples);
         mediaWs.send(pcm.buffer);
     };
@@ -468,6 +501,24 @@ async function startBrowserMedia() {
                 console.warn("[acs-join] muteIncomingAudio failed", e);
             }
         }, 1500);
+        // Let meeting participants stop Nuru mid-answer using the standard Teams
+        // "mute participant" action: when she's muted by others, cut the current
+        // answer immediately, then auto-unmute so she's ready for the next
+        // question (she's a bot, so others can't unmute her — she re-arms herself).
+        try {
+            call.on("mutedByOthers", () => {
+                console.log("[acs-join] muted by others -> stop talking + re-arm");
+                flushPlayback();
+                if (mediaWs && mediaWs.readyState === WebSocket.OPEN) {
+                    try { mediaWs.send(JSON.stringify({ type: "interrupt" })); } catch (_) {}
+                }
+                setTimeout(() => {
+                    if (call && typeof call.unmute === "function") {
+                        call.unmute().catch((e) => console.warn("[acs-join] re-unmute failed", e));
+                    }
+                }, 600);
+            });
+        } catch (_) { /* event not in this SDK build */ }
         log("Nuru is live in the call. Ask a question aloud and she'll answer.");
     } catch (e) {
         log(`Media bridge failed: ${e.message || e}`);

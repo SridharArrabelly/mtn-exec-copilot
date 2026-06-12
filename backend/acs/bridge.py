@@ -338,6 +338,8 @@ class BrowserVoiceBridge:
                                     f"[browser {self.client_id}] capture stats: "
                                     f"frames={ctrl.get('frames')} maxRms={ctrl.get('maxRms')} "
                                     f"ctxRate={ctrl.get('ctxRate')} "
+                                    f"selfTalking={ctrl.get('selfTalking')} "
+                                    f"humanMuted={ctrl.get('humanMuted')} "
                                     f"remoteStreams={ctrl.get('remoteStreams')} "
                                     f"wiredTracks={ctrl.get('wiredTracks')}"
                                 )
@@ -356,6 +358,14 @@ class BrowserVoiceBridge:
                                     f"[browser {self.client_id}] browser muted incoming "
                                     f"audio (echo guard)"
                                 )
+                            elif ct == "interrupt":
+                                logger.info(
+                                    f"[browser {self.client_id}] interrupt requested "
+                                    f"(muted by others) — stopping current response"
+                                )
+                                self._suppress_current_response = True
+                                if self.handler is not None:
+                                    await self.handler.interrupt()
                     continue
                 if self.handler is None:
                     continue
