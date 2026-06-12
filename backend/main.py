@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .api import routes, websocket as ws
+from .bot.app import build_bot_router, shutdown_bot
 from .config import HOST, PORT, configure_logging
 from .voice.auth import close_credential, create_credential
 from .voice.catalog import close_search_client, prewarm_catalog
@@ -81,6 +82,7 @@ async def lifespan(app: FastAPI):
     # SearchClient (which uses the credential), THEN close the
     # credential's underlying aiohttp.ClientSession.
     await ws.shutdown_all()
+    await shutdown_bot()
     await close_search_client()
     await close_credential()
     logger.info("Avatar Forge server stopped.")
@@ -137,6 +139,9 @@ async def no_cache_static(request, call_next):
 
 app.include_router(routes.router)
 app.include_router(ws.router)
+# Teams bot messaging endpoint (issue #53). Mounted before the static SPA so
+# POST /api/messages is handled by the bot, not the catch-all frontend mount.
+app.include_router(build_bot_router())
 
 # Mount frontend
 _frontend = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")

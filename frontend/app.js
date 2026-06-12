@@ -62,17 +62,26 @@ let peerConnectionQueue = [];
 let captionsEnabled = false;
 let captionsShowUser = false;
 let suggestedPromptsEnabled = true;
-// Text composer (bottom-center of the avatar stage) in normal mode. Env-gated
-// via ENABLE_TEXT_INPUT (/api/config defaults -> enableTextInput).
-let textInputEnabled = true;
+// Text composer (bottom-center of the avatar stage) in normal mode. Shown on
+// the standalone web app; ALWAYS hidden inside the Microsoft Teams client (the
+// bot chat tab has Teams' native compose box, and the avatar tab is voice-first
+// — type via the chat tab or, in a call, the meeting chat with an @mention).
+// ENABLE_TEXT_INPUT (/api/config -> enableTextInput) is an optional web-only
+// override; isEmbeddedInTeams() can never be overridden on.
+let textInputEnabled = false;
+// Stop-speaking button (next to the mic) in normal mode. Env-gated via
+// ENABLE_STOP_BUTTON (/api/config defaults -> enableStopButton). Shown only
+// while the avatar is actually talking.
+let stopButtonEnabled = true;
 // Normal-mode connection/permission status surfaced on #stageStatus. One of:
 // null, 'reconnecting', 'ended', 'mic-blocked', 'mic-missing', 'error'.
 let connectionState = null;
 // Set true right before a user-initiated stop so the socket's later onclose
 // doesn't mistake an intentional disconnect for an unexpected drop.
 let intentionalDisconnect = false;
-let onboardingHintText = 'Tap the mic and ask me anything';
+let onboardingHintText = 'Tap the mic to ask me anything';
 let avatarTaglineText = '';
+let avatarDisplayNameText = '';
 let suggestedPrompts = [];
 // Onboarding lifecycle: dismissed permanently after the first real user action;
 // hidden temporarily while the avatar speaks (e.g. the proactive greeting).
@@ -195,6 +204,20 @@ function applyServerDefaults(defaults) {
     }
 }
 
+// True when the SPA is embedded in the Microsoft Teams client (tab host now,
+// in-call later). Self-contained (mirrors teams.js) so it never depends on
+// teams.js load order. In Teams we hide the in-app text composer entirely; the
+// composer only ever appears on the standalone web app.
+function isEmbeddedInTeams() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('inTeams')) return true;
+        if (window.parent && window.parent !== window) return true;
+        if (window.nativeInterface) return true; // Teams desktop webview marker
+    } catch (e) {}
+    return false;
+}
+
 async function fetchServerConfig() {
     try {
         const resp = await fetch('/api/config');
@@ -208,10 +231,20 @@ async function fetchServerConfig() {
         const d = config.defaults || {};
         captionsEnabled = d.enableCaptions ?? false;
         captionsShowUser = d.captionsShowUser ?? false;
-        textInputEnabled = d.enableTextInput ?? true;
+        // Composer defaults on for the web app, but is always suppressed inside
+        // Teams (host wins over the env override).
+        textInputEnabled = (d.enableTextInput ?? true) && !isEmbeddedInTeams();
+        stopButtonEnabled = d.enableStopButton ?? true;
         suggestedPromptsEnabled = d.enableSuggestedPrompts ?? true;
-        onboardingHintText = d.onboardingHint ?? onboardingHintText;
+        // Hint is modality-aware and follows the EFFECTIVE composer state above
+        // (so Teams, where the composer is hidden, never says "…or type…"). An
+        // explicit ONBOARDING_HINT from the backend always wins.
+        const explicitHint = typeof d.onboardingHint === 'string' ? d.onboardingHint.trim() : '';
+        onboardingHintText = explicitHint || (textInputEnabled
+            ? 'Tap the mic or type to ask me anything'
+            : 'Tap the mic to ask me anything');
         avatarTaglineText = d.avatarTagline ?? avatarTaglineText;
+        avatarDisplayNameText = d.avatarDisplayName ?? avatarDisplayNameText;
         const taglineEl = document.getElementById('avatarTagline');
         if (taglineEl) taglineEl.textContent = avatarTaglineText || '';
         suggestedPrompts = Array.isArray(d.suggestedPrompts) ? d.suggestedPrompts : [];
@@ -756,6 +789,11 @@ function handleServerMessage(msg) {
         case 'speech_stopped':
             onSpeechStopped();
             break;
+        case 'stop_playback':
+            // Server truncated the output audio (manual Stop button). Clear any
+            // local PCM playback and drop the speaking glow immediately.
+            stopAudioPlayback();
+            break;
         case 'transcript_empty':
             onTranscriptEmpty(msg.itemId);
             break;
@@ -994,6 +1032,12 @@ function shouldShowAvatarPanel() {
 function setAvatarNameLabelFromConfig() {
     const labelEl = document.getElementById('avatarNameLabel');
     if (!labelEl) return;
+    // AVATAR_DISPLAY_NAME (the single branding knob) wins when set, shown
+    // verbatim. Otherwise derive a friendly name from the selected avatar model.
+    if (avatarDisplayNameText) {
+        labelEl.textContent = avatarDisplayNameText;
+        return;
+    }
     const isCustomA = document.getElementById('isCustomAvatar')?.checked;
     const isPhotoA = document.getElementById('isPhotoAvatar')?.checked;
     const rawName = isCustomA
@@ -1150,6 +1194,7 @@ function setAvatarSpeaking(on) {
         if (stage) stage.classList.add('speaking');
         // The avatar is talking — tuck the onboarding hint away (temporarily).
         hideOnboardingTemporarily();
+        updateStopButton();
     } else {
         if (speakingWatchdogTimer) { clearTimeout(speakingWatchdogTimer); speakingWatchdogTimer = null; }
         if (!avatarSpeaking) return;
@@ -1160,7 +1205,28 @@ function setAvatarSpeaking(on) {
         clearAvatarCaption(900);
         // Restore onboarding if the user hasn't actually interacted yet.
         maybeRestoreOnboarding();
+        updateStopButton();
     }
+}
+
+// The stop button stays docked next to the mic while the avatar is on screen
+// (presence handled in updateDeveloperModeLayout); here we just toggle whether
+// it's actionable — enabled only while the avatar is actually speaking.
+function updateStopButton() {
+    const btn = document.getElementById('avatarStopBtn');
+    if (!btn) return;
+    btn.disabled = !avatarSpeaking;
+    btn.classList.toggle('active', avatarSpeaking);
+}
+
+// User pressed Stop: tell the server to cancel the in-flight response (reuses
+// the existing barge-in interrupt path) and halt local audio immediately.
+function stopAvatarSpeaking() {
+    if (!avatarSpeaking) return;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'interrupt' }));
+    }
+    stopAudioPlayback();
 }
 
 // Reset on every audio chunk; if audio stops arriving for SPEAKING_WATCHDOG_MS
@@ -1384,6 +1450,14 @@ function updateDeveloperModeLayout() {
     const avatarReady = showAvatar && !avatarConnecting;
     if (avatarMicBtn) hide(avatarMicBtn, !avatarReady);
     if (avatarReady) hide(footerArea, true);
+
+    // Docked stop-speaking button: lives next to the mic with the same
+    // readiness as the docked mic (env-gated by ENABLE_STOP_BUTTON). It stays
+    // visible while the avatar is on screen but is only *enabled* while she's
+    // actually speaking — see updateStopButton().
+    const avatarStopBtn = document.getElementById('avatarStopBtn');
+    if (avatarStopBtn) hide(avatarStopBtn, !(avatarReady && stopButtonEnabled));
+    updateStopButton();
 
     // Bottom-center stage composer: normal (production) mode only, env-gated,
     // and only once the avatar is on screen (same readiness as the docked mic).

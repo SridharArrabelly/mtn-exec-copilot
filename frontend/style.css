@@ -1250,6 +1250,47 @@ input[type="range"]::-webkit-slider-thumb {
 .avatar-mic-btn .mic-off-icon { fill: var(--overlay-text); }
 .avatar-mic-btn .mic-off-icon line { stroke: var(--overlay-text); }
 
+/* ===== Stop-speaking button (normal mode) — env-gated (ENABLE_STOP_BUTTON).
+   Docked immediately left of the mic whenever the avatar is on screen;
+   neutral/greyed while idle and red+actionable only while the avatar is
+   speaking. The stop button carries the margin-left:auto that right-pins the
+   pair; when it's visible we zero the mic's own auto-margin so the two cluster
+   together instead of splitting across the row. ===== */
+.avatar-stop-btn {
+    position: relative;
+    flex-shrink: 0;
+    margin-left: auto;
+    width: clamp(34px, 6.4vmin, 46px);
+    height: clamp(34px, 6.4vmin, 46px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border-radius: 999px;
+    background: var(--overlay-surface);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--overlay-border);
+    box-shadow: 0 4px 18px var(--overlay-shadow);
+    cursor: default;
+    opacity: 0.55;
+    transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.12s ease;
+}
+/* When the stop button is shown, it owns the auto-margin — drop the mic's so
+   the mic sits flush beside it (otherwise both autos split the free space and
+   leave a gap, stranding the stop button mid-row). */
+.avatar-stop-btn:not(.hidden) + .avatar-mic-btn { margin-left: 0; }
+.avatar-stop-btn svg { width: 44%; height: 44%; fill: var(--overlay-text); }
+.avatar-stop-btn.active {
+    background: rgba(168, 0, 0, 0.9);
+    border-color: rgba(168, 0, 0, 0.6);
+    opacity: 1;
+    cursor: pointer;
+}
+.avatar-stop-btn.active svg { fill: #fff; }
+.avatar-stop-btn.active:hover { background: rgba(196, 0, 0, 0.95); }
+.avatar-stop-btn.active:active { transform: scale(0.94); }
+
 /* ===== Stage text composer (normal mode) — flex child of .avatar-dock ===== */
 .stage-composer {
     /* Grows to fill the row from just right of the mic out to the stage's

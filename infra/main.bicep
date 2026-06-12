@@ -55,12 +55,31 @@ param agentModel string = 'gpt-5.4'
 param embeddingDeployment string = 'text-embedding-3-small'
 param avatarName string = 'Lisa-casual-sitting'
 param customAvatarName string = ''
+@description('Assistant persona / display name (e.g. "Nuru") for the bot welcome message. Purely cosmetic; does NOT select the avatar model. Empty falls back to "Avatar".')
+param avatarDisplayName string = ''
+@description('Identity tagline under the avatar name (e.g. "Your MTN Digital Assistant"). Empty uses the company-agnostic default.')
+param avatarTagline string = ''
 param photoAvatarName string = ''
 param isPhotoAvatar string = 'false'
 param isCustomAvatar string = 'false'
 param avatarBackgroundImageUrl string = ''
 param srModel string = 'mai-transcribe-1'
 param recognitionLanguage string = 'auto'
+
+// ───────── Teams bot (issue #53, Phase 2a) ─────────
+@description('Bot Entra app client id (Microsoft App ID). Leave empty to skip bot provisioning. Surfaces as TEAMS_BOT_ID.')
+param botAppId string = ''
+@description('Bot app tenant id (single-tenant). Defaults to the deployment tenant when empty.')
+param botAppTenantId string = ''
+@description('Bot app client secret. Stored as a Container App secret. Required when botAppId is set.')
+@secure()
+param botAppPassword string = ''
+@description('Display name for the Azure Bot resource.')
+param botDisplayName string = 'Avatar Forge'
+@description('Teams app (manifest) id used for bot deep links to the personal tab. Surfaces as TEAMS_APP_ID.')
+param teamsAppId string = ''
+@description('Foundry agent id override. Empty resolves the agent by AGENT_NAME.')
+param agentId string = ''
 
 // ───────── Model deployment (used only when creating Foundry) ─────────
 param modelName string = 'gpt-5.4'
@@ -118,12 +137,20 @@ module resources 'resources.bicep' = {
     embeddingDeployment: embeddingDeployment
     avatarName: avatarName
     customAvatarName: customAvatarName
+    avatarDisplayName: avatarDisplayName
+    avatarTagline: avatarTagline
     photoAvatarName: photoAvatarName
     isPhotoAvatar: isPhotoAvatar
     isCustomAvatar: isCustomAvatar
     avatarBackgroundImageUrl: avatarBackgroundImageUrl
     srModel: srModel
     recognitionLanguage: recognitionLanguage
+    botAppId: botAppId
+    botAppTenantId: botAppTenantId
+    botAppPassword: botAppPassword
+    botDisplayName: botDisplayName
+    teamsAppId: teamsAppId
+    agentId: agentId
   }
 }
 
@@ -151,6 +178,12 @@ output SEARCH_INDEX_NAME string = searchIndexName
 output BING_CONNECTION_NAME string = bingConnectionName
 output BING_CUSTOM_CONFIG_NAME string = bingCustomConfigName
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = resources.outputs.appInsightsConnectionString
+
+// Teams bot (issue #53). Echoed so the operator can configure the manifest and
+// the Azure Bot messaging endpoint without re-deriving them.
+output BOT_MESSAGING_ENDPOINT string = resources.outputs.botMessagingEndpoint
+output TEAMS_BOT_ID string = botAppId
+output TEAMS_APP_ID string = teamsAppId
 
 // Echo BYO inputs back as outputs so they end up in the azd env and the postprovision
 // RBAC script can read them without needing the original GitHub vars / .env values.

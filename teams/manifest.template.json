@@ -10,12 +10,12 @@
     "termsOfUseUrl": "https://github.com/SridharArrabelly/avatar-forge/blob/main/LICENSE"
   },
   "name": {
-    "short": "Avatar Forge",
-    "full": "Avatar Forge — Azure Voice Live Avatar"
+    "short": "{{APP_NAME}}",
+    "full": "{{APP_FULL_NAME}}"
   },
   "description": {
-    "short": "Talk to a real-time voice avatar.",
-    "full": "Avatar Forge embeds the Azure Voice Live avatar experience as a personal tab. Speak with a real-time, lip-synced avatar powered by Azure. Microphone access is required for the conversation."
+    "short": "{{APP_DESC_SHORT}}",
+    "full": "{{APP_DESC_FULL}}"
   },
   "icons": {
     "color": "color.png",
@@ -33,10 +33,44 @@
       ]
     }
   ],
+  "bots": [
+    {
+      "botId": "{{BOT_ID}}",
+      "scopes": [
+        "personal",
+        "team",
+        "groupchat"
+      ],
+      "isNotificationOnly": false,
+      "supportsFiles": false,
+      "supportsCalling": false,
+      "supportsVideo": false,
+      "commandLists": [
+        {
+          "scopes": [
+            "personal",
+            "team",
+            "groupchat"
+          ],
+          "commands": [
+            {
+              "title": "Ask a question",
+              "description": "Ask the knowledge base anything; I answer with sources."
+            },
+            {
+              "title": "Open the live avatar",
+              "description": "Get a link to the rich, real-time avatar tab."
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "devicePermissions": [
     "media"
   ],
   "validDomains": [
-    "{{HOSTNAME}}"
+    "{{HOSTNAME}}",
+    "token.botframework.com"
   ]
 }

@@ -1,12 +1,17 @@
 [project]
 name = "avatar-forge"
 version = "0.1.0"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "aiofiles>=25.1.0",
     "aiohttp>=3.13.5",
     "azure-ai-projects>=2.1.0",
     "azure-ai-voicelive[aiohttp]>=1.0.0",
+    "microsoft-agents-activity>=1.0.0",
+    "microsoft-agents-hosting-core>=1.0.0",
+    "microsoft-agents-hosting-fastapi>=1.0.0",
+    "microsoft-agents-hosting-teams>=1.0.0",
+    "microsoft-agents-authentication-msal>=1.0.0",
     "azure-core>=1.41.0",
     "azure-identity>=1.26.0b2",
     "azure-search-documents>=12.0.0",
@@ -30,4 +35,4 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["backend", "backend.api", "backend.voice"]
+packages = ["backend", "backend.api", "backend.voice", "backend.bot"]

@@ -1,8 +1,16 @@
-# Avatar Forge — Microsoft Teams app (Phase 1, scope 1A)
+# Avatar Forge — Microsoft Teams app (tab + conversational bot)
 
-This folder packages the Avatar Forge web app as an **anonymous Microsoft Teams
-personal tab**. Scope **1A** is a **prototype** with one goal: **make it run in Teams
-via sideload, with no Teams-admin access required.**
+This folder packages the Avatar Forge web app as a **Microsoft Teams app** with two
+surfaces in **one package**: a personal **tab** that embeds the web UI (Phase 1,
+scope 1A) and an installable, @mentionable **conversational bot** (Phase 2a, issue
+#53). Both are additive and sideloadable with **no Teams-admin access required**.
+
+- **Phase 1 — personal tab** (below): an anonymous, sideloaded prototype that embeds
+  the existing web UI (mic + WebRTC avatar). No SSO, no org publishing.
+- **Phase 2a — conversational bot** ([jump down](#phase-2a--conversational-bot-issue-53)):
+  a bot that answers via the same Foundry agent and deep-links back into the tab.
+
+Start with the tab walkthrough, then the bot section if you're enabling it.
 
 - Personal-scope **static tab** that embeds the existing web UI (mic + WebRTC avatar).
 - **No SSO** and **no org/admin publishing** — those are a later phase you'll drive
@@ -128,9 +136,123 @@ Only `frame-ancestors` is set on purpose — a full CSP (`script-src`/`connect-s
 
 ## Deferred to a later phase (not in this prototype)
 
-- Entra app registration + AAD SSO inside the Teams context.
 - Publishing through the **Teams admin center** (org catalog / targeted release / admin
   approval) — you'll do this from the admin portal once the sideloaded prototype works.
   The package built here is reused unchanged for that step.
 - Real privacy-policy and terms-of-use pages (the manifest currently points at repo pages,
   which is fine for sideload).
+
+---
+
+# Phase 2a — Conversational bot (issue #53)
+
+Phase 2a adds an **installable, @mentionable bot** to the **same Teams app package** (the
+manifest now carries both a `staticTabs` entry **and** a `bots` entry — one app, two
+surfaces). The bot answers questions using the **same Foundry agent** the voice avatar
+uses (Azure AI Search RAG + Bing grounding), returns answers as Adaptive Cards with
+sources, and can deep-link back into the Phase 1 tab for the live avatar.
+
+It is **additive**: the Phase 1 tab and the standalone web app are unchanged, and no Node
+toolchain is introduced. The bot is hosted **inside the existing FastAPI app** (new
+`POST /api/messages` route) using the **Microsoft 365 Agents SDK** (`microsoft-agents-*`,
+FastAPI adapter), so it ships in the same Container App — the messaging endpoint is just
+the existing ACA HTTPS URL + `/api/messages`.
+
+## What changed
+
+| Area | Change |
+| --- | --- |
+| `teams/manifest.template.json` | Added a `bots` entry (`personal` + `team` + `groupchat` scopes), a `commandLists`, a `{{BOT_ID}}` placeholder, and `token.botframework.com` to `validDomains`. The static tab is untouched. |
+| `teams/build_package.py` | Optional `--bot-id` / `TEAMS_BOT_ID` input fills `{{BOT_ID}}`. **When omitted, the build is tab-only** (the `bots` entry is dropped) so the Phase 1 Tab package always builds. The zip stays flat (manifest + 2 icons). |
+| `backend/bot/` | The bot: SDK app + `/api/messages` route (`app.py`), Foundry-agent bridge (`agent_runtime.py`), Adaptive Card + deep link (`cards.py`). |
+| `backend/main.py` | Mounts the bot router before the static SPA; closes the agent client on shutdown. |
+| `infra/` | New `modules/botService.bicep` (Azure Bot + Teams channel), conditional on a bot app id; container env + secret wiring. |
+
+## Identity model (read this first)
+
+The bot needs a **bot identity** = an **Entra app registration** (client id + secret),
+registered as an **Azure Bot** resource with the **Teams channel** enabled. This is
+**separate** from the backend's managed identity (which still reaches Foundry/Search) and
+**separate** from user SSO (deferred — see below).
+
+- **Azure Bot + Teams channel + container wiring** are created by `infra/` when you supply
+  the bot app id/secret — **no Teams admin access required** (these are *Azure* RBAC
+  actions in your subscription).
+- **User SSO is deferred** (Phase 2a ships with bot-framework identity only). The bot does
+  not yet exchange a user token, so it does not need `webApplicationInfo` in the manifest
+  for the MVP. Adding SSO later requires an exposed API scope + `webApplicationInfo` +
+  token-exchange handling.
+
+## Steps you must do yourself (portal / CLI)
+
+These cannot be done from this repo because they create an **app registration** (an
+identity object), which lives outside the resource-group deployment:
+
+1. **Create the bot's Entra app registration** (single-tenant is simplest):
+   ```bash
+   az ad app create --display-name "Avatar Forge Bot" --sign-in-audience AzureADMyOrg
+   # note the appId (this is your BOT app id), then add a client secret:
+   az ad app credential reset --id <bot-app-id> --append
+   # note the returned password (client secret)
+   ```
+2. **Give azd the bot values** (the infra wires the Azure Bot + container env from these):
+   ```bash
+   azd env set BOT_APP_ID <bot-app-id>
+   azd env set BOT_APP_PASSWORD <bot-client-secret>   # stored as an ACA secret
+   azd env set TEAMS_APP_ID <teams-app-id>            # same id you build the package with
+   ```
+   > These map to the `botAppId` / `botAppPassword` / `teamsAppId` Bicep params. If
+   > `BOT_APP_ID` is unset, the bot infra is skipped entirely and the deploy behaves
+   > exactly as Phase 1.
+3. **Provision + deploy**: `azd up` (or `azd provision` then `azd deploy`). This creates
+   the Azure Bot, enables the Teams channel, and sets the messaging endpoint to
+   `https://<aca-host>/api/messages`. The endpoint is also emitted as the
+   `BOT_MESSAGING_ENDPOINT` output.
+
+## Build the package (with the bot id)
+
+The bot is **additive and opt-in**: omit `--bot-id` to build the tab-only Phase 1 package
+(the `bots` entry is dropped). To include the bot, pass `--bot-id` (the bot app id from step 1):
+
+```bash
+uv run python teams/build_package.py \
+  --hostname <your-app>.azurecontainerapps.io \
+  --bot-id <bot-app-id>
+```
+
+`--app-id` / `TEAMS_APP_ID` behaves as before (deterministic from the hostname if
+omitted). Output is the same flat `teams/build/avatar-forge-teams.zip`. **Sideload it
+exactly as in Phase 1** (Route A or Route B above) — the same package now installs both
+the tab and the bot.
+
+## Validate the bot (web AND desktop)
+
+- [ ] **Personal chat:** open the bot, send a question, get an answer **with a Sources
+      list** and an **"Open the live avatar"** button that launches the tab.
+- [ ] **Group chat:** add the app, **@mention** the bot, get an answer (bots only see
+      messages they're @mentioned in, in group/meeting chat).
+- [ ] **Meeting chat:** add the app to a meeting, **@mention** the bot in the meeting chat,
+      get an answer (chat-only — no in-call media yet; that's Phase 2b / #27).
+- [ ] **Parity:** the same question asked to the bot and to the voice avatar returns
+      consistent answers + citations (both go through the same Foundry agent).
+- [ ] **No regressions:** the Phase 1 tab still loads and the standalone web app
+      (`uv run avatar-forge`) is unchanged.
+
+> The bot endpoint also answers `GET /api/messages` with `{"status":"ok"}` for a quick
+> liveness check once deployed.
+
+## Known gating risks
+
+- **Turn latency:** a grounded answer can take several seconds (AI Search + Bing). To stay
+  within the Teams ~15s activity-response window, the bot **acknowledges immediately** (typing
+  indicator) and runs the Foundry agent in the **background**, then posts the answer (Adaptive
+  Card with sources) as a **proactive message** to the same conversation. `BOT_RUN_TIMEOUT_S`
+  (default 60s) caps the background run; on timeout the bot posts a brief "took too long" reply.
+  This requires the bot's app id (`CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID`) to be
+  set so proactive `continue_conversation` can authenticate.
+- **Conversational memory:** the MVP treats each turn statelessly. Multi-turn memory
+  (threading via the Responses API) is wired but off by default to avoid cross-user
+  context bleed in group/meeting chats.
+- **SSO:** deferred — the bot does not yet know *who* asked. Add `webApplicationInfo` +
+  token exchange in a follow-up if per-user identity is required.
+

@@ -30,6 +30,8 @@
     "embeddingDeployment":    { "value": "${EMBEDDING_DEPLOYMENT=text-embedding-3-small}" },
     "avatarName":             { "value": "${AVATAR_NAME=Lisa-casual-sitting}" },
     "customAvatarName":       { "value": "${CUSTOM_AVATAR_NAME=}" },
+    "avatarDisplayName":      { "value": "${AVATAR_DISPLAY_NAME=}" },
+    "avatarTagline":          { "value": "${AVATAR_TAGLINE=}" },
     "photoAvatarName":        { "value": "${PHOTO_AVATAR_NAME=}" },
     "isPhotoAvatar":          { "value": "${IS_PHOTO_AVATAR=true}" },
     "isCustomAvatar":         { "value": "${IS_CUSTOM_AVATAR=true}" },
@@ -41,6 +43,13 @@
     "modelVersion":        { "value": "${MODEL_VERSION=2026-03-05}" },
     "modelDeploymentName": { "value": "${MODEL_DEPLOYMENT_NAME=gpt-5.4}" },
     "modelSkuName":        { "value": "${MODEL_SKU_NAME=GlobalStandard}" },
-    "modelCapacity":       { "value": 50 }
+    "modelCapacity":       { "value": 50 },
+
+    "botAppId":        { "value": "${BOT_APP_ID=}" },
+    "botAppTenantId":  { "value": "${BOT_APP_TENANT_ID=}" },
+    "botAppPassword":  { "value": "${BOT_APP_PASSWORD=}" },
+    "botDisplayName":  { "value": "${BOT_DISPLAY_NAME=Avatar Forge}" },
+    "teamsAppId":      { "value": "${TEAMS_APP_ID=}" },
+    "agentId":         { "value": "${AGENT_ID=}" }
   }
 }

@@ -67,6 +67,40 @@ PROACTIVE_GREETING = os.getenv(
 
 PROJECT_ENDPOINT = os.getenv("PROJECT_ENDPOINT", "")
 
+# ───────── Teams bot (issue #53, Phase 2a) ─────────
+# The Foundry agent is resolved by ID when available (durable identifier), with
+# AGENT_NAME as a dev-only fallback (fails fast on zero/multiple matches).
+AGENT_ID = os.getenv("AGENT_ID", "")
+# Teams app id used to build deep links back to the Phase 1 static tab (#28).
+# Defaults to TEAMS_APP_ID if that is what the package was built with.
+TEAMS_APP_ID = os.getenv("TEAMS_APP_ID", "")
+# entityId of the personal static tab in teams/manifest.template.json.
+TEAMS_TAB_ENTITY_ID = os.getenv("TEAMS_TAB_ENTITY_ID", "avatarForgeHome")
+# The bot's Entra app (client) id, used to send proactive messages back to a
+# conversation. Read from the same env var the Agents SDK uses for the service
+# connection so there is a single source of truth (set by infra/containerApp).
+BOT_APP_ID = os.getenv(
+    "CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID",
+    os.getenv("BOT_APP_ID", ""),
+)
+# Max seconds to let a Foundry run execute in the background before giving up and
+# posting a "took too long" reply. Because answers are delivered proactively
+# (ack-then-background-run), this is NOT bound by the Teams ~15s turn window.
+BOT_RUN_TIMEOUT_S = float(os.getenv("BOT_RUN_TIMEOUT_S", "60"))
+
+# The assistant's persona / brand name. This is the SINGLE branding knob: it
+# names the Teams bot (welcome message + manifest) AND, when set, the bold name
+# shown top-left on the avatar stage in the web app / Tab (see get_ui_defaults'
+# "avatarDisplayName"). It is a purely cosmetic label — it does NOT select the
+# avatar model (that is AVATAR_NAME / CUSTOM_AVATAR_NAME / PHOTO_AVATAR_NAME,
+# gated by IS_*). It is intentionally NOT derived from CUSTOM_AVATAR_NAME: that
+# is a Speech custom-avatar *model* id, valid only when IS_CUSTOM_AVATAR=true and
+# empty/stale otherwise, so coupling them would let an avatar-model change
+# silently rename the assistant. For the bot, unset falls back to "Avatar"; for
+# the stage label, unset means "derive from the selected avatar model" (so the
+# web app keeps its existing behavior when the knob is not set).
+AVATAR_DISPLAY_NAME = os.getenv("AVATAR_DISPLAY_NAME", "").strip() or "Avatar"
+
 
 def _bool(name: str, default: bool) -> bool:
     return os.getenv(name, str(default)).strip().lower() in ("1", "true", "yes", "on")
@@ -98,14 +132,6 @@ def get_ui_defaults() -> dict:
     (DEVELOPER_MODE=false) where the side panel is hidden and the session
     auto-starts with whatever is configured here.
     """
-    # The onboarding hint default is modality-aware: when the text composer is
-    # enabled, invite typing too. An explicit ONBOARDING_HINT always wins.
-    _text_input = _bool("ENABLE_TEXT_INPUT", True)
-    _hint_default = (
-        "Tap the mic or type to ask me anything"
-        if _text_input
-        else "Tap the mic and ask me anything"
-    )
     return {
         # Conversation
         "srModel": _str("SR_MODEL", "mai-transcribe-1"),
@@ -132,15 +158,27 @@ def get_ui_defaults() -> dict:
         "customAvatarName": _str("CUSTOM_AVATAR_NAME", ""),
         "photoAvatarName": _str("PHOTO_AVATAR_NAME", "Anika"),
         "avatarBackgroundImageUrl": _str("AVATAR_BACKGROUND_IMAGE_URL", ""),
-        # Avatar identity tagline shown under the name (top-left of the stage).
-        # Empty hides the tagline line.
-        "avatarTagline": _str("AVATAR_TAGLINE", "Your MTN Digital Assistant"),
-        # Avatar UX (additive, env-gated)
+        # Avatar identity shown top-left on the stage. The bold name line prefers
+        # AVATAR_DISPLAY_NAME (the single branding knob, also used for the Teams
+        # bot); empty here means "derive from the selected avatar model" (the
+        # default behavior). The tagline shows under it; empty hides that line.
+        "avatarDisplayName": os.getenv("AVATAR_DISPLAY_NAME", "").strip(),
+        "avatarTagline": _str("AVATAR_TAGLINE", "Your Digital Assistant"),
+        # Avatar UX (additive). The on-stage text composer shows on the
+        # standalone web app (default on); the frontend always hides it inside
+        # the Microsoft Teams client (the bot chat tab has Teams' native compose
+        # box, and the avatar tab is voice-first — type via the chat tab or, in
+        # a call, the meeting chat with an @mention). ENABLE_TEXT_INPUT is an
+        # optional web-only override; it can never force the composer on in Teams.
         "enableTextInput": _bool("ENABLE_TEXT_INPUT", True),
+        "enableStopButton": _bool("ENABLE_STOP_BUTTON", True),
         "enableCaptions": _bool("ENABLE_CAPTIONS", False),
         "captionsShowUser": _bool("CAPTIONS_SHOW_USER", False),
         "enableSuggestedPrompts": _bool("ENABLE_SUGGESTED_PROMPTS", True),
-        "onboardingHint": _str("ONBOARDING_HINT", _hint_default),
+        # Empty by default: the frontend derives a modality-aware hint ("…or
+        # type…" only when the composer is actually shown, which depends on the
+        # host — see enableTextInput). An explicit ONBOARDING_HINT always wins.
+        "onboardingHint": _str("ONBOARDING_HINT", ""),
         "suggestedPrompts": _list(
             "SUGGESTED_PROMPTS",
             [
