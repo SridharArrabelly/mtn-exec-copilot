@@ -356,6 +356,36 @@ the bridge never runs, so a deploy without it is unchanged. To turn it on:
 > **Local dev:** ACS must reach your server's HTTPS callback + `wss://` media URL, so run
 > behind a Dev Tunnel / ngrok and set `ACS_CALLBACK_BASE_URL` to that public URL.
 
+## Testing it (what works without a meeting, and the full live test)
+
+**Tier 0 — no setup (works today, no ACS):** start the app and confirm it's unregressed.
+With ACS off, `GET /api/acs/status` returns `{"enabled":false,...}`, `GET /api/acs/config`
+returns `{"enabled":false}`, `POST /api/acs/token` returns **503**, and `/companion.html`
+loads and shows *"Phase 2b is not enabled on this deployment."* The web app + Tab + bot are
+unchanged. *(Verified locally.)*
+
+**Tier 1 — Companion UI:** open `https://<your-app>/companion.html` (or sideload the Teams
+package built with `--enable-companion` and add it to a meeting via **+ → Nuru**). The panel
+renders, polls status, and the "Bring Nuru into this call" button is wired. Until ACS is
+enabled it correctly reports Phase 2b is off.
+
+**Tier 2 — full live voice test (needs ACS + a public callback + a meeting):**
+1. Enable ACS (deploy with `ENABLE_ACS=true`, **or** local + Dev Tunnel + `ACS_CALLBACK_BASE_URL`).
+2. Start/join a Teams meeting; copy its join link.
+3. Open `/acs-join.html` (or click **Bring Nuru into this call** in the Companion panel),
+   paste the link, **Join**. Admit "Nuru (AI assistant)" from the lobby if prompted.
+4. Confirm the panel flips to **"Nuru is in the call"** and she stays (the *"came and left"*
+   fix). Unmute and say **"Hey Nuru, …"** + a question; she should answer aloud.
+
+> ⚠️ **Two things this live test must confirm (still unverified):**
+> 1. Whether Nuru's **server-injected voice is audible while the joiner's own mic leg is
+>    muted** (`acs-join.js` joins muted on purpose). If not, we keep the joiner leg unmuted
+>    with a suppressed/virtual mic — a one-line change in `acs-join.js`.
+> 2. Whether your **tenant policy permits an anonymous ACS interop participant + custom-app
+>    upload** in meetings. If the join silently fails or Nuru never reaches the lobby, this
+>    is almost certainly the cause — it needs a **Teams admin** to confirm/enable (see
+>    *Steps you must do yourself*). This is the key production gate.
+
 ## Compliance (live audio participant, even without recording)
 
 Even though Phase 2b **does not record or transcribe**, a live AI participant that listens
