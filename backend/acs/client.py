@@ -78,10 +78,19 @@ def mint_voip_token() -> dict:
     client = get_identity_client()
     user = client.create_user()
     result = client.get_token(user, [CommunicationTokenScope.VOIP])
+    # ``expires_on`` may be a datetime, an int epoch, or an ISO string depending on
+    # the SDK version — normalise defensively (the joiner only needs ``token``).
+    expires = getattr(result, "expires_on", None)
+    if expires is None:
+        expires_str = ""
+    elif hasattr(expires, "isoformat"):
+        expires_str = expires.isoformat()
+    else:
+        expires_str = str(expires)
     return {
         "userId": user.properties.get("id", ""),
         "token": result.token,
-        "expiresOn": result.expires_on.isoformat() if result.expires_on else "",
+        "expiresOn": expires_str,
     }
 
 
