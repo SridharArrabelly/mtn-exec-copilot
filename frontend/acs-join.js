@@ -126,4 +126,13 @@ async function leave() {
 
 joinBtn.addEventListener("click", join);
 leaveBtn.addEventListener("click", leave);
+
+// The Companion control panel (companion.html, opened in a separate window so the
+// ACS Calling leg runs OUTSIDE the Teams meeting webview) hands the meeting link
+// over via ?meeting=. Prefill it so the user does not paste twice.
+try {
+    const prefill = new URLSearchParams(window.location.search).get("meeting");
+    if (prefill) linkEl.value = prefill;
+} catch (e) { /* ignore */ }
+
 ensureEnabled();

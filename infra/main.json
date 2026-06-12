@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.43.8.12551",
-      "templateHash": "15461909857438434798"
+      "templateHash": "14123801621800630516"
     }
   },
   "parameters": {
@@ -419,7 +419,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "927696653539907514"
+              "templateHash": "2964770142025814826"
             }
           },
           "parameters": {
@@ -1784,6 +1784,71 @@
                   }
                 }
               }
+            },
+            {
+              "condition": "[variables('acsEnabled')]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "acs-role-for-app",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "acsName": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'acs'), '2025-04-01').outputs.name.value]"
+                  },
+                  "appPrincipalId": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'uami'), '2025-04-01').outputs.principalId.value]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.43.8.12551",
+                      "templateHash": "10996473954739068959"
+                    }
+                  },
+                  "parameters": {
+                    "acsName": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Name of the ACS resource (in this resource group)."
+                      }
+                    },
+                    "appPrincipalId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Principal id of the Container App user-assigned managed identity."
+                      }
+                    }
+                  },
+                  "variables": {
+                    "contributorRoleId": "b24988ac-6180-42a0-ab88-20f7382dd24c"
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "scope": "[resourceId('Microsoft.Communication/communicationServices', parameters('acsName'))]",
+                      "name": "[guid(resourceId('Microsoft.Communication/communicationServices', parameters('acsName')), parameters('appPrincipalId'), variables('contributorRoleId'))]",
+                      "properties": {
+                        "principalId": "[parameters('appPrincipalId')]",
+                        "principalType": "ServicePrincipal",
+                        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('contributorRoleId'))]"
+                      }
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'acs')]",
+                "[resourceId('Microsoft.Resources/deployments', 'uami')]"
+              ]
             },
             {
               "type": "Microsoft.Resources/deployments",

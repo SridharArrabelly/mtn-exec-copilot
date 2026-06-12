@@ -205,6 +205,16 @@ module acs 'modules/communicationServices.bicep' = if (acsEnabled) {
   }
 }
 
+// Grant the Container App's managed identity access to the ACS resource so it can
+// authenticate the Call Automation / Identity clients via Entra (ACS_ENDPOINT path).
+module acsRoleForApp 'modules/acsRoleForApp.bicep' = if (acsEnabled) {
+  name: 'acs-role-for-app'
+  params: {
+    acsName: acs!.outputs.name
+    appPrincipalId: uami.outputs.principalId
+  }
+}
+
 // ───────── Container App ─────────
 var foundryEndpointEffective = createFoundry ? foundry!.outputs.accountEndpoint : 'https://${existingFoundryAccountName}.services.ai.azure.com/'
 var foundryProjectEndpointEffective = createFoundry ? foundry!.outputs.projectEndpoint : existingFoundryProjectEndpoint

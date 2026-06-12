@@ -51,6 +51,11 @@ toolchain) and hands the resulting `ServerCallId` to the server, which calls ACS
 `AcsVoiceBridge` adapts that media socket onto the unchanged `VoiceSessionHandler`
 (PCM16 in/out, wake-phrase turn-taking, barge-in). Audio-only by design, non-recording,
 and fully opt-in behind `ACS_ENABLED` (every `/api/acs/*` route returns 503 when off).
+An optional Teams meeting **side-panel control panel** (`frontend/companion.html`,
+opt-in `configurableTabs` via `build_package.py --enable-companion`) is the in-meeting
+front door: it shows live call status (`GET /api/acs/status`) and launches the joiner in
+a separate window. It is a control plane only — deliberately not an (unsynced) avatar
+face on the stage.
 See [`teams/README.md`](../teams/README.md#phase-2b--in-call-audio-participant-issue-27).
 
 ## Tool-calling accuracy
@@ -190,7 +195,7 @@ avatar-forge/
 │   └── acs/                       # In-call audio participant (Phase 2b, issue #27; opt-in)
 │       ├── client.py              # ACS Call Automation + Identity clients, connect_call, media options
 │       ├── bridge.py              # AcsVoiceBridge: ACS media WS <-> VoiceSessionHandler
-│       └── routes.py              # /api/acs/{config,token,call,callback} + /ws/acs/audio
+│       └── routes.py              # /api/acs/{config,status,token,call,callback} + /ws/acs/audio
 │
 ├── frontend/                      # Static client assets (served at /)
 │   ├── index.html                 # Avatar stage: video, identity lockup, composer, stop, mic, captions
@@ -198,6 +203,10 @@ avatar-forge/
 │   ├── app.js                     # Audio capture/playback, WebRTC, WebSocket, UI logic, Teams host gate
 │   ├── acs-join.html              # Phase 2b browser joiner: join a Teams meeting via ACS Calling Web SDK
 │   ├── acs-join.js                # ACS Calling SDK join flow -> ServerCallId -> POST /api/acs/call
+│   ├── companion.html             # Phase 2b optional meeting control panel (side panel/stage)
+│   ├── companion.js               # Control panel: /api/acs/status + launches the joiner
+│   ├── companion-config.html      # configurableTabs configuration page for the control panel
+│   ├── companion-config.js        # TeamsJS pages.config save handler
 │   └── teams.js                   # No-op unless in Teams: loads Teams JS SDK, mirrors host theme
 │
 ├── scripts/                       # Utility / one-off scripts (not part of the server)

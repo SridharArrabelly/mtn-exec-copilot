@@ -27,6 +27,13 @@ from .bridge import AcsVoiceBridge
 
 logger = logging.getLogger(__name__)
 
+# Truth source for "is Nuru live in a call right now": the set of active media
+# sessions (one per /ws/acs/audio connection). The Companion control panel polls
+# /api/acs/status to surface this. Module-level + single-process (the ACA app runs
+# one replica for the avatar session affinity), mirroring how the rest of the app
+# keeps per-process session state.
+_ACTIVE_CALLS: set[str] = set()
+
 # Config for the in-call Voice Live session. Audio-only (no avatar/WebRTC, D2),
 # no proactive greeting (she must not announce herself over the room on connect),
 # semantic VAD + barge-in so she yields to humans.
@@ -66,6 +73,15 @@ def build_acs_router() -> APIRouter:
     async def acs_config():
         """Tell the joiner page whether Phase 2b is enabled."""
         return {"enabled": ACS_ENABLED, "endpoint": ACS_ENDPOINT}
+
+    @router.get("/api/acs/status")
+    async def acs_status():
+        """Live state for the Companion control panel: is Nuru in a call?"""
+        return {
+            "enabled": ACS_ENABLED,
+            "active": len(_ACTIVE_CALLS) > 0,
+            "count": len(_ACTIVE_CALLS),
+        }
 
     @router.post("/api/acs/token")
     async def acs_token():
@@ -152,10 +168,12 @@ def build_acs_router() -> APIRouter:
             config=dict(_IN_CALL_CONFIG),
         )
         bridge.handler = handler
+        _ACTIVE_CALLS.add(client_id)
         handler_task = asyncio.create_task(handler.start())
         try:
             await bridge.pump()
         finally:
+            _ACTIVE_CALLS.discard(client_id)
             await handler.stop()
             if not handler_task.done():
                 handler_task.cancel()

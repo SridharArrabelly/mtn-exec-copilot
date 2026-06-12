@@ -306,8 +306,34 @@ Teams meeting ──(anonymous join, lobby)──► ACS Calling Web SDK (browse
 | Requirement | How it's met |
 |---|---|
 | 1. Add the avatar to the meeting **invite** (pre-scheduled) | **Partial today** — a launcher opens `/acs-join.html` at meeting start. Fully-unattended pre-scheduled join needs the A3 (.NET) joiner upgrade (the bridge is unchanged). |
-| 2. **Pull the avatar in when needed** (on demand) | Open `/acs-join.html`, paste the meeting link, **Join** — mid-meeting, on demand. |
+| 2. **Pull the avatar in when needed** (on demand) | Open `/acs-join.html`, paste the meeting link, **Join** — mid-meeting, on demand. The optional **Companion control panel** (below) makes this a one-click in-meeting action. |
 | 3. Anyone **unmutes and asks by voice**, she answers aloud | The ACS participant hears the **MIXED** room audio; a **wake phrase** (`Hey Nuru`) gates her reply so she answers only when addressed and never talks over people. |
+
+## Companion control panel (optional in-meeting surface)
+
+An optional, additive Teams **meeting side-panel** that is the in-meeting front door to
+the ACS participant — **not** a second avatar and **not** a video face (an unsynced face
+would be misleading, so it is deliberately not built). It is a durable *control plane* for
+the audio spine. From inside a meeting it:
+
+- shows whether **Nuru is live in the call** (polls `GET /api/acs/status`),
+- has a **"Bring Nuru into this call"** button that opens the proven `/acs-join.html`
+  joiner in a **separate window** (kept outside the Teams meeting webview on purpose, to
+  avoid a second in-client audio leg / echo), prefilled with the meeting link,
+- surfaces the **consent notice**, wake-phrase usage, and troubleshooting,
+- offers an optional, clearly-labelled link to the **private** Phase 1 avatar tab (a
+  personal preview — separate from the in-call participant, not shown to the meeting).
+
+It is **off by default**. Build the Teams package with `--enable-companion` (or
+`TEAMS_ENABLE_COMPANION=1`) to include the `configurableTabs` meeting entry; without the
+flag the package is byte-for-byte the Phase 1/2a shape. Pages: `frontend/companion.html`
+(panel), `frontend/companion-config.html` (tab config). Add it in a meeting via
+**+ (Add an app) → Nuru**. Requires the same tenant custom-app permission as the rest of
+the Teams app (no extra admin consent / no RSC permissions).
+
+> The Companion does not need server-side media changes — it reuses the ACS endpoints. A
+> future enhancement could auto-detect the meeting join link via TeamsJS meeting APIs, but
+> that needs admin-approved meeting permissions, so today the link is pasted (no admin).
 
 ## Enable it
 
@@ -317,8 +343,10 @@ the bridge never runs, so a deploy without it is unchanged. To turn it on:
 1. **Provision ACS** — set `ENABLE_ACS=true` (and optionally `ACS_DATA_LOCATION`) before
    `azd up`; the conditional `infra/modules/communicationServices.bicep` creates the
    resource and passes `ACS_ENDPOINT` to the container automatically.
-2. **Configure auth** — set `ACS_CONNECTION_STRING` (simplest), **or** use `ACS_ENDPOINT`
-   with the container's managed identity (assign it a role on the ACS resource).
+2. **Configure auth** — when `ENABLE_ACS=true`, `infra` automatically grants the
+   container's managed identity a role on the ACS resource (`acsRoleForApp.bicep`), so the
+   `ACS_ENDPOINT` + managed-identity path works out of the box. Alternatively set
+   `ACS_CONNECTION_STRING` to bypass RBAC.
 3. **Set the knobs** (optional) — `ACS_WAKE_PHRASES`, `ACS_REQUIRE_WAKE_PHRASE`,
    `ACS_AUDIO_SAMPLE_RATE`, `ACS_IDLE_TIMEOUT_S`, `ACS_CALLBACK_BASE_URL`. See
    `.env.example`.
@@ -348,9 +376,9 @@ to the room carries notification/consent obligations:
 - **Confirm tenant meeting policy** allows an automated/ACS participant and custom-app use
   in meetings. *(You have no Teams-admin access — this is the key potential blocker; ask
   whoever holds Teams-admin to confirm.)*
-- **Provision/authorize ACS:** create the ACS resource (or `ENABLE_ACS=true`), and either
-  set `ACS_CONNECTION_STRING` or grant the container's managed identity a role on the ACS
-  resource.
+- **Provision/authorize ACS:** create the ACS resource (or `ENABLE_ACS=true`). With
+  `ENABLE_ACS=true` the managed-identity role on the ACS resource is granted automatically;
+  otherwise set `ACS_CONNECTION_STRING`.
 - **Meeting lobby:** anonymous join is lobby-governed. For unattended/auto-admit, the
   organizer sets "Anyone can bypass the lobby" (or admits the participant manually).
 
