@@ -59,6 +59,9 @@ const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
 const joinBtn = $("joinBtn");
 const leaveBtn = $("leaveBtn");
+const muteNuruBtn = $("muteNuruBtn");
+const unmuteNuruBtn = $("unmuteNuruBtn");
+const farSideBtn = $("farSideBtn");
 const linkEl = $("meetingLink");
 
 let call = null;
@@ -80,6 +83,8 @@ let captureSink = null;         // zero-gain sink so the capture node runs silen
 const wiredRemoteTracks = new Set();
 const primingAudioEls = [];     // muted <audio> elements priming remote tracks
 let micStream = null;           // getUserMedia mic stream feeding the capture node
+let displayStream = null;       // getDisplayMedia stream (far-side / Teams app audio)
+let displaySource = null;       // MediaStreamSource for the far-side audio
 let captureFrames = 0;          // ScriptProcessor callbacks (diagnostics)
 let captureMaxRms = 0;          // peak RMS since last stats report (diagnostics)
 let playCursor = 0;             // scheduling cursor for outbound playback
@@ -304,14 +309,97 @@ function teardownMedia() {
     try { if (captureNode) captureNode.disconnect(); } catch (_) {}
     try { if (captureSink) captureSink.disconnect(); } catch (_) {}
     try { if (micStream) micStream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+    try { if (displaySource) displaySource.disconnect(); } catch (_) {}
+    try { if (displayStream) displayStream.getTracks().forEach((t) => t.stop()); } catch (_) {}
     try { if (audioCtx) audioCtx.close(); } catch (_) {}
     for (const el of primingAudioEls) {
         try { el.pause(); el.srcObject = null; } catch (_) {}
     }
     primingAudioEls.length = 0;
     mediaWs = null; captureNode = null; captureSink = null; audioCtx = null; micStream = null;
+    displayStream = null; displaySource = null;
     outboundDest = null; outboundLocalStream = null;
     wiredRemoteTracks.clear(); scheduledSources = []; playCursor = 0;
+}
+
+// Far-side audio (hear remote participants). The ACS/WebRTC client only exposes
+// THIS device's mic — Teams isolates per-client audio by design, so we cannot tap
+// other participants' streams from the browser. The supported production path is a
+// server-side Teams meeting bot (Graph + Real-Time Media), which needs Graph
+// permissions + tenant admin consent. As a no-admin workaround, capture the Teams
+// app's *output* audio at the OS level via getDisplayMedia (the user shares the
+// Teams window/tab WITH audio) and mix it into the same capture node as the mic.
+// Must be triggered by a user gesture.
+async function startFarSideCapture() {
+    if (!audioCtx) { log("Join the meeting first, then capture far-side audio."); return; }
+    try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        const audioTracks = stream.getAudioTracks();
+        if (!audioTracks.length) {
+            stream.getTracks().forEach((t) => t.stop());
+            log("No audio was shared. Re-click and tick “Share audio” / “Share tab audio” in the picker so Nuru can hear the far side.");
+            return;
+        }
+        // We only want the audio; drop the video track immediately to save resources.
+        stream.getVideoTracks().forEach((t) => t.stop());
+        displayStream = stream;
+        ensureCaptureNode();
+        // Route the shared (far-side) audio into the same capture node as the mic;
+        // the half-duplex + human-mute gates already apply to the mixed signal.
+        const audioOnly = new MediaStream(audioTracks);
+        displaySource = audioCtx.createMediaStreamSource(audioOnly);
+        displaySource.connect(captureNode);
+        // If the user stops sharing via the browser bar, clean up.
+        audioTracks[0].addEventListener("ended", () => {
+            try { if (displaySource) displaySource.disconnect(); } catch (_) {}
+            displaySource = null; displayStream = null;
+            log("Far-side audio sharing stopped. Nuru now hears only this device's mic.");
+        });
+        console.log("[acs-join] far-side (display) audio wired ->", audioTracks.length, "track(s)");
+        if (mediaWs && mediaWs.readyState === WebSocket.OPEN) {
+            try { mediaWs.send(JSON.stringify({ type: "farside_wired", tracks: audioTracks.length })); } catch (_) {}
+        }
+        log("Far-side audio connected — Nuru can now hear shared meeting audio. Keep the share running.");
+    } catch (e) {
+        console.warn("[acs-join] getDisplayMedia failed", e);
+        log(`Far-side capture cancelled or failed: ${e.message || e}`);
+    }
+}
+
+// Host controls for Nuru's outgoing voice. Teams lets anyone *mute* her from the
+// roster (handled via the mutedByOthers stop+re-arm above), but only the muted
+// party can unmute — so the host re-enables her here. call.mute()/unmute() toggles
+// her LocalAudioStream (outgoing audio) in the meeting; we also tell the server to
+// suppress/resume generation so we don't waste Voice Live work while muted.
+async function muteNuru() {
+    try {
+        if (call && typeof call.mute === "function") await call.mute();
+        if (mediaWs && mediaWs.readyState === WebSocket.OPEN) {
+            try { mediaWs.send(JSON.stringify({ type: "hard_mute" })); } catch (_) {}
+        }
+        flushPlayback();
+        muteNuruBtn.disabled = true;
+        unmuteNuruBtn.disabled = false;
+        log("Nuru muted. She won't speak until you unmute her.");
+    } catch (e) {
+        console.warn("[acs-join] muteNuru failed", e);
+        log(`Could not mute Nuru: ${e.message || e}`);
+    }
+}
+
+async function unmuteNuru() {
+    try {
+        if (call && typeof call.unmute === "function") await call.unmute();
+        if (mediaWs && mediaWs.readyState === WebSocket.OPEN) {
+            try { mediaWs.send(JSON.stringify({ type: "hard_unmute" })); } catch (_) {}
+        }
+        muteNuruBtn.disabled = false;
+        unmuteNuruBtn.disabled = true;
+        log("Nuru unmuted. She'll answer when addressed.");
+    } catch (e) {
+        console.warn("[acs-join] unmuteNuru failed", e);
+        log(`Could not unmute Nuru: ${e.message || e}`);
+    }
 }
 
 function log(msg) {
@@ -471,6 +559,9 @@ async function join() {
                 log(`Call ended (code ${r.code ?? "?"}, subCode ${r.subCode ?? "?"}). ${describeEndReason(r)}`);
                 leaveBtn.disabled = true;
                 joinBtn.disabled = false;
+                muteNuruBtn.disabled = true;
+                unmuteNuruBtn.disabled = true;
+                farSideBtn.disabled = true;
             }
         });
     } catch (e) {
@@ -520,6 +611,9 @@ async function startBrowserMedia() {
             });
         } catch (_) { /* event not in this SDK build */ }
         log("Nuru is live in the call. Ask a question aloud and she'll answer.");
+        muteNuruBtn.disabled = false;
+        unmuteNuruBtn.disabled = true;
+        farSideBtn.disabled = false;
     } catch (e) {
         log(`Media bridge failed: ${e.message || e}`);
     }
@@ -536,10 +630,16 @@ async function leave() {
     call = null;
     log("Left the meeting.");
     joinBtn.disabled = false;
+    muteNuruBtn.disabled = true;
+    unmuteNuruBtn.disabled = true;
+    farSideBtn.disabled = true;
 }
 
 joinBtn.addEventListener("click", join);
 leaveBtn.addEventListener("click", leave);
+muteNuruBtn.addEventListener("click", muteNuru);
+unmuteNuruBtn.addEventListener("click", unmuteNuru);
+farSideBtn.addEventListener("click", startFarSideCapture);
 
 // The Companion control panel (companion.html, opened in a separate window so the
 // ACS Calling leg runs OUTSIDE the Teams meeting webview) hands the meeting link

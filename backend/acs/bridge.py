@@ -258,6 +258,7 @@ class BrowserVoiceBridge:
         # Turn-taking state (mirrors AcsVoiceBridge).
         self._answer_armed = not ACS_REQUIRE_WAKE_PHRASE
         self._suppress_current_response = False
+        self._hard_muted = False  # host pressed "Mute Nuru" — suppress all output
         self._last_activity_ms = time.monotonic() * 1000.0
 
         self._frames_in = 0
@@ -272,7 +273,7 @@ class BrowserVoiceBridge:
         Dropped while the current response is suppressed (utterance not addressed
         to the avatar), which is what keeps her from speaking over the room.
         """
-        if self._closed or self._suppress_current_response:
+        if self._closed or self._suppress_current_response or self._hard_muted:
             return
         try:
             await self._ws.send_bytes(pcm_bytes)
@@ -366,6 +367,25 @@ class BrowserVoiceBridge:
                                 self._suppress_current_response = True
                                 if self.handler is not None:
                                     await self.handler.interrupt()
+                            elif ct == "hard_mute":
+                                logger.info(
+                                    f"[browser {self.client_id}] host muted Nuru — "
+                                    f"suppressing all output until unmuted"
+                                )
+                                self._hard_muted = True
+                                if self.handler is not None:
+                                    await self.handler.interrupt()
+                            elif ct == "hard_unmute":
+                                logger.info(
+                                    f"[browser {self.client_id}] host unmuted Nuru — "
+                                    f"output re-enabled"
+                                )
+                                self._hard_muted = False
+                            elif ct == "farside_wired":
+                                logger.info(
+                                    f"[browser {self.client_id}] browser wired far-side "
+                                    f"(display) audio ({ctrl.get('tracks')} track(s))"
+                                )
                     continue
                 if self.handler is None:
                     continue

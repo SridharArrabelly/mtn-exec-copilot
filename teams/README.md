@@ -274,7 +274,73 @@ It is **audio-only** by design (no avatar face in the call roster — that anima
 a separate, optional Companion surface). It is **non-recording**: the avatar listens live
 only to answer when addressed; it does **not** record or transcribe the meeting.
 
-## How it works (and why there's a browser page)
+---
+
+## ⚠️ Update from live testing (2026-06 — read this first)
+
+A live debugging session against a real Teams meeting **proved two architecture facts**
+that change the recommendation below. Both are platform limits, not bugs:
+
+1. **Server-side ACS `connect_call` media streaming does NOT deliver Teams *meeting*
+   audio.** It works for ACS / PSTN / Teams-*user* calls, but inside a Teams *meeting*
+   every inbound frame arrives silent (verified: 7,500+ frames, all silent). The
+   server-side `AcsVoiceBridge` / `/ws/acs/audio` path is therefore a **dead end for
+   meetings** (kept in the tree, unused).
+2. **A browser / WebRTC / ACS-client leg can only hear its OWN microphone.** Teams
+   isolates per-client audio by design, so the browser joiner **cannot tap other
+   participants' audio**. The working browser path (`/acs-join.html`) bridges the
+   **local mic** of the person at that device — which is genuinely useful (the exec at
+   the laptop asks, Nuru answers aloud to the room) and is the **shipped interim
+   capability**. A `getDisplayMedia` button lets that person *share the Teams app's
+   output audio* as a no-admin workaround to feed far-side audio in — clunky but real.
+
+### To hear ALL remote participants you need a server-side Teams meeting bot
+
+This is the **only** architecture that receives every participant's audio:
+
+```
+Teams meeting → Teams calling/meeting bot (joins as participant)
+              → Graph Communications Calls API + Real-Time Media Platform
+              → mixed/per-participant audio streams
+              → (bridge PCM) → existing Voice Live + Foundry pipeline → spoken answer
+```
+
+**Honest cost — this breaks the pure-Python guardrail:**
+
+- The Real-Time Media SDK (`Microsoft.Skype.Bots.Media`) is **.NET/C# and Windows-only**.
+  There is **no Python SDK** that can receive Teams meeting media. So this requires a
+  **new .NET media microservice on Windows hosting** that forwards PCM to the existing
+  Python Voice Live pipeline (which stays unchanged). It is a real architectural
+  addition, not a tweak.
+- It requires a **calling bot** (`supportsCalling=true`), Graph **application**
+  permissions, **app-hosted media** infrastructure, and certs.
+
+### 🔑 Admin / permission request (THE gate — get this confirmed FIRST)
+
+The user has no Teams-admin and limited Entra rights, so **before any server-side build**
+the following must be granted by whoever holds those rights. Do not write the bot until
+these are confirmed — otherwise the effort is wasted:
+
+- **Microsoft Entra app — Graph *application* permissions with tenant admin consent:**
+  - `Calls.JoinGroupCall.All`
+  - `Calls.JoinGroupCallAsGuest.All`
+  - `Calls.AccessMedia.All`
+  - `OnlineMeetings.Read.All`
+- **Teams app setup/permission policy** that allows uploading a **custom app** and a
+  **calling bot**.
+- **Tenant meeting policy** that permits **bots / automated participants** in meetings.
+- A **Windows host** (Azure VM or Windows container) for app-hosted media — confirm who
+  provides it.
+
+**Recommended sequence:** (1) get the permissions above confirmed → (2) only then build
+the .NET media microservice + Graph signaling, bridging into the unchanged Voice Live
+pipeline → (3) keep the browser path (`/acs-join.html`) as the interim/fallback.
+
+> The sections below document the **browser interim path** (works today, no admin) and
+> the original (now-superseded) server-side `connect_call` design. Treat the
+> `connect_call` MIXED-audio claims as **historical** — they do not work for meetings.
+
+---
 
 ACS Call Automation has **no "join a Teams meeting by URL" API**. So the join happens in
 **two steps**:
@@ -307,7 +373,7 @@ Teams meeting ──(anonymous join, lobby)──► ACS Calling Web SDK (browse
 |---|---|
 | 1. Add the avatar to the meeting **invite** (pre-scheduled) | **Partial today** — a launcher opens `/acs-join.html` at meeting start. Fully-unattended pre-scheduled join needs the A3 (.NET) joiner upgrade (the bridge is unchanged). |
 | 2. **Pull the avatar in when needed** (on demand) | Open `/acs-join.html`, paste the meeting link, **Join** — mid-meeting, on demand. The optional **Companion control panel** (below) makes this a one-click in-meeting action. |
-| 3. Anyone **unmutes and asks by voice**, she answers aloud | The ACS participant hears the **MIXED** room audio; a **wake phrase** (`Hey Nuru`) gates her reply so she answers only when addressed and never talks over people. |
+| 3. Anyone **unmutes and asks by voice**, she answers aloud | **Browser interim:** she hears the **local device's mic** (+ optional shared far-side audio via the `getDisplayMedia` button); a **wake phrase** (`Hey Nuru`) gates her reply. **To hear the whole room** requires the server-side meeting bot (see *Update from live testing*). |
 
 ## Companion control panel (optional in-meeting surface)
 
@@ -351,7 +417,11 @@ the bridge never runs, so a deploy without it is unchanged. To turn it on:
    `ACS_AUDIO_SAMPLE_RATE`, `ACS_IDLE_TIMEOUT_S`, `ACS_CALLBACK_BASE_URL`. See
    `.env.example`.
 4. **Use it** — open `https://<your-app>/acs-join.html`, paste a Teams meeting link, Join.
-   In the meeting, say **"Hey Nuru, …"** and ask a question.
+   In the meeting, say **"Hey Nuru, …"** and ask a question. In-call controls on the page:
+   **🔇 Mute Nuru / 🔊 Unmute Nuru** (host stop/resume — note Teams lets anyone *mute* her
+   from the roster, but only the host can *unmute* her here), and **👥 Capture far-side
+   audio** (share the Teams window/tab *with audio* so she also hears remote participants —
+   the no-admin workaround until the server-side bot exists).
 
 > **Local dev:** ACS must reach your server's HTTPS callback + `wss://` media URL, so run
 > behind a Dev Tunnel / ngrok and set `ACS_CALLBACK_BASE_URL` to that public URL.
