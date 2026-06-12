@@ -9,6 +9,9 @@ scope 1A) and an installable, @mentionable **conversational bot** (Phase 2a, iss
   the existing web UI (mic + WebRTC avatar). No SSO, no org publishing.
 - **Phase 2a — conversational bot** ([jump down](#phase-2a--conversational-bot-issue-53)):
   a bot that answers via the same Foundry agent and deep-links back into the tab.
+- **Phase 2b — in-call audio participant** ([jump down](#phase-2b--in-call-audio-participant-issue-27)):
+  the avatar joins the **call** as an audio participant and answers spoken questions aloud
+  (opt-in via ACS; off by default).
 
 Start with the tab walkthrough, then the bot section if you're enabling it.
 
@@ -256,3 +259,108 @@ the tab and the bot.
 - **SSO:** deferred — the bot does not yet know *who* asked. Add `webApplicationInfo` +
   token exchange in a follow-up if per-user identity is required.
 
+---
+
+# Phase 2b — In-call audio participant (issue #27)
+
+Phase 2a lets people **@mention the avatar in the meeting chat** (text). Phase 2b adds
+the missing piece: the avatar joins the **call itself** as an **audio participant**, so
+anyone in the meeting can **say a wake phrase and ask a question aloud** and hear the
+answer spoken back — grounded in the same Foundry agent (AI Search + Bing) used
+everywhere else. This is the fix for the Phase 2a symptom where pulling the bot into the
+call made it *"come and leave"* (the chat bot has no real-time media to sustain a call).
+
+It is **audio-only** by design (no avatar face in the call roster — that animated face is
+a separate, optional Companion surface). It is **non-recording**: the avatar listens live
+only to answer when addressed; it does **not** record or transcribe the meeting.
+
+## How it works (and why there's a browser page)
+
+ACS Call Automation has **no "join a Teams meeting by URL" API**. So the join happens in
+**two steps**:
+
+1. **Browser joins the meeting** — `/acs-join.html` loads the **ACS Calling Web SDK**
+   (from a CDN — no Node toolchain is added to the server) and joins the meeting as an
+   **anonymous interop guest**. Anonymous join is governed by the **meeting lobby**, so it
+   needs **no Teams-admin consent**. This yields a `ServerCallId`.
+2. **Server attaches the voice bridge** — the page posts the `ServerCallId` to
+   `POST /api/acs/call`; the FastAPI server calls ACS `connect_call(...)` with
+   **bidirectional audio media streaming** (MIXED — the whole-room mix) over a WebSocket
+   the server hosts (`/ws/acs/audio`). That socket is bridged to the existing Voice Live
+   session (`AcsVoiceBridge` ↔ `VoiceSessionHandler`): meeting audio → Voice Live →
+   Foundry agent → spoken answer back into the call.
+
+```
+Teams meeting ──(anonymous join, lobby)──► ACS Calling Web SDK (browser /acs-join.html)
+                                                  │ ServerCallId
+                                                  ▼
+                                    POST /api/acs/call → connect_call(media_streaming)
+                                                  │
+              wss://…/ws/acs/audio  ◄────────────┘   (16-bit PCM mono, 24 kHz, MIXED)
+                      │
+              AcsVoiceBridge ◄──► VoiceSessionHandler ◄──► Voice Live + Foundry agent
+```
+
+## Acceptance criteria → mechanism
+
+| Requirement | How it's met |
+|---|---|
+| 1. Add the avatar to the meeting **invite** (pre-scheduled) | **Partial today** — a launcher opens `/acs-join.html` at meeting start. Fully-unattended pre-scheduled join needs the A3 (.NET) joiner upgrade (the bridge is unchanged). |
+| 2. **Pull the avatar in when needed** (on demand) | Open `/acs-join.html`, paste the meeting link, **Join** — mid-meeting, on demand. |
+| 3. Anyone **unmutes and asks by voice**, she answers aloud | The ACS participant hears the **MIXED** room audio; a **wake phrase** (`Hey Nuru`) gates her reply so she answers only when addressed and never talks over people. |
+
+## Enable it
+
+Phase 2b is **off unless ACS is configured** — every `/api/acs/*` endpoint returns 503 and
+the bridge never runs, so a deploy without it is unchanged. To turn it on:
+
+1. **Provision ACS** — set `ENABLE_ACS=true` (and optionally `ACS_DATA_LOCATION`) before
+   `azd up`; the conditional `infra/modules/communicationServices.bicep` creates the
+   resource and passes `ACS_ENDPOINT` to the container automatically.
+2. **Configure auth** — set `ACS_CONNECTION_STRING` (simplest), **or** use `ACS_ENDPOINT`
+   with the container's managed identity (assign it a role on the ACS resource).
+3. **Set the knobs** (optional) — `ACS_WAKE_PHRASES`, `ACS_REQUIRE_WAKE_PHRASE`,
+   `ACS_AUDIO_SAMPLE_RATE`, `ACS_IDLE_TIMEOUT_S`, `ACS_CALLBACK_BASE_URL`. See
+   `.env.example`.
+4. **Use it** — open `https://<your-app>/acs-join.html`, paste a Teams meeting link, Join.
+   In the meeting, say **"Hey Nuru, …"** and ask a question.
+
+> **Local dev:** ACS must reach your server's HTTPS callback + `wss://` media URL, so run
+> behind a Dev Tunnel / ngrok and set `ACS_CALLBACK_BASE_URL` to that public URL.
+
+## Compliance (live audio participant, even without recording)
+
+Even though Phase 2b **does not record or transcribe**, a live AI participant that listens
+to the room carries notification/consent obligations:
+
+- **Tell participants an AI assistant is present and listening.** `/acs-join.html` shows a
+  consent notice to the launcher; you should also announce it verbally and/or rename the
+  participant clearly (it joins as **"Nuru (AI assistant)"**). Where required by law
+  (two-party-consent jurisdictions) or policy, get explicit consent before joining.
+- **No recording.** The bridge streams audio transiently to answer in real time and does
+  not persist meeting audio. If recording/transcription is added later, that is a separate
+  phase with heavier consent + retention obligations.
+- **Tenant policy.** Some tenants restrict bots/automated participants in meetings and
+  custom-app upload. Confirm your tenant permits this (see *Steps you must do yourself*).
+
+## Steps you must do yourself (portal / admin)
+
+- **Confirm tenant meeting policy** allows an automated/ACS participant and custom-app use
+  in meetings. *(You have no Teams-admin access — this is the key potential blocker; ask
+  whoever holds Teams-admin to confirm.)*
+- **Provision/authorize ACS:** create the ACS resource (or `ENABLE_ACS=true`), and either
+  set `ACS_CONNECTION_STRING` or grant the container's managed identity a role on the ACS
+  resource.
+- **Meeting lobby:** anonymous join is lobby-governed. For unattended/auto-admit, the
+  organizer sets "Anyone can bypass the lobby" (or admits the participant manually).
+
+## Known limitations / follow-ups
+
+- **Unattended pre-scheduled join (req #1)** needs a human/launcher to open the browser
+  page today. Upgrade path: an isolated **A3 (.NET) calling-client** joiner — it replaces
+  only step 1; the `AcsVoiceBridge` / `connect_call` / `/ws/acs/audio` server path is
+  unchanged.
+- **Turn-taking** is a first, tunable slice (wake-phrase gating + barge-in). Half-duplex
+  behaviour over live, noisy room audio needs tuning during the live verification spike.
+- **Latency:** the ACS hop stacks on top of Voice Live's first-token latency; measure
+  end-to-end against a real meeting.

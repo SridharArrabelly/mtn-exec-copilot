@@ -41,6 +41,18 @@ The **Teams bot** (Phase 2a) is hosted inside the same FastAPI app as a `POST
 /api/messages` route and reuses the same Foundry agent — see
 [`teams/README.md`](../teams/README.md).
 
+The **in-call audio participant** (Phase 2b, issue #27) reuses the same Voice Live +
+Foundry pipeline for a *live Teams meeting*. Because ACS Call Automation has no
+join-by-URL API, a browser page (`frontend/acs-join.html`) joins the meeting with the
+ACS Calling Web SDK (anonymous, lobby-governed — no Teams admin, no server Node
+toolchain) and hands the resulting `ServerCallId` to the server, which calls ACS
+`connect_call(...)` with bidirectional MIXED audio over a server-hosted WebSocket
+(`/ws/acs/audio`). [`backend/acs/bridge.py`](../backend/acs/bridge.py)'s
+`AcsVoiceBridge` adapts that media socket onto the unchanged `VoiceSessionHandler`
+(PCM16 in/out, wake-phrase turn-taking, barge-in). Audio-only by design, non-recording,
+and fully opt-in behind `ACS_ENABLED` (every `/api/acs/*` route returns 503 when off).
+See [`teams/README.md`](../teams/README.md#phase-2b--in-call-audio-participant-issue-27).
+
 ## Tool-calling accuracy
 
 The avatar's usefulness hinges on calling the **right tool** per question: the Azure
@@ -175,11 +187,17 @@ avatar-forge/
 │       ├── app.py                 # M365 Agents SDK app + POST /api/messages route
 │       ├── agent_runtime.py       # Foundry-agent bridge (reuses the voice agent)
 │       └── cards.py               # Adaptive Card + deep link back to the tab
+│   └── acs/                       # In-call audio participant (Phase 2b, issue #27; opt-in)
+│       ├── client.py              # ACS Call Automation + Identity clients, connect_call, media options
+│       ├── bridge.py              # AcsVoiceBridge: ACS media WS <-> VoiceSessionHandler
+│       └── routes.py              # /api/acs/{config,token,call,callback} + /ws/acs/audio
 │
 ├── frontend/                      # Static client assets (served at /)
 │   ├── index.html                 # Avatar stage: video, identity lockup, composer, stop, mic, captions
 │   ├── style.css                  # Styles (speaking-state colour, caption band, stop button, chips)
 │   ├── app.js                     # Audio capture/playback, WebRTC, WebSocket, UI logic, Teams host gate
+│   ├── acs-join.html              # Phase 2b browser joiner: join a Teams meeting via ACS Calling Web SDK
+│   ├── acs-join.js                # ACS Calling SDK join flow -> ServerCallId -> POST /api/acs/call
 │   └── teams.js                   # No-op unless in Teams: loads Teams JS SDK, mirrors host theme
 │
 ├── scripts/                       # Utility / one-off scripts (not part of the server)
