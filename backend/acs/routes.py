@@ -23,7 +23,7 @@ from ..config import ACS_CALLBACK_BASE_URL, ACS_ENABLED, ACS_ENDPOINT, DEFAULT_E
 from ..voice import VoiceSessionHandler
 from ..voice.auth import create_credential
 from . import client as acs_client
-from .bridge import AcsVoiceBridge
+from .bridge import AcsVoiceBridge, BrowserVoiceBridge
 
 logger = logging.getLogger(__name__)
 
@@ -182,5 +182,53 @@ def build_acs_router() -> APIRouter:
                 except (asyncio.CancelledError, Exception):  # noqa: BLE001
                     pass
             logger.info(f"[ACS {client_id}] media session ended")
+
+    @router.websocket("/ws/acs/browser")
+    async def acs_browser_audio(websocket: WebSocket):
+        """Client-side media path: the browser captures the Teams meeting audio
+        and streams raw PCM16 here; we bridge it to Voice Live and stream Nuru's
+        spoken response back for the browser to play as its outgoing call audio.
+
+        This is the working media path for Teams *meetings* (server-side Call
+        Automation media streaming does not deliver Teams-meeting audio).
+        """
+        await websocket.accept()
+        if not ACS_ENABLED:
+            await websocket.close(code=1011)
+            return
+
+        client_id = f"browser-{id(websocket)}"
+        logger.info(f"[browser {client_id}] media socket connected")
+
+        bridge = BrowserVoiceBridge(websocket, client_id)
+        endpoint = _strip_realtime_suffix(DEFAULT_ENDPOINT)
+        if not endpoint:
+            logger.error("AZURE_VOICELIVE_ENDPOINT not set; closing browser media socket")
+            await websocket.close(code=1011)
+            return
+
+        handler = VoiceSessionHandler(
+            client_id=client_id,
+            endpoint=endpoint,
+            credential=create_credential(""),
+            send_message=bridge.send_message,
+            send_binary=bridge.send_binary,
+            config=dict(_IN_CALL_CONFIG),
+        )
+        bridge.handler = handler
+        _ACTIVE_CALLS.add(client_id)
+        handler_task = asyncio.create_task(handler.start())
+        try:
+            await bridge.pump()
+        finally:
+            _ACTIVE_CALLS.discard(client_id)
+            await handler.stop()
+            if not handler_task.done():
+                handler_task.cancel()
+                try:
+                    await handler_task
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                    pass
+            logger.info(f"[browser {client_id}] media session ended")
 
     return router
