@@ -78,6 +78,10 @@ let mediaWs = null;
 let captureNode = null;         // ScriptProcessor pulling remote audio -> WS
 let captureSink = null;         // zero-gain sink so the capture node runs silently
 const wiredRemoteTracks = new Set();
+const primingAudioEls = [];     // muted <audio> elements priming remote tracks
+let micStream = null;           // getUserMedia mic stream feeding the capture node
+let captureFrames = 0;          // ScriptProcessor callbacks (diagnostics)
+let captureMaxRms = 0;          // peak RMS since last stats report (diagnostics)
 let playCursor = 0;             // scheduling cursor for outbound playback
 let scheduledSources = [];      // active outbound buffer sources (for barge-in flush)
 
@@ -127,6 +131,9 @@ function openMediaSocket() {
 }
 
 // Voice Live PCM16 -> schedule into the outgoing call audio.
+// A small jitter buffer (lead time) absorbs network/WS timing variance so the
+// scheduled chunks play gap-free instead of underrunning into clicks/breakups.
+const PLAYBACK_LEAD = 0.18; // seconds of cushion ahead of the play clock
 function playPcmChunk(int16) {
     if (!audioCtx || !outboundDest) return;
     const f32 = pcm16ToFloat(int16);
@@ -136,7 +143,9 @@ function playPcmChunk(int16) {
     node.buffer = buf;
     node.connect(outboundDest);
     const now = audioCtx.currentTime;
-    if (playCursor < now) playCursor = now;
+    // If we've fallen behind (or this is the first chunk of a turn), rebuild the
+    // cushion rather than scheduling right at "now", which would underrun.
+    if (playCursor < now + 0.02) playCursor = now + PLAYBACK_LEAD;
     node.start(playCursor);
     playCursor += buf.duration;
     scheduledSources.push(node);
@@ -161,7 +170,29 @@ function ensureCaptureNode() {
     captureNode = audioCtx.createScriptProcessor(4096, 1, 1);
     captureNode.onaudioprocess = (e) => {
         if (!mediaWs || mediaWs.readyState !== WebSocket.OPEN) return;
-        const pcm = floatToPcm16(e.inputBuffer.getChannelData(0));
+        const samples = e.inputBuffer.getChannelData(0);
+        // Track signal level so we can tell (from server logs) whether the
+        // captured meeting audio is real or all-zero/silent.
+        let sum = 0;
+        for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+        const rms = Math.sqrt(sum / samples.length);
+        if (rms > captureMaxRms) captureMaxRms = rms;
+        captureFrames++;
+        if (captureFrames % 25 === 0) {
+            try {
+                mediaWs.send(JSON.stringify({
+                    type: "capture_stats",
+                    frames: captureFrames,
+                    maxRms: Number(captureMaxRms.toFixed(5)),
+                    ctxRate: audioCtx ? audioCtx.sampleRate : 0,
+                    remoteStreams: (call && call.remoteAudioStreams)
+                        ? call.remoteAudioStreams.length : 0,
+                    wiredTracks: wiredRemoteTracks.size,
+                }));
+            } catch (_) { /* ignore */ }
+            captureMaxRms = 0;
+        }
+        const pcm = floatToPcm16(samples);
         mediaWs.send(pcm.buffer);
     };
     // A ScriptProcessor only runs while connected to the destination; route it
@@ -183,9 +214,22 @@ function wireRemoteAudioStream(stream) {
             if (!t || wiredRemoteTracks.has(t.id)) return;
             wiredRemoteTracks.add(t.id);
             ensureCaptureNode();
-            const src = audioCtx.createMediaStreamSource(new MediaStream([t]));
+            const ms = new MediaStream([t]);
+            // Chrome/Edge only pull samples from a *remote* WebRTC MediaStream
+            // through Web Audio if the stream is also consumed by a playing
+            // HTMLMediaElement. Prime it with a muted <audio> element so the
+            // ScriptProcessor actually receives the meeting audio.
+            const el = new Audio();
+            el.muted = true;
+            el.srcObject = ms;
+            el.play().catch(() => { /* autoplay may defer; track still primed */ });
+            primingAudioEls.push(el);
+            const src = audioCtx.createMediaStreamSource(ms);
             src.connect(captureNode);
             console.log("[acs-join] wired remote audio track", t.id);
+            if (mediaWs && mediaWs.readyState === WebSocket.OPEN) {
+                try { mediaWs.send(JSON.stringify({ type: "remote_wired", trackId: t.id })); } catch (_) {}
+            }
         }).catch((e) => console.warn("[acs-join] getMediaStreamTrack failed", e));
     } catch (e) {
         console.warn("[acs-join] wireRemoteAudioStream failed", e);
@@ -194,30 +238,45 @@ function wireRemoteAudioStream(stream) {
 
 function startRemoteAudioCapture() {
     ensureCaptureNode();
-    const streams = call.remoteAudioStreams || [];
-    streams.forEach(wireRemoteAudioStream);
-    if (typeof call.on === "function") {
-        try {
-            call.on("remoteAudioStreamsUpdated", (e) => {
-                (e.added || []).forEach(wireRemoteAudioStream);
-            });
-        } catch (_) { /* event not in this SDK build; streams polled below */ }
-    }
-    // Fallback: some SDK builds surface audio per-participant rather than via a
-    // call-level event — re-scan periodically so late joiners get captured.
-    setInterval(() => {
-        (call && call.remoteAudioStreams ? call.remoteAudioStreams : []).forEach(
-            wireRemoteAudioStream
-        );
-    }, 3000);
+    // PRIMARY capture path: the local microphone. ACS's Web SDK auto-renders
+    // remote meeting audio and does NOT expose it as a raw MediaStreamTrack
+    // (getMediaStreamTrack on RemoteAudioStream yields nothing — confirmed:
+    // wiredTracks stayed 0, maxRms 0), so we cannot capture the mixed remote
+    // audio in the browser. Instead we capture this device's mic — the
+    // executive asking the question is at this laptop. echoCancellation strips
+    // Nuru's own voice (played by the Teams client) from the captured signal.
+    navigator.mediaDevices.getUserMedia({
+        audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+        },
+        video: false,
+    }).then((stream) => {
+        micStream = stream;
+        const src = audioCtx.createMediaStreamSource(stream);
+        src.connect(captureNode);
+        console.log("[acs-join] mic capture wired ->", stream.getAudioTracks().length, "track(s)");
+        if (mediaWs && mediaWs.readyState === WebSocket.OPEN) {
+            try { mediaWs.send(JSON.stringify({ type: "mic_wired", tracks: stream.getAudioTracks().length })); } catch (_) {}
+        }
+    }).catch((e) => {
+        console.warn("[acs-join] mic capture failed", e);
+        log(`Microphone capture failed: ${e.message || e}. Nuru can't hear questions.`);
+    });
 }
 
 function teardownMedia() {
     try { if (mediaWs) mediaWs.close(); } catch (_) {}
     try { if (captureNode) captureNode.disconnect(); } catch (_) {}
     try { if (captureSink) captureSink.disconnect(); } catch (_) {}
+    try { if (micStream) micStream.getTracks().forEach((t) => t.stop()); } catch (_) {}
     try { if (audioCtx) audioCtx.close(); } catch (_) {}
-    mediaWs = null; captureNode = null; captureSink = null; audioCtx = null;
+    for (const el of primingAudioEls) {
+        try { el.pause(); el.srcObject = null; } catch (_) {}
+    }
+    primingAudioEls.length = 0;
+    mediaWs = null; captureNode = null; captureSink = null; audioCtx = null; micStream = null;
     outboundDest = null; outboundLocalStream = null;
     wiredRemoteTracks.clear(); scheduledSources = []; playCursor = 0;
 }
@@ -392,6 +451,23 @@ async function startBrowserMedia() {
         log("Connected. Bridging meeting audio to Nuru…");
         openMediaSocket();
         startRemoteAudioCapture();
+        // Stop the SDK from rendering the meeting's incoming audio out the local
+        // speaker. We capture it for Voice Live via Web Audio (muted <audio>
+        // priming keeps the WebRTC track flowing), so local rendering is pure
+        // echo when Nuru's leg shares a device with the user's Teams client.
+        setTimeout(async () => {
+            try {
+                if (call && typeof call.muteIncomingAudio === "function") {
+                    await call.muteIncomingAudio();
+                    console.log("[acs-join] incoming audio muted (echo guard)");
+                    if (mediaWs && mediaWs.readyState === WebSocket.OPEN) {
+                        try { mediaWs.send(JSON.stringify({ type: "incoming_muted" })); } catch (_) {}
+                    }
+                }
+            } catch (e) {
+                console.warn("[acs-join] muteIncomingAudio failed", e);
+            }
+        }, 1500);
         log("Nuru is live in the call. Ask a question aloud and she'll answer.");
     } catch (e) {
         log(`Media bridge failed: ${e.message || e}`);

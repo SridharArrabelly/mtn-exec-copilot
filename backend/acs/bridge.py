@@ -324,7 +324,38 @@ class BrowserVoiceBridge:
                     break
                 data = message.get("bytes")
                 if data is None:
-                    # Text control frames are reserved for future use; ignore.
+                    # Text control / diagnostics frames from the browser.
+                    text = message.get("text")
+                    if text:
+                        try:
+                            ctrl = json.loads(text)
+                        except Exception:  # noqa: BLE001
+                            ctrl = None
+                        if isinstance(ctrl, dict):
+                            ct = ctrl.get("type")
+                            if ct == "capture_stats":
+                                logger.info(
+                                    f"[browser {self.client_id}] capture stats: "
+                                    f"frames={ctrl.get('frames')} maxRms={ctrl.get('maxRms')} "
+                                    f"ctxRate={ctrl.get('ctxRate')} "
+                                    f"remoteStreams={ctrl.get('remoteStreams')} "
+                                    f"wiredTracks={ctrl.get('wiredTracks')}"
+                                )
+                            elif ct == "remote_wired":
+                                logger.info(
+                                    f"[browser {self.client_id}] browser wired remote "
+                                    f"audio track {ctrl.get('trackId')}"
+                                )
+                            elif ct == "mic_wired":
+                                logger.info(
+                                    f"[browser {self.client_id}] browser wired mic capture "
+                                    f"({ctrl.get('tracks')} track(s))"
+                                )
+                            elif ct == "incoming_muted":
+                                logger.info(
+                                    f"[browser {self.client_id}] browser muted incoming "
+                                    f"audio (echo guard)"
+                                )
                     continue
                 if self.handler is None:
                     continue
