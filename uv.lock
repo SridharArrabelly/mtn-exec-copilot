@@ -170,6 +170,8 @@ dependencies = [
     { name = "aiohttp" },
     { name = "azure-ai-projects" },
     { name = "azure-ai-voicelive", extra = ["aiohttp"] },
+    { name = "azure-communication-callautomation" },
+    { name = "azure-communication-identity" },
     { name = "azure-core" },
     { name = "azure-identity" },
     { name = "azure-search-documents" },
@@ -192,6 +194,8 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.5" },
     { name = "azure-ai-projects", specifier = ">=2.1.0" },
     { name = "azure-ai-voicelive", extras = ["aiohttp"], specifier = ">=1.0.0" },
+    { name = "azure-communication-callautomation", specifier = ">=1.6.0b1" },
+    { name = "azure-communication-identity", specifier = ">=1.5.0" },
     { name = "azure-core", specifier = ">=1.41.0" },
     { name = "azure-identity", specifier = ">=1.26.0b2" },
     { name = "azure-search-documents", specifier = ">=12.0.0" },
@@ -242,6 +246,33 @@ wheels = [
 [package.optional-dependencies]
 aiohttp = [
     { name = "aiohttp" },
+]
+
+[[package]]
+name = "azure-communication-callautomation"
+version = "1.6.0b1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-core" },
+    { name = "isodate" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c1/ac/31e768b6c1fd851b5c25af452eba710f352e27e3b69d21b8492e0bc73fdd/azure_communication_callautomation-1.6.0b1.tar.gz", hash = "sha256:ca035fb9915a346e5ca7dc078c74e0e5231f03f0a28234d3eb1bd3ac001c0f95", size = 157360, upload-time = "2025-09-12T01:01:00.712Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/7a/b188bd954f283fadeee0cd27c61d49ae9675246ed078a1510d3fb6d43bee/azure_communication_callautomation-1.6.0b1-py3-none-any.whl", hash = "sha256:497a16c8b93cb67003ad0a470d635651d09202b844eb37d44a4537d802c8222c", size = 152728, upload-time = "2025-09-12T01:01:02.338Z" },
+]
+
+[[package]]
+name = "azure-communication-identity"
+version = "1.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-core" },
+    { name = "msrest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f6/9e/6cbc94f5c01406083960bea219ee9d9313ad925c894b6b5df3df1d3d51a0/azure-communication-identity-1.5.0.tar.gz", hash = "sha256:d3186403395b78066ff30313ac119693694d2da9e0c76e9ac70eaa590dcb29e8", size = 66685, upload-time = "2024-02-15T08:20:04.324Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b1/21/9266411a36a182e235ad9ed338a071e417d01d6804747ae959c2232399b0/azure_communication_identity-1.5.0-py3-none-any.whl", hash = "sha256:dd6dc7aafc9f3707ffbbf40a45f2b4ccb5dc67f4d1545e74b083f83f9afa7a1a", size = 65601, upload-time = "2024-02-15T08:20:06.825Z" },
 ]
 
 [[package]]
@@ -1000,6 +1031,22 @@ wheels = [
 ]
 
 [[package]]
+name = "msrest"
+version = "0.7.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-core" },
+    { name = "certifi" },
+    { name = "isodate" },
+    { name = "requests" },
+    { name = "requests-oauthlib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/68/77/8397c8fb8fc257d8ea0fa66f8068e073278c65f05acb17dcb22a02bfdc42/msrest-0.7.1.zip", hash = "sha256:6e7661f46f3afd88b75667b7187a92829924446c7ea1d169be8c4bb7eeb788b9", size = 175332, upload-time = "2022-06-13T22:41:25.111Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/cf/f2966a2638144491f8696c27320d5219f48a072715075d168b31d3237720/msrest-0.7.1-py3-none-any.whl", hash = "sha256:21120a810e1233e5e6cc7fe40b474eeb4ec6f757a15d7cf86702c369f9567c32", size = 85384, upload-time = "2022-06-13T22:41:22.42Z" },
+]
+
+[[package]]
 name = "multidict"
 version = "6.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1096,6 +1143,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/0c/f7/addf1087b860ac60e6f382240f64fb99f8bfb532bb06f7c542b83c29ca61/multidict-6.7.1-cp314-cp314t-win_amd64.whl", hash = "sha256:497bde6223c212ba11d462853cfa4f0ae6ef97465033e7dc9940cdb3ab5b48e5", size = 53542, upload-time = "2026-01-26T02:46:08.809Z" },
     { url = "https://files.pythonhosted.org/packages/4c/81/4629d0aa32302ef7b2ec65c75a728cc5ff4fa410c50096174c1632e70b3e/multidict-6.7.1-cp314-cp314t-win_arm64.whl", hash = "sha256:2bbd113e0d4af5db41d5ebfe9ccaff89de2120578164f86a5d17d5a576d1e5b2", size = 44719, upload-time = "2026-01-26T02:46:11.146Z" },
     { url = "https://files.pythonhosted.org/packages/81/08/7036c080d7117f28a4af526d794aab6a84463126db031b007717c1a6676e/multidict-6.7.1-py3-none-any.whl", hash = "sha256:55d97cc6dae627efa6a6e548885712d4864b81110ac76fa4e534c03819fa4a56", size = 12319, upload-time = "2026-01-26T02:46:44.004Z" },
+]
+
+[[package]]
+name = "oauthlib"
+version = "3.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0b/5f/19930f824ffeb0ad4372da4812c50edbd1434f678c90c2733e1188edfc63/oauthlib-3.3.1.tar.gz", hash = "sha256:0f0f8aa759826a193cf66c12ea1af1637f87b9b4622d46e866952bb022e538c9", size = 185918, upload-time = "2025-06-19T22:48:08.269Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/be/9c/92789c596b8df838baa98fa71844d84283302f7604ed565dafe5a6b5041a/oauthlib-3.3.1-py3-none-any.whl", hash = "sha256:88119c938d2b8fb88561af5f6ee0eec8cc8d552b7bb1f712743136eb7523b7a1", size = 160065, upload-time = "2025-06-19T22:48:06.508Z" },
 ]
 
 [[package]]
@@ -1453,6 +1509,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/43/b8/7a707d60fea4c49094e40262cc0e2ca6c768cca21587e34d3f705afec47e/requests-2.34.0.tar.gz", hash = "sha256:7d62fe92f50eb82c529b0916bb445afa1531a566fc8f35ffdc64446e771b856a", size = 142436, upload-time = "2026-05-11T19:29:51.717Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ef/e6/e300fce5fe83c30520607a015dabd985df3251e188d234bfe9492e17a389/requests-2.34.0-py3-none-any.whl", hash = "sha256:917520a21b767485ce7c588f4ebb917c436b24a31231b44228715eaeb5a52c60", size = 73021, upload-time = "2026-05-11T19:29:49.923Z" },
+]
+
+[[package]]
+name = "requests-oauthlib"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "oauthlib" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/42/f2/05f29bc3913aea15eb670be136045bf5c5bbf4b99ecb839da9b422bb2c85/requests-oauthlib-2.0.0.tar.gz", hash = "sha256:b3dffaebd884d8cd778494369603a9e7b58d29111bf6b41bdc2dcd87203af4e9", size = 55650, upload-time = "2024-03-22T20:32:29.939Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3b/5d/63d4ae3b9daea098d5d6f5da83984853c1bbacd5dc826764b249fe119d24/requests_oauthlib-2.0.0-py2.py3-none-any.whl", hash = "sha256:7dd8a5c40426b779b0868c404bdef9768deccf22749cde15852df527e6269b36", size = 24179, upload-time = "2024-03-22T20:32:28.055Z" },
 ]
 
 [[package]]

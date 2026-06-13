@@ -88,6 +88,53 @@ BOT_APP_ID = os.getenv(
 # (ack-then-background-run), this is NOT bound by the Teams ~15s turn window.
 BOT_RUN_TIMEOUT_S = float(os.getenv("BOT_RUN_TIMEOUT_S", "60"))
 
+# ───────── Teams in-call media participant (issue #27, Phase 2b) ─────────
+# Phase 2b is the live in-call audio avatar (ACS Call Automation Participant
+# mode, D5=A1 browser joiner). It is ADDITIVE and OPT-IN: every endpoint and the
+# media bridge are gated on ACS being configured, so a deploy without ACS behaves
+# exactly as Phase 2a. The path is:
+#   browser ACS Calling Web SDK joins the Teams meeting (anonymous, lobby-governed)
+#   -> emits a ServerCallId -> POST /api/acs/call -> server connect_call() attaches
+#   bidirectional audio over wss://.../ws/acs/audio -> AcsVoiceBridge <-> Voice Live.
+ACS_ENDPOINT = os.getenv("ACS_ENDPOINT", "").strip()
+# Connection string for the ACS resource (preferred for Call Automation + Identity).
+# When empty, the client falls back to ACS_ENDPOINT + DefaultAzureCredential.
+ACS_CONNECTION_STRING = os.getenv("ACS_CONNECTION_STRING", "").strip()
+# Public HTTPS base URL ACS uses for call-event callbacks and the media WebSocket.
+# Empty -> derive from the inbound request's own external ingress at call time.
+ACS_CALLBACK_BASE_URL = os.getenv("ACS_CALLBACK_BASE_URL", "").strip()
+# PCM sample rate (Hz) for the ACS<->Voice Live audio bridge. 24000 matches Voice
+# Live's PCM16 output (and accepted input), so the bridge needs no resampling.
+# ACS supports 16000 or 24000; keep this aligned with the Voice Live formats.
+ACS_AUDIO_SAMPLE_RATE = int(os.getenv("ACS_AUDIO_SAMPLE_RATE", "24000"))
+# Wake phrases the in-call avatar listens for before answering aloud (turn-taking
+# so she never talks over participants). Pipe/comma tolerated; lower-cased.
+ACS_WAKE_PHRASES = [
+    p.strip().lower()
+    for p in os.getenv("ACS_WAKE_PHRASES", "hey nuru,nuru").replace("|", ",").split(",")
+    if p.strip()
+]
+# When True, the avatar only speaks if the triggering utterance contained a wake
+# phrase (half-duplex turn-taking). When False, she answers every detected turn
+# (useful for a 1:1 test meeting). Default True to avoid talking over a room.
+ACS_REQUIRE_WAKE_PHRASE = os.getenv(
+    "ACS_REQUIRE_WAKE_PHRASE", "true"
+).strip().lower() in ("1", "true", "yes", "on")
+# Seconds of inactivity before the participant leaves the call (0 disables).
+ACS_IDLE_TIMEOUT_S = float(os.getenv("ACS_IDLE_TIMEOUT_S", "0"))
+# Phase 2b Slice 1: the .NET/Windows Graph media bot connects to the
+# ``/ws/acs/audio`` bridge endpoint and speaks the AcsVoiceBridge protocol. That
+# path needs Voice Live only — NOT an ACS resource — so this flag enables the
+# bridge endpoint independently of ACS_ENDPOINT/ACS_CONNECTION_STRING. (The
+# ACS-specific REST endpoints — /api/acs/token, /api/acs/call — still require a
+# real ACS resource; the media bot does not use them.)
+MEETING_BOT_ENABLED = os.getenv(
+    "MEETING_BOT_ENABLED", "false"
+).strip().lower() in ("1", "true", "yes", "on")
+# True when Phase 2b in-call media is configured: either an ACS resource is set,
+# or the Graph media bot bridge is explicitly enabled.
+ACS_ENABLED = bool(ACS_ENDPOINT or ACS_CONNECTION_STRING or MEETING_BOT_ENABLED)
+
 # The assistant's persona / brand name. This is the SINGLE branding knob: it
 # names the Teams bot (welcome message + manifest) AND, when set, the bold name
 # shown top-left on the avatar stage in the web app / Tab (see get_ui_defaults'

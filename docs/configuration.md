@@ -195,3 +195,24 @@ skipped and the deploy behaves exactly like Phase 1 (tab-only).
 | `TEAMS_APP_ID` | — | The Teams app (manifest) id; used to build deep links from the bot back into the personal tab. Match the id used to build the package. |
 | `TEAMS_TAB_ENTITY_ID` | `avatarForgeHome` | The static-tab entity id the bot deep-links to. |
 | `BOT_RUN_TIMEOUT_S` | `60` | Max seconds a grounded Foundry run executes in the background before a "took too long" reply. Answers are delivered as a proactive message (ack-then-background-run), so this is **not** bound by the Teams ~15s turn window. |
+
+## Teams in-call audio participant (Phase 2b, issue #27)
+
+Opt-in. The avatar joins a Teams **meeting** as an audio participant via Azure
+Communication Services (ACS) Call Automation and answers spoken questions aloud using
+the same Voice Live + Foundry pipeline. **Off unless ACS is configured** — every
+`/api/acs/*` endpoint returns 503 and the bridge never runs, so a deploy without it is
+unchanged. Audio-only and non-recording by design. See
+[`teams/README.md`](../teams/README.md#phase-2b--in-call-audio-participant-issue-27).
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ENABLE_ACS` | `false` | **azd/infra only.** When `true`, provisions the conditional `communicationServices.bicep` and passes `ACS_ENDPOINT` to the container. |
+| `ACS_DATA_LOCATION` | `United States` | **azd/infra only.** Data residency geography for the ACS resource. |
+| `ACS_ENDPOINT` | — | ACS resource endpoint (`https://<acs>.communication.azure.com/`). Set automatically by infra; enables Phase 2b. Auth via the container's managed identity (needs a role on the ACS resource). |
+| `ACS_CONNECTION_STRING` | — | Alternative to `ACS_ENDPOINT` + managed identity (includes endpoint + key). Takes precedence when set; simplest for local/dev. Enables Phase 2b. |
+| `ACS_CALLBACK_BASE_URL` | — | Public HTTPS base URL ACS uses for call-event callbacks and the media WebSocket. Defaults to the app's own external ingress; set for local dev behind a Dev Tunnel/ngrok. |
+| `ACS_AUDIO_SAMPLE_RATE` | `24000` | PCM sample rate (Hz) for the ACS↔Voice Live bridge. `24000` matches Voice Live (no resample); `16000` also valid. |
+| `ACS_WAKE_PHRASES` | `hey nuru,nuru` | Comma-separated, case-insensitive phrases that invoke a spoken answer (turn-taking, so she never talks over the room). |
+| `ACS_REQUIRE_WAKE_PHRASE` | `true` | Require a wake phrase before answering (half-duplex). Set `false` in a 1:1 test meeting to answer every turn. |
+| `ACS_IDLE_TIMEOUT_S` | `0` | Leave the call after N seconds of inactivity (`0` disables). |

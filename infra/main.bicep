@@ -81,6 +81,18 @@ param teamsAppId string = ''
 @description('Foundry agent id override. Empty resolves the agent by AGENT_NAME.')
 param agentId string = ''
 
+// ───────── Phase 2b in-call media (#27) ─────────
+@description('Enable Phase 2b ACS Call Automation media participant ("true"/"false"). When not "true" (default), no ACS resource is created and the deployment behaves exactly as today.')
+param enableAcs string = 'false'
+@description('ACS data residency geography (NOT an Azure region), e.g. "United States", "Europe", "Africa".')
+param acsDataLocation string = 'United States'
+@description('"true"/"false". Serve the .NET Teams media-bot bridge without an ACS resource (sets MEETING_BOT_ENABLED). Independent of enableAcs.')
+param meetingBotEnabled string = 'false'
+@description('PCM sample rate (Hz) the Teams media bot streams (16000).')
+param acsAudioSampleRate string = ''
+@description('"true"/"false". In-call avatar only answers after a wake phrase.')
+param acsRequireWakePhrase string = ''
+
 // ───────── Model deployment (used only when creating Foundry) ─────────
 param modelName string = 'gpt-5.4'
 param modelVersion string = '2026-03-05'
@@ -151,6 +163,11 @@ module resources 'resources.bicep' = {
     botDisplayName: botDisplayName
     teamsAppId: teamsAppId
     agentId: agentId
+    enableAcs: enableAcs
+    acsDataLocation: acsDataLocation
+    meetingBotEnabled: meetingBotEnabled
+    acsAudioSampleRate: acsAudioSampleRate
+    acsRequireWakePhrase: acsRequireWakePhrase
   }
 }
 
@@ -184,6 +201,9 @@ output APPLICATIONINSIGHTS_CONNECTION_STRING string = resources.outputs.appInsig
 output BOT_MESSAGING_ENDPOINT string = resources.outputs.botMessagingEndpoint
 output TEAMS_BOT_ID string = botAppId
 output TEAMS_APP_ID string = teamsAppId
+
+// Phase 2b in-call media (#27). Empty unless enableAcs=true.
+output ACS_ENDPOINT string = resources.outputs.acsEndpoint
 
 // Echo BYO inputs back as outputs so they end up in the azd env and the postprovision
 // RBAC script can read them without needing the original GitHub vars / .env values.

@@ -1,0 +1,12 @@
+## Build output
+bin/
+obj/
+
+## Local secrets / overrides — never commit
+appsettings.Development.json
+appsettings.Local.json
+*.user
+
+## Certs
+*.pfx
+*.cer

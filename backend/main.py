@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .api import routes, websocket as ws
+from .acs import build_acs_router
 from .bot.app import build_bot_router, shutdown_bot
 from .config import HOST, PORT, configure_logging
 from .voice.auth import close_credential, create_credential
@@ -142,6 +143,10 @@ app.include_router(ws.router)
 # Teams bot messaging endpoint (issue #53). Mounted before the static SPA so
 # POST /api/messages is handled by the bot, not the catch-all frontend mount.
 app.include_router(build_bot_router())
+# Teams in-call media participant (issue #27, Phase 2b). Additive + opt-in: every
+# ACS endpoint returns 503 when ACS is not configured, so this never changes a
+# non-ACS deploy. Mounted before the static SPA so /api/acs/* + /ws/acs/* resolve.
+app.include_router(build_acs_router())
 
 # Mount frontend
 _frontend = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
