@@ -1,0 +1,229 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Avatar-Forge Teams meeting media bot — Windows host + calling registration.
+//
+// Phase 2b, issue #27 (Slice 1: audio). This is a STANDALONE, additive
+// deployment that is SEPARATE from the main Linux Container App (infra/main.bicep).
+// It is never part of `azd up` for the web app, so deploying the web app alone
+// behaves exactly as today. Deploy this only when you are bringing up the
+// .NET/Windows media bot.
+//
+// What it provisions:
+//   1. A Windows Server VM (the only OS the Real-Time Media Platform supports)
+//      with a public IP + DNS label, sized for a single concurrent meeting POC.
+//   2. An NSG opening the signaling port (Bot Framework calling webhook) and the
+//      media port range to the public internet (Teams media negotiation needs it).
+//   3. An Azure Bot registration with the Teams channel CALLING webhook enabled,
+//      pointing at this host's signaling endpoint.
+//
+// Deploy (example):
+//   az deployment group create -g rg-avatar-mngenv \
+//     -f meeting-bot/infra/host.bicep \
+//     -p botAppId=860ecee0-... botAppTenantId=349b3dac-... \
+//        adminPassword='<strong-pwd>' dnsLabel=avatar-meeting-bot
+// ─────────────────────────────────────────────────────────────────────────────
+targetScope = 'resourceGroup'
+
+@description('Location for the Windows host and networking.')
+param location string = resourceGroup().location
+
+@description('Entra app client id (Microsoft App ID) of the calling bot.')
+param botAppId string
+
+@description('Tenant id of the single-tenant calling bot app registration.')
+param botAppTenantId string
+
+@description('Display name for the Azure Bot resource.')
+param botDisplayName string = 'Avatar Forge Meeting Bot'
+
+@description('Local administrator username for the Windows VM.')
+param adminUsername string = 'avatarbot'
+
+@description('Local administrator password for the Windows VM.')
+@secure()
+param adminPassword string
+
+@description('VM size. Standard_D2s_v5 is adequate for a single-meeting POC.')
+param vmSize string = 'Standard_D2s_v5'
+
+@description('Globally-unique DNS label for the public IP (becomes <label>.<region>.cloudapp.azure.com).')
+param dnsLabel string
+
+@description('HTTPS signaling/webhook port (Bot Framework calling notifications).')
+param signalingPort int = 9441
+
+@description('Media platform public TCP port (Real-Time Media Platform).')
+param mediaPort int = 8445
+
+@description('Resource tags.')
+param tags object = {}
+
+var prefix = 'avatar-meetingbot'
+var publicFqdn = '${dnsLabel}.${location}.cloudapp.azure.com'
+
+// ───────── Networking ─────────
+resource nsg 'Microsoft.Network/networkSecurityGroups@2023-09-01' = {
+  name: '${prefix}-nsg'
+  location: location
+  tags: tags
+  properties: {
+    securityRules: [
+      {
+        name: 'Allow-Signaling-HTTPS'
+        properties: {
+          priority: 1000
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          sourceAddressPrefix: 'Internet'
+          destinationAddressPrefix: '*'
+          destinationPortRange: string(signalingPort)
+        }
+      }
+      {
+        name: 'Allow-Media'
+        properties: {
+          priority: 1010
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          sourceAddressPrefix: 'Internet'
+          destinationAddressPrefix: '*'
+          destinationPortRange: string(mediaPort)
+        }
+      }
+      {
+        name: 'Allow-RDP'
+        properties: {
+          priority: 1020
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          // NOTE: tighten this to your admin IP before production.
+          sourceAddressPrefix: 'Internet'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '3389'
+        }
+      }
+    ]
+  }
+}
+
+resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
+  name: '${prefix}-vnet'
+  location: location
+  tags: tags
+  properties: {
+    addressSpace: { addressPrefixes: ['10.20.0.0/24'] }
+    subnets: [
+      {
+        name: 'default'
+        properties: {
+          addressPrefix: '10.20.0.0/25'
+          networkSecurityGroup: { id: nsg.id }
+        }
+      }
+    ]
+  }
+}
+
+resource pip 'Microsoft.Network/publicIPAddresses@2023-09-01' = {
+  name: '${prefix}-pip'
+  location: location
+  tags: tags
+  sku: { name: 'Standard' }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+    dnsSettings: { domainNameLabel: dnsLabel }
+  }
+}
+
+resource nic 'Microsoft.Network/networkInterfaces@2023-09-01' = {
+  name: '${prefix}-nic'
+  location: location
+  tags: tags
+  properties: {
+    ipConfigurations: [
+      {
+        name: 'ipconfig1'
+        properties: {
+          subnet: { id: vnet.properties.subnets[0].id }
+          privateIPAllocationMethod: 'Dynamic'
+          publicIPAddress: { id: pip.id }
+        }
+      }
+    ]
+  }
+}
+
+// ───────── Windows VM (Real-Time Media Platform host) ─────────
+resource vm 'Microsoft.Compute/virtualMachines@2023-09-01' = {
+  name: '${prefix}-vm'
+  location: location
+  tags: tags
+  properties: {
+    hardwareProfile: { vmSize: vmSize }
+    osProfile: {
+      computerName: 'avatarbot'
+      adminUsername: adminUsername
+      adminPassword: adminPassword
+    }
+    storageProfile: {
+      imageReference: {
+        publisher: 'MicrosoftWindowsServer'
+        offer: 'WindowsServer'
+        sku: '2022-datacenter-azure-edition'
+        version: 'latest'
+      }
+      osDisk: {
+        createOption: 'FromImage'
+        managedDisk: { storageAccountType: 'Premium_LRS' }
+      }
+    }
+    networkProfile: {
+      networkInterfaces: [{ id: nic.id }]
+    }
+  }
+}
+
+// ───────── Azure Bot registration with CALLING webhook ─────────
+// The calling webhook is what makes this a Teams *calling* bot (vs the Phase 2a
+// chat bot). It must point at the media bot's HTTPS signaling endpoint.
+resource bot 'Microsoft.BotService/botServices@2022-09-15' = {
+  name: '${prefix}-registration'
+  location: 'global'
+  tags: tags
+  sku: { name: 'F0' }
+  kind: 'azurebot'
+  properties: {
+    displayName: botDisplayName
+    // The chat messaging endpoint is unused by the media bot; calling uses the
+    // channel webhook below. Point it at the same host for completeness.
+    endpoint: 'https://${publicFqdn}:${signalingPort}/api/messages'
+    msaAppId: botAppId
+    msaAppType: 'SingleTenant'
+    msaAppTenantId: botAppTenantId
+  }
+}
+
+resource teamsChannel 'Microsoft.BotService/botServices/channels@2022-09-15' = {
+  parent: bot
+  name: 'MsTeamsChannel'
+  location: 'global'
+  properties: {
+    channelName: 'MsTeamsChannel'
+    properties: {
+      isEnabled: true
+      // Enable Teams *calling* and point at the media bot's calling webhook.
+      enableCalling: true
+      callingWebhook: 'https://${publicFqdn}:${signalingPort}/api/calling'
+    }
+  }
+}
+
+output botRegistrationId string = bot.id
+output publicFqdn string = publicFqdn
+output signalingEndpoint string = 'https://${publicFqdn}:${signalingPort}/api/calling'
+output operatorApi string = 'https://${publicFqdn}:${signalingPort}/api/join'

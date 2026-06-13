@@ -317,6 +317,15 @@ Teams meeting → Teams calling/meeting bot (joins as participant)
 
 ### 🔑 Admin / permission request (THE gate — get this confirmed FIRST)
 
+> **✅ Status update (MngEnv tenant).** In the project's working tenant
+> (`349b3dac-…`, where the user is **global administrator**) all four Graph
+> calling permissions below are **already granted and admin-consented** on the
+> `avatar-forge-meeting-bot` app (`860ecee0-…`), and the **.NET media bot is now
+> scaffolded** — see [`../meeting-bot/README.md`](../meeting-bot/README.md) for the
+> build/host runbook. So in MngEnv the remaining work is **build + host**, not
+> access. The permission list below still applies verbatim to **any other tenant**
+> (e.g. an org production tenant) where the user is not admin.
+
 The user has no Teams-admin and limited Entra rights, so **before any server-side build**
 the following must be granted by whoever holds those rights. Do not write the bot until
 these are confirmed — otherwise the effort is wasted:

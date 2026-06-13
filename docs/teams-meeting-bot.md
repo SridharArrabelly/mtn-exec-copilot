@@ -286,6 +286,20 @@ re‑confirmed before any production use.
 
 **Outcome:** the avatar is a real audio participant that answers the room. No face yet.
 
+> **Build status (Slice 1 scaffold landed).** Steps 1–4 are implemented in the
+> repo: the client secret is minted and stored in the azd env (`BOT_CLIENT_SECRET`,
+> git-ignored); the calling-bot registration + Windows host are codified as
+> standalone additive bicep (`meeting-bot/infra/host.bicep`, compiles clean); and
+> the .NET media bot is scaffolded under `meeting-bot/` (`MeetingBot`, `CallHandler`,
+> `AuthenticationProvider`, and the `VoiceLiveBridgeClient` that speaks the
+> `/ws/acs/audio` protocol). **The bridge client — the actual Python↔.NET contract —
+> is unit-tested green** (AudioMetadata, outbound/inbound AudioData, StopAudio
+> barge-in). What remains is operator-only and Windows-only (steps 4–6 runtime): a
+> Windows host with a trusted cert, restoring the Graph media packages and building
+> there, the Teams manifest `supportsCalling`, and the live meeting test. The full
+> runbook is in [`meeting-bot/README.md`](../meeting-bot/README.md). No Python change
+> is needed beyond `ACS_AUDIO_SAMPLE_RATE=16000`.
+
 ### Step 2 — **Face**: Nuru is visible in the meeting
 
 Same bot foundation; a second slice. Two routes:

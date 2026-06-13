@@ -150,6 +150,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Include the optional Phase 2b meeting control panel (configurableTabs). "
         "Off by default — the package is then identical to the Phase 1/2a build.",
     )
+    parser.add_argument(
+        "--enable-calling",
+        action="store_true",
+        default=_env_flag("TEAMS_ENABLE_CALLING"),
+        help="Mark the bot as a Teams calling bot (supportsCalling=true) for the "
+        "Phase 2b (#27) in-call media bot. Off by default — the package is then "
+        "identical to the Phase 2a chat-only build. Requires a --bot-id and a "
+        "tenant policy that allows calling bots in meetings.",
+    )
     args = parser.parse_args(argv)
 
     hostname = _normalize_hostname(args.hostname)
@@ -189,6 +198,12 @@ def main(argv: list[str] | None = None) -> int:
     if not bot_id:
         manifest.pop("bots", None)
 
+    # Phase 2b (#27): mark the bot as a calling bot so it can join meeting media.
+    # Opt-in — default leaves supportsCalling=false (the Phase 2a chat-only shape).
+    if bot_id and args.enable_calling:
+        for bot in manifest.get("bots", []):
+            bot["supportsCalling"] = True
+
     # The Phase 2b meeting control panel (configurableTabs) is opt-in. When not
     # enabled the entry is dropped so the package is byte-for-byte the Phase 1/2a
     # shape — the optional Companion never gates the always-working Tab/bot.
@@ -220,6 +235,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  app id:   {app_id}")
     print(f"  bot id:   {bot_id or '(none — tab-only package)'}")
     print(f"  companion: {'included (meeting control panel)' if args.enable_companion else '(not included)'}")
+    print(f"  calling:   {'enabled (supportsCalling=true)' if (bot_id and args.enable_calling) else '(chat-only)'}")
     print("Sideload it in Teams via: Apps -> Manage your apps -> Upload an app -> Upload a custom app")
     return 0
 

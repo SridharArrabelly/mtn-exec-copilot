@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    Avatar-Forge Teams meeting media bot (Phase 2b, issue #27 — Slice 1: AUDIO).
+
+    This is the *thin .NET/Windows media relay* described in
+    docs/teams-meeting-bot.md. It is deliberately "dumb": it joins a Teams
+    meeting, grabs the MIXED participant audio via the Graph Real-Time Media
+    Platform (Microsoft.Skype.Bots.Media, Windows-only), and forwards raw PCM16
+    over a WebSocket to the *unchanged* Python backend's /ws/acs/audio endpoint
+    (backend/acs/bridge.py::AcsVoiceBridge). All answering / RAG / turn-taking
+    stays in Python.
+
+    ── PLATFORM REALITY ──────────────────────────────────────────────────────
+    The media library (Microsoft.Graph.Communications.Calls.Media) pulls in
+    Microsoft.Skype.Bots.Media, which contains a native Windows media stack and
+    therefore MUST be built and RUN on a Windows guest OS (win-x64). It cannot
+    run on Linux/macOS. You may *edit* on any OS, but build/host on Windows.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>AvatarForge.MeetingBot</RootNamespace>
+    <AssemblyName>AvatarForge.MeetingBot</AssemblyName>
+    <!-- The native media stack is win-x64 only. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Graph Communications Calling + Real-Time Media SDK.
+      NOTE on versions: these are the 1.2.0.x calling/media packages. Restore
+      them on a Windows machine with NuGet access. The Calls, Media, Client and
+      Common packages must stay version-aligned — bump them together.
+    -->
+    <PackageReference Include="Microsoft.Graph.Communications.Calls" Version="1.2.0.10377" />
+    <PackageReference Include="Microsoft.Graph.Communications.Calls.Media" Version="1.2.0.10377" />
+    <PackageReference Include="Microsoft.Graph.Communications.Client" Version="1.2.0.10377" />
+    <PackageReference Include="Microsoft.Graph.Communications.Common" Version="1.2.0.10377" />
+
+    <!-- Auth for acquiring the Graph app token used by the calling client. -->
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.61.3" />
+  </ItemGroup>
+
+</Project>
