@@ -70,6 +70,7 @@ Full walkthrough — building the search index, smoke tests, developer mode — 
 | **[docs/deployment.md](docs/deployment.md)** | Deploy to Azure with `azd`: topology, region preflight, BYO Foundry/Search, cross-RG RBAC, post-deploy. |
 | **[docs/auth.md](docs/auth.md)** | `DefaultAzureCredential`, required roles, startup pre-warm, IMDS skip, token caching. |
 | **[teams/README.md](teams/README.md)** | Microsoft Teams tab + conversational bot: build the package, sideload (no admin), Azure Bot setup, validation. |
+| **[docs/teams-meeting-bot.md](docs/teams-meeting-bot.md)** | Phase 2b in-call media: decisions, **why Python + a thin .NET/Windows media bot**, the final architecture, audio bridge, and the two-step delivery plan. |
 | **[prompts/README.md](prompts/README.md)** | Agent prompt content, the reasoning/non-reasoning variants, and the edit workflow. |
 
 ## References & Acknowledgements
