@@ -122,8 +122,18 @@ ACS_REQUIRE_WAKE_PHRASE = os.getenv(
 ).strip().lower() in ("1", "true", "yes", "on")
 # Seconds of inactivity before the participant leaves the call (0 disables).
 ACS_IDLE_TIMEOUT_S = float(os.getenv("ACS_IDLE_TIMEOUT_S", "0"))
-# True when Phase 2b in-call media is configured (endpoint or connection string).
-ACS_ENABLED = bool(ACS_ENDPOINT or ACS_CONNECTION_STRING)
+# Phase 2b Slice 1: the .NET/Windows Graph media bot connects to the
+# ``/ws/acs/audio`` bridge endpoint and speaks the AcsVoiceBridge protocol. That
+# path needs Voice Live only — NOT an ACS resource — so this flag enables the
+# bridge endpoint independently of ACS_ENDPOINT/ACS_CONNECTION_STRING. (The
+# ACS-specific REST endpoints — /api/acs/token, /api/acs/call — still require a
+# real ACS resource; the media bot does not use them.)
+MEETING_BOT_ENABLED = os.getenv(
+    "MEETING_BOT_ENABLED", "false"
+).strip().lower() in ("1", "true", "yes", "on")
+# True when Phase 2b in-call media is configured: either an ACS resource is set,
+# or the Graph media bot bridge is explicitly enabled.
+ACS_ENABLED = bool(ACS_ENDPOINT or ACS_CONNECTION_STRING or MEETING_BOT_ENABLED)
 
 # The assistant's persona / brand name. This is the SINGLE branding knob: it
 # names the Teams bot (welcome message + manifest) AND, when set, the bold name

@@ -94,6 +94,21 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-09-01' = {
         }
       }
       {
+        name: 'Allow-ACME-HTTP'
+        properties: {
+          priority: 1015
+          direction: 'Inbound'
+          access: 'Allow'
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          // Port 80 for Let's Encrypt HTTP-01 validation (win-acme). Used only
+          // during cert issuance/renewal; the bot itself serves HTTPS.
+          sourceAddressPrefix: 'Internet'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '80'
+        }
+      }
+      {
         name: 'Allow-RDP'
         properties: {
           priority: 1020
