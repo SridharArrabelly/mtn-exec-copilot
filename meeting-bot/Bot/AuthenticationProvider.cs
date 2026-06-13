@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using Microsoft.Graph.Communications.Client.Authentication;
 using Microsoft.Graph.Communications.Common.Telemetry;
@@ -22,7 +23,7 @@ public sealed class AuthenticationProvider : IRequestAuthenticationProvider
     private readonly string _appSecret;
     private readonly string _tenantId;
     private readonly IGraphLogger _logger;
-    private readonly IConfidentialClientApplication _app;
+    private readonly ConcurrentDictionary<string, IConfidentialClientApplication> _apps = new();
 
     public AuthenticationProvider(string appId, string appSecret, string tenantId, IGraphLogger logger)
     {
@@ -30,16 +31,28 @@ public sealed class AuthenticationProvider : IRequestAuthenticationProvider
         _appSecret = appSecret;
         _tenantId = tenantId;
         _logger = logger;
-        _app = ConfidentialClientApplicationBuilder
-            .Create(appId)
-            .WithClientSecret(appSecret)
-            .WithAuthority(new Uri($"https://login.microsoftonline.com/{tenantId}"))
-            .Build();
     }
+
+    /// <summary>
+    /// Builds (and caches) a confidential-client app whose authority points at a
+    /// specific tenant. A multi-tenant bot must acquire its Graph token against the
+    /// tenant that owns the meeting (the organizer tenant), not its own home tenant,
+    /// otherwise Graph rejects the join with "Request authorization tenant mismatch".
+    /// </summary>
+    private IConfidentialClientApplication GetOrCreateApp(string tenant) =>
+        _apps.GetOrAdd(tenant, t => ConfidentialClientApplicationBuilder
+            .Create(_appId)
+            .WithClientSecret(_appSecret)
+            .WithAuthority(new Uri($"https://login.microsoftonline.com/{t}"))
+            .Build());
 
     public async Task AuthenticateOutboundRequestAsync(HttpRequestMessage request, string tenant)
     {
-        var result = await _app.AcquireTokenForClient(new[] { GraphScope })
+        // Honor the per-request tenant the SDK supplies (the meeting/organizer
+        // tenant). Fall back to the bot's home tenant when none is provided.
+        var authorityTenant = string.IsNullOrWhiteSpace(tenant) ? _tenantId : tenant;
+        var app = GetOrCreateApp(authorityTenant);
+        var result = await app.AcquireTokenForClient(new[] { GraphScope })
             .ExecuteAsync()
             .ConfigureAwait(false);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
