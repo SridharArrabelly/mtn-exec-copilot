@@ -3,6 +3,10 @@ using AvatarForge.MeetingBot.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Run under the Windows Service Control Manager when launched as a service
+// (no-op when run as a plain console process), so `Start-Service` works.
+builder.Host.UseWindowsService();
+
 // ── Configuration ──
 // Bind Bot:* from appsettings + environment. AppSecret should come from the
 // environment (Bot__AppSecret) — never appsettings.json. In the avatar-forge

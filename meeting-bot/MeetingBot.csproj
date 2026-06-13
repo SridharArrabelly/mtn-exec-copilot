@@ -43,6 +43,30 @@
 
     <!-- Auth for acquiring the Graph app token used by the calling client. -->
     <PackageReference Include="Microsoft.Identity.Client" Version="4.61.3" />
+
+    <!-- Lets the host run as a Windows service under the SCM (Start-Service). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
   </ItemGroup>
+
+  <!--
+    The Microsoft.Skype.Bots.Media package ships its native media stack
+    (NativeMedia.dll, skypert.dll, RtmPal/RtmCodecs/RtmMvrCs.dll, MediaPerf.dll,
+    Ijwhost.dll, the *NetCore audio/H264 libs) under <pkg>\src\net6.0\, and the
+    package targets do NOT copy them next to a `dotnet publish -o` output. Without
+    them MediaPlatform.Initialize throws DllNotFoundException('NativeMedia'). Copy
+    them into the build + publish output so the bot is self-contained. NOTE: the
+    host also needs the Visual C++ x64 Redistributable installed (vcruntime140 /
+    msvcp140) and at least 2 usable cores — see meeting-bot/scripts/setup-host.ps1.
+  -->
+  <Target Name="CopySkypeNativeMedia" AfterTargets="Build;Publish">
+    <PropertyGroup>
+      <_SkypeMediaPkgDir>$([System.Environment]::GetEnvironmentVariable('USERPROFILE'))\.nuget\packages\microsoft.skype.bots.media</_SkypeMediaPkgDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_SkypeNativeMedia Include="$(_SkypeMediaPkgDir)\**\src\net6.0\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_SkypeNativeMedia)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="'@(_SkypeNativeMedia)' != ''" />
+    <Copy SourceFiles="@(_SkypeNativeMedia)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != '' and '@(_SkypeNativeMedia)' != ''" />
+  </Target>
 
 </Project>

@@ -69,6 +69,21 @@ switch ($Stage) {
         & $dot -Channel 8.0 -Runtime aspnetcore -InstallDir 'C:\Program Files\dotnet'
         [Environment]::SetEnvironmentVariable('PATH', $env:PATH + ';C:\Program Files\dotnet', 'Machine')
 
+        # The Graph Real-Time Media native stack (NativeMedia.dll) links against the
+        # Visual C++ runtime; without it MediaPlatform.Initialize throws
+        # DllNotFoundException. Install the x64 redistributable.
+        Write-Step 'Installing Visual C++ x64 Redistributable (required by the media stack)'
+        if (-not (Test-Path "$env:SystemRoot\System32\vcruntime140.dll")) {
+            $vc = Join-Path $env:TEMP 'vc_redist.x64.exe'
+            Invoke-WebRequest 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile $vc -UseBasicParsing
+            Start-Process -FilePath $vc -ArgumentList '/install','/quiet','/norestart' -Wait
+        }
+
+        # The media platform requires at least 2 usable cores (it throws
+        # "MediaPlatform needs a system with at least 2 cores" otherwise). Use a
+        # 4-vCPU VM (e.g. Standard_D4s_v5) for headroom on real-time transcode.
+        Write-Step "Host has $([Environment]::ProcessorCount) logical processors (media platform needs >= 2; 4+ recommended)"
+
         Write-Step 'Prep complete'
         & 'C:\Program Files\dotnet\dotnet.exe' --info | Select-Object -First 5
     }
