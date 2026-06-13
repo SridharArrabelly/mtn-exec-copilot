@@ -53,6 +53,9 @@
     "agentId":         { "value": "${AGENT_ID=}" },
 
     "enableAcs":       { "value": "${ENABLE_ACS=false}" },
-    "acsDataLocation": { "value": "${ACS_DATA_LOCATION=United States}" }
+    "acsDataLocation": { "value": "${ACS_DATA_LOCATION=United States}" },
+    "meetingBotEnabled":   { "value": "${MEETING_BOT_ENABLED=false}" },
+    "acsAudioSampleRate":  { "value": "${ACS_AUDIO_SAMPLE_RATE=}" },
+    "acsRequireWakePhrase":{ "value": "${ACS_REQUIRE_WAKE_PHRASE=}" }
   }
 }

@@ -38,8 +38,10 @@ Teams meeting ──mixed audio──▶ [Skype.Bots.Media AudioSocket]
 
 The seam is the **already-built** `/ws/acs/audio` endpoint. The bot just speaks its
 wire protocol (`AudioMetadata` → base64-PCM16 `AudioData` frames; inbound
-`AudioData` to play, `StopAudio` for barge-in). **No Python changes are required**
-for Slice 1 beyond setting `ACS_AUDIO_SAMPLE_RATE=16000` (see below).
+`AudioData` to play, `StopAudio` for barge-in). The only Python-side requirement for
+Slice 1 is two env flags: `MEETING_BOT_ENABLED=true` (serves `/ws/acs/audio` without an
+ACS resource) and `ACS_AUDIO_SAMPLE_RATE=16000` (matches the media platform). Both are
+already set on the deployed app and wired through bicep.
 
 ## Project layout
 
@@ -64,44 +66,76 @@ Set via `appsettings.json` or environment (`Bot__*`). **Never commit the secret.
 | `Bot:AppId` | `860ecee0-c226-4930-8c00-e37bae4a3ae5` (`avatar-forge-meeting-bot`) |
 | `Bot:TenantId` | `349b3dac-8649-4410-acdc-ef8bbcb7a46f` |
 | `Bot:AppSecret` | from env `BOT_CLIENT_SECRET` (stored in azd env, git-ignored) |
-| `Bot:ServiceFqdn` | the Windows host public FQDN (from `host.bicep` output) |
+| `Bot:ServiceFqdn` | `avatar-meetingbot-mngenv.swedencentral.cloudapp.azure.com` (`host.bicep` output) |
 | `Bot:CertificateThumbprint` | a publicly-trusted cert in `LocalMachine\My` matching the FQDN |
-| `Bot:BridgeWebSocketUrl` | `wss://<your-app>.azurecontainerapps.io/ws/acs/audio` |
+| `Bot:BridgeWebSocketUrl` | `wss://ca-avatar-mngenv-ha2avgzxshnbo.orangepebble-e59f7bd5.swedencentral.azurecontainerapps.io/ws/acs/audio` |
 | `Bot:BridgeSampleRate` | `16000` |
+
+## Deployed host (MngEnv, rg-avatar-mngenv) — already provisioned
+
+`host.bicep` is **deployed**. Live resources:
+
+| Resource | Value |
+| --- | --- |
+| Windows VM | `avatar-meetingbot-vm` (running, `Standard_D2s_v5`, swedencentral) |
+| Public FQDN | `avatar-meetingbot-mngenv.swedencentral.cloudapp.azure.com` |
+| Signaling endpoint | `https://<fqdn>:9441/api/calling` |
+| Operator API | `https://<fqdn>:9441/api/join` |
+| Calling-bot registration | `avatar-meetingbot-registration` (Teams channel, `callingWebhook` on) |
+| NSG | `avatar-meetingbot-nsg` — 9441 (signaling), 8445 (media), 80 (ACME), 3389 (RDP) |
+
+The Python side is **already live**: the container app has `MEETING_BOT_ENABLED=true`,
+`ACS_AUDIO_SAMPLE_RATE=16000`, `ACS_REQUIRE_WAKE_PHRASE=true`, and `/ws/acs/audio`
+accepts the bot's handshake (verified with a websockets probe). `MEETING_BOT_ENABLED`
+makes the bridge serve the bot **without** provisioning an ACS resource.
+
+## Host setup — `scripts/setup-host.ps1`
+
+A 4-stage helper drives the Windows host. **Stage Prep is already done** on the
+deployed VM (firewall rules + .NET 8 SDK / ASP.NET runtime, via `az vm run-command`).
+The remaining stages are operator-only (need the private repo on the VM + interactive
+cert issuance + a real meeting):
+
+```pwsh
+# On the VM (RDP in), from a clone of this repo:
+.\meeting-bot\scripts\setup-host.ps1 -Stage Cert  -Email you@example.com   # win-acme Let's Encrypt (HTTP-01, port 80)
+.\meeting-bot\scripts\setup-host.ps1 -Stage Build                          # git clone + dotnet publish -r win-x64
+.\meeting-bot\scripts\setup-host.ps1 -Stage Run   -Thumbprint <cert-tp> `
+    -BridgeUrl wss://ca-avatar-mngenv-ha2avgzxshnbo.orangepebble-e59f7bd5.swedencentral.azurecontainerapps.io/ws/acs/audio `
+    -BotSecret <BOT_CLIENT_SECRET>                                         # set Bot__* + install/start the Windows service
+```
+
+> Note: this is a **private** repo, so the Build stage needs git auth on the VM
+> (e.g. a PAT or `gh auth login`).
 
 ## Runbook (operator — Windows host required)
 
-1. **Provision the host + calling registration** (standalone, additive — does NOT
-   touch the web app deploy):
+1. ✅ **Host + calling registration** — already deployed (`host.bicep`). To
+   re-deploy/update:
    ```pwsh
    az deployment group create -g rg-avatar-mngenv `
      -f meeting-bot/infra/host.bicep `
      -p botAppId=860ecee0-c226-4930-8c00-e37bae4a3ae5 `
         botAppTenantId=349b3dac-8649-4410-acdc-ef8bbcb7a46f `
-        adminPassword='<strong-password>' dnsLabel=avatar-meeting-bot
+        adminPassword='<strong-password>' dnsLabel=avatar-meetingbot-mngenv
    ```
-   Note the `publicFqdn` / `signalingEndpoint` outputs.
-2. **Install a publicly-trusted TLS cert** on the VM (`LocalMachine\My`) whose
-   subject matches `publicFqdn`; record its thumbprint.
-3. **Open the firewall** on the VM for the signaling + media ports (the NSG already
-   allows them inbound).
-4. **Set the Python side** so the bridge runs at 16 kHz to match the media platform:
-   `azd env set ACS_AUDIO_SAMPLE_RATE 16000` and `azd env set ACS_ENABLED true`,
-   then redeploy the web app. (`ACS_REQUIRE_WAKE_PHRASE=true` keeps Nuru silent
-   until addressed — recommended for multi-exec meetings.)
-5. **Build & publish the bot on the Windows host:**
-   ```pwsh
-   dotnet publish meeting-bot/MeetingBot.csproj -c Release -r win-x64 --self-contained
-   ```
-   Set `Bot__AppSecret` (= `BOT_CLIENT_SECRET`), `Bot__ServiceFqdn`,
-   `Bot__CertificateThumbprint`, `Bot__BridgeWebSocketUrl`, then run the published exe.
-6. **Teams manifest:** set `supportsCalling: true` (and `supportsVideo` later for
-   Slice 2) on the bot entry, rebuild the package (`teams/build_package.py`), and
-   upload. Requires a tenant **custom-app** policy + a **meeting policy allowing
-   bots** (you are global admin in MngEnv, so self-serviceable).
-7. **Test:** start a Teams meeting in the MngEnv tenant, then
-   `POST https://<publicFqdn>:9441/api/join { "joinUrl": "<meeting link>" }`. Nuru
-   should appear in the roster, hear the room, and answer aloud on the wake phrase.
+2. ✅ **Python side** — already live: `MEETING_BOT_ENABLED=true`,
+   `ACS_AUDIO_SAMPLE_RATE=16000`, `ACS_REQUIRE_WAKE_PHRASE=true` on the container app
+   (and persisted in the azd env, wired through bicep so a full `azd up` keeps them).
+3. ✅ **Prep stage** — firewall + .NET 8 SDK/ASP.NET runtime installed on the VM.
+4. **Install a publicly-trusted TLS cert** — `setup-host.ps1 -Stage Cert` (win-acme
+   issues a Let's Encrypt cert via HTTP-01 on port 80, already open). Record the
+   thumbprint.
+5. **Build & publish the bot on the VM** — `setup-host.ps1 -Stage Build` (clones the
+   repo, `dotnet publish -r win-x64`).
+6. **Run** — `setup-host.ps1 -Stage Run -Thumbprint <tp> -BridgeUrl <wss .../ws/acs/audio> -BotSecret <BOT_CLIENT_SECRET>`
+   installs/starts the `AvatarForgeMeetingBot` Windows service.
+7. **Teams manifest:** build with `python teams/build_package.py --enable-calling`
+   (sets `supportsCalling: true`), upload. Requires a tenant **custom-app** policy + a
+   **meeting policy allowing bots** (you are global admin in MngEnv, so self-serviceable).
+8. **Test:** start a Teams meeting in the MngEnv tenant, then
+   `POST https://avatar-meetingbot-mngenv.swedencentral.cloudapp.azure.com:9441/api/join { "joinUrl": "<meeting link>" }`.
+   Nuru should appear in the roster, hear the room, and answer aloud on the wake phrase.
 
 ## What is verified vs. pending
 

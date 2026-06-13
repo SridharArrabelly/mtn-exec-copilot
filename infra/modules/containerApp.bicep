@@ -53,6 +53,15 @@ param agentId string = ''
 @description('ACS endpoint for the Call Automation media participant. Empty disables Phase 2b in the container.')
 param acsEndpoint string = ''
 
+@description('"true"/"false" string. When "true", the .NET Teams media bot bridge (/ws/acs/audio) is served WITHOUT an ACS resource — sets MEETING_BOT_ENABLED so ACS_ENABLED is true on the Voice Live path alone.')
+param meetingBotEnabled string = 'false'
+
+@description('PCM sample rate (Hz) the media bot streams. Teams media bot uses 16000; ACS browser bridge uses 24000.')
+param acsAudioSampleRate string = ''
+
+@description('"true"/"false" string. When "true", the in-call avatar only answers after a wake phrase so she never talks over humans.')
+param acsRequireWakePhrase string = ''
+
 @description('Placeholder image used on first provision; azd replaces it during `azd deploy`.')
 param containerImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -65,6 +74,16 @@ var acsEnv = !empty(acsEndpoint) ? [
     value: acsEndpoint
   }
 ] : []
+
+// Phase 2b Teams media-bot env (additive). The .NET media bot connects to the
+// /ws/acs/audio bridge, which only needs Voice Live (no ACS resource). MEETING_BOT_ENABLED
+// flips ACS_ENABLED on so the bridge is served. Empty/false -> behaves as today.
+var meetingBotOn = toLower(meetingBotEnabled) == 'true'
+var meetingBotEnv = concat(
+  meetingBotOn ? [ { name: 'MEETING_BOT_ENABLED', value: 'true' } ] : [],
+  !empty(acsAudioSampleRate) ? [ { name: 'ACS_AUDIO_SAMPLE_RATE', value: acsAudioSampleRate } ] : [],
+  !empty(acsRequireWakePhrase) ? [ { name: 'ACS_REQUIRE_WAKE_PHRASE', value: acsRequireWakePhrase } ] : []
+)
 
 var botEnabled = !empty(botAppId)
 var botSecrets = !empty(botAppPassword) ? [
@@ -170,7 +189,7 @@ resource app 'Microsoft.App/containerApps@2024-10-02-preview' = {
             { name: 'SR_MODEL', value: srModel }
             { name: 'RECOGNITION_LANGUAGE', value: recognitionLanguage }
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
-          ], concat(botEnv, acsEnv))
+          ], concat(botEnv, acsEnv, meetingBotEnv))
           probes: [
             {
               type: 'Liveness'

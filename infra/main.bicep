@@ -86,6 +86,12 @@ param agentId string = ''
 param enableAcs string = 'false'
 @description('ACS data residency geography (NOT an Azure region), e.g. "United States", "Europe", "Africa".')
 param acsDataLocation string = 'United States'
+@description('"true"/"false". Serve the .NET Teams media-bot bridge without an ACS resource (sets MEETING_BOT_ENABLED). Independent of enableAcs.')
+param meetingBotEnabled string = 'false'
+@description('PCM sample rate (Hz) the Teams media bot streams (16000).')
+param acsAudioSampleRate string = ''
+@description('"true"/"false". In-call avatar only answers after a wake phrase.')
+param acsRequireWakePhrase string = ''
 
 // ───────── Model deployment (used only when creating Foundry) ─────────
 param modelName string = 'gpt-5.4'
@@ -159,6 +165,9 @@ module resources 'resources.bicep' = {
     agentId: agentId
     enableAcs: enableAcs
     acsDataLocation: acsDataLocation
+    meetingBotEnabled: meetingBotEnabled
+    acsAudioSampleRate: acsAudioSampleRate
+    acsRequireWakePhrase: acsRequireWakePhrase
   }
 }
 

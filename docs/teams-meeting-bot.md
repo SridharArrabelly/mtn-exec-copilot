@@ -297,8 +297,17 @@ re‑confirmed before any production use.
 > barge-in). What remains is operator-only and Windows-only (steps 4–6 runtime): a
 > Windows host with a trusted cert, restoring the Graph media packages and building
 > there, the Teams manifest `supportsCalling`, and the live meeting test. The full
-> runbook is in [`meeting-bot/README.md`](../meeting-bot/README.md). No Python change
-> is needed beyond `ACS_AUDIO_SAMPLE_RATE=16000`.
+> runbook is in [`meeting-bot/README.md`](../meeting-bot/README.md). The Python side
+> needs two flags — `MEETING_BOT_ENABLED=true` (serves `/ws/acs/audio` without an ACS
+> resource) and `ACS_AUDIO_SAMPLE_RATE=16000` — both already live on the deployed app
+> and wired through bicep.
+>
+> **Update (deployed):** `host.bicep` is now deployed to `rg-avatar-mngenv` — Windows VM
+> `avatar-meetingbot-vm` (FQDN `avatar-meetingbot-mngenv.swedencentral.cloudapp.azure.com`),
+> NSG (9441/8445/80/3389), and the `avatar-meetingbot-registration` calling bot. The
+> Prep stage (firewall + .NET 8 SDK) ran on the VM; `/ws/acs/audio` is live-verified.
+> Remaining is operator-only: cert (`setup-host.ps1 -Stage Cert`), build, run, and the
+> live meeting test.
 
 ### Step 2 — **Face**: Nuru is visible in the meeting
 

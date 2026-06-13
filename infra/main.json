@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.43.8.12551",
-      "templateHash": "14123801621800630516"
+      "templateHash": "11237784914017572100"
     }
   },
   "parameters": {
@@ -224,6 +224,27 @@
         "description": "ACS data residency geography (NOT an Azure region), e.g. \"United States\", \"Europe\", \"Africa\"."
       }
     },
+    "meetingBotEnabled": {
+      "type": "string",
+      "defaultValue": "false",
+      "metadata": {
+        "description": "\"true\"/\"false\". Serve the .NET Teams media-bot bridge without an ACS resource (sets MEETING_BOT_ENABLED). Independent of enableAcs."
+      }
+    },
+    "acsAudioSampleRate": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "PCM sample rate (Hz) the Teams media bot streams (16000)."
+      }
+    },
+    "acsRequireWakePhrase": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "\"true\"/\"false\". In-call avatar only answers after a wake phrase."
+      }
+    },
     "modelName": {
       "type": "string",
       "defaultValue": "gpt-5.4"
@@ -410,6 +431,15 @@
           },
           "acsDataLocation": {
             "value": "[parameters('acsDataLocation')]"
+          },
+          "meetingBotEnabled": {
+            "value": "[parameters('meetingBotEnabled')]"
+          },
+          "acsAudioSampleRate": {
+            "value": "[parameters('acsAudioSampleRate')]"
+          },
+          "acsRequireWakePhrase": {
+            "value": "[parameters('acsRequireWakePhrase')]"
           }
         },
         "template": {
@@ -419,7 +449,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "2964770142025814826"
+              "templateHash": "1794038029530991767"
             }
           },
           "parameters": {
@@ -596,6 +626,27 @@
               "defaultValue": "United States",
               "metadata": {
                 "description": "ACS data residency geography (NOT an Azure region), e.g. \"United States\", \"Europe\", \"Africa\"."
+              }
+            },
+            "meetingBotEnabled": {
+              "type": "string",
+              "defaultValue": "false",
+              "metadata": {
+                "description": "\"true\"/\"false\". Serve the .NET Teams media-bot bridge (/ws/acs/audio) without an ACS resource — sets MEETING_BOT_ENABLED. Independent of enableAcs."
+              }
+            },
+            "acsAudioSampleRate": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "PCM sample rate (Hz) the media bot streams. Teams media bot uses 16000."
+              }
+            },
+            "acsRequireWakePhrase": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "\"true\"/\"false\". In-call avatar only answers after a wake phrase."
               }
             }
           },
@@ -1953,7 +2004,16 @@
                   "agentId": {
                     "value": "[parameters('agentId')]"
                   },
-                  "acsEndpoint": "[if(variables('acsEnabled'), createObject('value', reference(resourceId('Microsoft.Resources/deployments', 'acs'), '2025-04-01').outputs.endpoint.value), createObject('value', ''))]"
+                  "acsEndpoint": "[if(variables('acsEnabled'), createObject('value', reference(resourceId('Microsoft.Resources/deployments', 'acs'), '2025-04-01').outputs.endpoint.value), createObject('value', ''))]",
+                  "meetingBotEnabled": {
+                    "value": "[parameters('meetingBotEnabled')]"
+                  },
+                  "acsAudioSampleRate": {
+                    "value": "[parameters('acsAudioSampleRate')]"
+                  },
+                  "acsRequireWakePhrase": {
+                    "value": "[parameters('acsRequireWakePhrase')]"
+                  }
                 },
                 "template": {
                   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
@@ -1962,7 +2022,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.43.8.12551",
-                      "templateHash": "14075897002048115939"
+                      "templateHash": "6283117768746242886"
                     }
                   },
                   "parameters": {
@@ -2134,6 +2194,27 @@
                         "description": "ACS endpoint for the Call Automation media participant. Empty disables Phase 2b in the container."
                       }
                     },
+                    "meetingBotEnabled": {
+                      "type": "string",
+                      "defaultValue": "false",
+                      "metadata": {
+                        "description": "\"true\"/\"false\" string. When \"true\", the .NET Teams media bot bridge (/ws/acs/audio) is served WITHOUT an ACS resource — sets MEETING_BOT_ENABLED so ACS_ENABLED is true on the Voice Live path alone."
+                      }
+                    },
+                    "acsAudioSampleRate": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "PCM sample rate (Hz) the media bot streams. Teams media bot uses 16000; ACS browser bridge uses 24000."
+                      }
+                    },
+                    "acsRequireWakePhrase": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "\"true\"/\"false\" string. When \"true\", the in-call avatar only answers after a wake phrase so she never talks over humans."
+                      }
+                    },
                     "containerImage": {
                       "type": "string",
                       "defaultValue": "mcr.microsoft.com/k8se/quickstart:latest",
@@ -2144,6 +2225,8 @@
                   },
                   "variables": {
                     "acsEnv": "[if(not(empty(parameters('acsEndpoint'))), createArray(createObject('name', 'ACS_ENDPOINT', 'value', parameters('acsEndpoint'))), createArray())]",
+                    "meetingBotOn": "[equals(toLower(parameters('meetingBotEnabled')), 'true')]",
+                    "meetingBotEnv": "[concat(if(variables('meetingBotOn'), createArray(createObject('name', 'MEETING_BOT_ENABLED', 'value', 'true')), createArray()), if(not(empty(parameters('acsAudioSampleRate'))), createArray(createObject('name', 'ACS_AUDIO_SAMPLE_RATE', 'value', parameters('acsAudioSampleRate'))), createArray()), if(not(empty(parameters('acsRequireWakePhrase'))), createArray(createObject('name', 'ACS_REQUIRE_WAKE_PHRASE', 'value', parameters('acsRequireWakePhrase'))), createArray()))]",
                     "botEnabled": "[not(empty(parameters('botAppId')))]",
                     "botSecrets": "[if(not(empty(parameters('botAppPassword'))), createArray(createObject('name', 'bot-app-password', 'value', parameters('botAppPassword'))), createArray())]",
                     "botEnv": "[if(variables('botEnabled'), concat(createArray(createObject('name', 'TEAMS_BOT_ID', 'value', parameters('botAppId')), createObject('name', 'TEAMS_APP_ID', 'value', parameters('teamsAppId')), createObject('name', 'AGENT_ID', 'value', parameters('agentId')), createObject('name', 'CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID', 'value', parameters('botAppId')), createObject('name', 'CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID', 'value', parameters('botAppTenantId'))), if(not(empty(parameters('botAppPassword'))), createArray(createObject('name', 'CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET', 'secretRef', 'bot-app-password')), createArray())), createArray())]"
@@ -2203,7 +2286,7 @@
                                 "cpu": "[json('1.0')]",
                                 "memory": "2.0Gi"
                               },
-                              "env": "[concat(createArray(createObject('name', 'PORT', 'value', '3000'), createObject('name', 'AZURE_CLIENT_ID', 'value', parameters('uamiClientId')), createObject('name', 'DEVELOPER_MODE', 'value', 'false'), createObject('name', 'AZURE_VOICELIVE_ENDPOINT', 'value', parameters('voiceliveEndpoint')), createObject('name', 'PROJECT_ENDPOINT', 'value', parameters('projectEndpoint')), createObject('name', 'AGENT_NAME', 'value', parameters('agentName')), createObject('name', 'AGENT_PROJECT_NAME', 'value', parameters('agentProjectName')), createObject('name', 'AGENT_MODEL', 'value', parameters('agentModel')), createObject('name', 'EMBEDDING_DEPLOYMENT', 'value', parameters('embeddingDeployment')), createObject('name', 'AZURE_SEARCH_ENDPOINT', 'value', parameters('searchEndpoint')), createObject('name', 'SEARCH_CONNECTION_NAME', 'value', parameters('searchConnectionName')), createObject('name', 'SEARCH_INDEX_NAME', 'value', parameters('searchIndexName')), createObject('name', 'VOICELIVE_VOICE', 'value', parameters('voiceLiveVoice')), createObject('name', 'BING_CONNECTION_NAME', 'value', parameters('bingConnectionName')), createObject('name', 'BING_CUSTOM_CONFIG_NAME', 'value', parameters('bingCustomConfigName')), createObject('name', 'AVATAR_NAME', 'value', parameters('avatarName')), createObject('name', 'CUSTOM_AVATAR_NAME', 'value', parameters('customAvatarName')), createObject('name', 'AVATAR_DISPLAY_NAME', 'value', parameters('avatarDisplayName')), createObject('name', 'AVATAR_TAGLINE', 'value', parameters('avatarTagline')), createObject('name', 'PHOTO_AVATAR_NAME', 'value', parameters('photoAvatarName')), createObject('name', 'IS_PHOTO_AVATAR', 'value', parameters('isPhotoAvatar')), createObject('name', 'IS_CUSTOM_AVATAR', 'value', parameters('isCustomAvatar')), createObject('name', 'AVATAR_BACKGROUND_IMAGE_URL', 'value', parameters('avatarBackgroundImageUrl')), createObject('name', 'SR_MODEL', 'value', parameters('srModel')), createObject('name', 'RECOGNITION_LANGUAGE', 'value', parameters('recognitionLanguage')), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', parameters('appInsightsConnectionString'))), concat(variables('botEnv'), variables('acsEnv')))]",
+                              "env": "[concat(createArray(createObject('name', 'PORT', 'value', '3000'), createObject('name', 'AZURE_CLIENT_ID', 'value', parameters('uamiClientId')), createObject('name', 'DEVELOPER_MODE', 'value', 'false'), createObject('name', 'AZURE_VOICELIVE_ENDPOINT', 'value', parameters('voiceliveEndpoint')), createObject('name', 'PROJECT_ENDPOINT', 'value', parameters('projectEndpoint')), createObject('name', 'AGENT_NAME', 'value', parameters('agentName')), createObject('name', 'AGENT_PROJECT_NAME', 'value', parameters('agentProjectName')), createObject('name', 'AGENT_MODEL', 'value', parameters('agentModel')), createObject('name', 'EMBEDDING_DEPLOYMENT', 'value', parameters('embeddingDeployment')), createObject('name', 'AZURE_SEARCH_ENDPOINT', 'value', parameters('searchEndpoint')), createObject('name', 'SEARCH_CONNECTION_NAME', 'value', parameters('searchConnectionName')), createObject('name', 'SEARCH_INDEX_NAME', 'value', parameters('searchIndexName')), createObject('name', 'VOICELIVE_VOICE', 'value', parameters('voiceLiveVoice')), createObject('name', 'BING_CONNECTION_NAME', 'value', parameters('bingConnectionName')), createObject('name', 'BING_CUSTOM_CONFIG_NAME', 'value', parameters('bingCustomConfigName')), createObject('name', 'AVATAR_NAME', 'value', parameters('avatarName')), createObject('name', 'CUSTOM_AVATAR_NAME', 'value', parameters('customAvatarName')), createObject('name', 'AVATAR_DISPLAY_NAME', 'value', parameters('avatarDisplayName')), createObject('name', 'AVATAR_TAGLINE', 'value', parameters('avatarTagline')), createObject('name', 'PHOTO_AVATAR_NAME', 'value', parameters('photoAvatarName')), createObject('name', 'IS_PHOTO_AVATAR', 'value', parameters('isPhotoAvatar')), createObject('name', 'IS_CUSTOM_AVATAR', 'value', parameters('isCustomAvatar')), createObject('name', 'AVATAR_BACKGROUND_IMAGE_URL', 'value', parameters('avatarBackgroundImageUrl')), createObject('name', 'SR_MODEL', 'value', parameters('srModel')), createObject('name', 'RECOGNITION_LANGUAGE', 'value', parameters('recognitionLanguage')), createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', parameters('appInsightsConnectionString'))), concat(variables('botEnv'), variables('acsEnv'), variables('meetingBotEnv')))]",
                               "probes": [
                                 {
                                   "type": "Liveness",

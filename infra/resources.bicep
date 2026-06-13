@@ -65,6 +65,13 @@ param enableAcs string = 'false'
 @description('ACS data residency geography (NOT an Azure region), e.g. "United States", "Europe", "Africa".')
 param acsDataLocation string = 'United States'
 
+@description('"true"/"false". Serve the .NET Teams media-bot bridge (/ws/acs/audio) without an ACS resource — sets MEETING_BOT_ENABLED. Independent of enableAcs.')
+param meetingBotEnabled string = 'false'
+@description('PCM sample rate (Hz) the media bot streams. Teams media bot uses 16000.')
+param acsAudioSampleRate string = ''
+@description('"true"/"false". In-call avatar only answers after a wake phrase.')
+param acsRequireWakePhrase string = ''
+
 var acsEnabled = toLower(enableAcs) == 'true'
 
 var abbrs = loadJsonContent('abbreviations.json')
@@ -259,6 +266,9 @@ module app 'modules/containerApp.bicep' = {
     teamsAppId: teamsAppId
     agentId: agentId
     acsEndpoint: acsEnabled ? acs!.outputs.endpoint : ''
+    meetingBotEnabled: meetingBotEnabled
+    acsAudioSampleRate: acsAudioSampleRate
+    acsRequireWakePhrase: acsRequireWakePhrase
   }
 }
 
