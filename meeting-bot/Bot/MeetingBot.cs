@@ -8,6 +8,7 @@ using Microsoft.Graph.Communications.Calls.Media;
 using Microsoft.Graph.Communications.Client;
 using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Skype.Bots.Media;
+using Microsoft.Graph.Communications.Resources;
 
 namespace AvatarForge.MeetingBot.Bot;
 
@@ -19,29 +20,29 @@ namespace AvatarForge.MeetingBot.Bot;
 /// Mirrors the official Graph Communications "local media" sample shape, trimmed
 /// to exactly what Slice 1 (audio) needs.
 /// </summary>
-public sealed class MeetingBot : IDisposable
+public sealed class MeetingBotService : IDisposable
 {
     private readonly BotOptions _options;
     private readonly ILoggerFactory _loggerFactory;
-    private readonly ILogger<MeetingBot> _logger;
+    private readonly ILogger<MeetingBotService> _logger;
     private readonly ICommunicationsClient _client;
     private readonly Dictionary<string, CallHandler> _handlers = new();
 
-    public MeetingBot(IOptions<BotOptions> options, ILoggerFactory loggerFactory)
+    public MeetingBotService(IOptions<BotOptions> options, ILoggerFactory loggerFactory)
     {
         _options = options.Value;
         _options.Validate();
         _loggerFactory = loggerFactory;
-        _logger = loggerFactory.CreateLogger<MeetingBot>();
+        _logger = loggerFactory.CreateLogger<MeetingBotService>();
 
         // Telemetry/logging sink required by the SDK.
-        var graphLogger = new GraphLogger(nameof(MeetingBot));
+        var graphLogger = new GraphLogger(nameof(MeetingBotService));
 
         // Build the calling client. The media platform is configured with our
         // public FQDN, media port and TLS cert (see BotOptions) so the
         // Real-Time Media Platform can negotiate media with Teams.
         var builder = new CommunicationsClientBuilder(
-                name: "AvatarForgeMeetingBot",
+                appName: "AvatarForgeMeetingBot",
                 appId: _options.AppId,
                 logger: graphLogger)
             .SetAuthenticationProvider(
@@ -91,7 +92,7 @@ public sealed class MeetingBot : IDisposable
         };
         if (!string.IsNullOrWhiteSpace(displayName))
         {
-            joinParams.GuestIdentity = new Microsoft.Graph.Identity
+            joinParams.GuestIdentity = new Microsoft.Graph.Models.Identity
             {
                 DisplayName = displayName,
                 Id = Guid.NewGuid().ToString(),
@@ -111,9 +112,10 @@ public sealed class MeetingBot : IDisposable
     public async Task LeaveAsync(string callId)
     {
         if (_handlers.Remove(callId, out var handler))
-            await handler.DisposeAsync().ConfigureAwait(false);
-        var call = _client.Calls().TryGetValue(callId, out var c) ? c : null;
-        if (call is not null) await call.DeleteAsync().ConfigureAwait(false);
+        {
+            try { await handler.Call.DeleteAsync().ConfigureAwait(false); }
+            finally { await handler.DisposeAsync().ConfigureAwait(false); }
+        }
     }
 
     /// <summary>

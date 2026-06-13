@@ -15,10 +15,10 @@ namespace AvatarForge.MeetingBot.Http;
 [Route("api")]
 public sealed class JoinController : ControllerBase
 {
-    private readonly MeetingBot _bot;
+    private readonly MeetingBotService _bot;
     private readonly ILogger<JoinController> _logger;
 
-    public JoinController(MeetingBot bot, ILogger<JoinController> logger)
+    public JoinController(MeetingBotService bot, ILogger<JoinController> logger)
     {
         _bot = bot;
         _logger = logger;

@@ -36,10 +36,10 @@
       them on a Windows machine with NuGet access. The Calls, Media, Client and
       Common packages must stay version-aligned — bump them together.
     -->
-    <PackageReference Include="Microsoft.Graph.Communications.Calls" Version="1.2.0.10377" />
-    <PackageReference Include="Microsoft.Graph.Communications.Calls.Media" Version="1.2.0.10377" />
-    <PackageReference Include="Microsoft.Graph.Communications.Client" Version="1.2.0.10377" />
-    <PackageReference Include="Microsoft.Graph.Communications.Common" Version="1.2.0.10377" />
+    <PackageReference Include="Microsoft.Graph.Communications.Calls" Version="1.2.0.10563" />
+    <PackageReference Include="Microsoft.Graph.Communications.Calls.Media" Version="1.2.0.10563" />
+    <PackageReference Include="Microsoft.Graph.Communications.Client" Version="1.2.0.10563" />
+    <PackageReference Include="Microsoft.Graph.Communications.Common" Version="1.2.0.10563" />
 
     <!-- Auth for acquiring the Graph app token used by the calling client. -->
     <PackageReference Include="Microsoft.Identity.Client" Version="4.61.3" />

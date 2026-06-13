@@ -29,6 +29,9 @@ public sealed class CallHandler : IAsyncDisposable
     private readonly ILogger<CallHandler> _logger;
     private readonly VoiceLiveBridgeClient _bridge;
 
+    /// <summary>The Graph call this handler owns (used by the bot to leave).</summary>
+    public ICall Call => _call;
+
     // Outbound playout queue: PCM16 chunks from Voice Live, drained at frame
     // cadence onto the AudioSocket. A queue (not direct send) lets barge-in
     // flush everything instantly.
@@ -40,8 +43,7 @@ public sealed class CallHandler : IAsyncDisposable
 
     public CallHandler(ICall call, BotOptions options, ILoggerFactory loggerFactory)
     {
-        _call = call;
-        _options = options;
+        _call = call;        _options = options;
         _logger = loggerFactory.CreateLogger<CallHandler>();
         _bridge = new VoiceLiveBridgeClient(
             new Uri(options.BridgeWebSocketUrl),

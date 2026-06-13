@@ -1,5 +1,6 @@
 using AvatarForge.MeetingBot.Bot;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Graph.Communications.Client;
 
 namespace AvatarForge.MeetingBot.Http;
 
@@ -17,9 +18,9 @@ namespace AvatarForge.MeetingBot.Http;
 [Route("api/calling")]
 public sealed class CallingController : ControllerBase
 {
-    private readonly MeetingBot _bot;
+    private readonly MeetingBotService _bot;
 
-    public CallingController(MeetingBot bot) => _bot = bot;
+    public CallingController(MeetingBotService bot) => _bot = bot;
 
     [HttpPost]
     public async Task<IActionResult> OnNotification()

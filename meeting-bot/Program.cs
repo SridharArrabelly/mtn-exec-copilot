@@ -17,7 +17,7 @@ if (!string.IsNullOrWhiteSpace(envSecret))
 }
 
 builder.Services.AddControllers();
-builder.Services.AddSingleton<MeetingBot>();
+builder.Services.AddSingleton<MeetingBotService>();
 
 // ── Kestrel ──
 // Two public surfaces (see docs/teams-meeting-bot.md §8):
@@ -27,23 +27,56 @@ builder.Services.AddSingleton<MeetingBot>();
 // host. We let the media SDK own the media port; Kestrel owns signaling.
 var botSection = builder.Configuration.GetSection(BotOptions.SectionName);
 var signalingPort = botSection.GetValue<int?>("SignalingPort") ?? 9441;
+var certThumbprint = botSection.GetValue<string>("CertificateThumbprint");
 
 builder.WebHost.ConfigureKestrel(kestrel =>
 {
-    // TODO(prod, Windows): bind HTTPS with the LocalMachine\My cert matching
-    // ServiceFqdn (CertificateThumbprint). Example:
-    //   kestrel.ListenAnyIP(signalingPort, lo => lo.UseHttps(StoreName.My,
-    //       botOptions.ServiceFqdn, allowInvalid: false));
-    // Left as HTTP here so the project runs for local wiring tests; Graph
-    // requires HTTPS in production.
-    kestrel.ListenAnyIP(signalingPort);
+    // Graph requires HTTPS for the calling webhook. Bind the publicly-trusted
+    // cert (LocalMachine\My) matching ServiceFqdn by thumbprint. The media
+    // platform binds its own TLS media port internally via
+    // MediaPlatformInstanceSettings.CertificateThumbprint (see MeetingBot).
+    kestrel.ListenAnyIP(signalingPort, lo =>
+    {
+        if (!string.IsNullOrWhiteSpace(certThumbprint))
+        {
+            var cert = FindCertByThumbprint(certThumbprint!);
+            if (cert is not null)
+            {
+                lo.UseHttps(cert);
+                return;
+            }
+        }
+        // No cert configured/found: fall back to HTTP so the host still starts
+        // for local wiring tests. Graph callbacks will NOT work over HTTP.
+    });
 });
+
+static System.Security.Cryptography.X509Certificates.X509Certificate2? FindCertByThumbprint(string thumbprint)
+{
+    var clean = thumbprint.Replace(" ", string.Empty).ToUpperInvariant();
+    foreach (var location in new[]
+             {
+                 System.Security.Cryptography.X509Certificates.StoreLocation.LocalMachine,
+                 System.Security.Cryptography.X509Certificates.StoreLocation.CurrentUser,
+             })
+    {
+        using var store = new System.Security.Cryptography.X509Certificates.X509Store(
+            System.Security.Cryptography.X509Certificates.StoreName.My, location);
+        store.Open(System.Security.Cryptography.X509Certificates.OpenFlags.ReadOnly);
+        foreach (var c in store.Certificates)
+        {
+            if (string.Equals(c.Thumbprint, clean, StringComparison.OrdinalIgnoreCase))
+                return c;
+        }
+    }
+    return null;
+}
 
 var app = builder.Build();
 
 // Eagerly construct the bot so the calling client + media platform initialize
 // at startup (and fail fast on bad config).
-_ = app.Services.GetRequiredService<MeetingBot>();
+_ = app.Services.GetRequiredService<MeetingBotService>();
 
 app.MapControllers();
 
