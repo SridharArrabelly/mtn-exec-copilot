@@ -77,7 +77,7 @@ Set via `appsettings.json` or environment (`Bot__*`). **Never commit the secret.
 
 | Resource | Value |
 | --- | --- |
-| Windows VM | `avatar-meetingbot-vm` (running, `Standard_D2s_v5`, swedencentral) |
+| Windows VM | `avatar-meetingbot-vm` (running, `Standard_D4s_v5`, swedencentral) |
 | Public FQDN | `avatar-meetingbot-mngenv.swedencentral.cloudapp.azure.com` |
 | Signaling endpoint | `https://<fqdn>:9441/api/calling` |
 | Operator API | `https://<fqdn>:9441/api/join` |
@@ -88,6 +88,28 @@ The Python side is **already live**: the container app has `MEETING_BOT_ENABLED=
 `ACS_AUDIO_SAMPLE_RATE=16000`, `ACS_REQUIRE_WAKE_PHRASE=true`, and `/ws/acs/audio`
 accepts the bot's handshake (verified with a websockets probe). `MEETING_BOT_ENABLED`
 makes the bridge serve the bot **without** provisioning an ACS resource.
+
+## Bot status — BUILT, DEPLOYED & RUNNING on the host ✅
+
+As of the latest deploy the bot is **live on the VM as a Windows service**, not just
+scaffolded:
+
+| Item | Status |
+| --- | --- |
+| VM resized to 4 vCPU (`Standard_D4s_v5`) | ✅ media platform needs ≥ 2 cores |
+| TLS cert (Let's Encrypt via win-acme) | ✅ thumbprint `0C3A419EE79746A8FA0625D66721E26B68B6C9D6`, auto-renew scheduled |
+| VC++ x64 redistributable | ✅ installed (native media stack links `vcruntime140`/`msvcp140`) |
+| `dotnet publish -r win-x64 --self-contained` | ✅ builds; native media DLLs auto-bundled by the `CopySkypeNativeMedia` target |
+| `AvatarForgeMeetingBot` Windows service | ✅ **Running**, HTTPS bound on `:9441` |
+| Media platform init | ✅ initializes cleanly (no `NativeMedia`/cores error) |
+| Public endpoint | ✅ `https://<fqdn>:9441/api/health` → `{"status":"ok"}` over the trusted cert |
+
+**What this proves live:** the `TODO(prod)` risks the plan flagged (cert/TLS binding,
+the win-x64 native media stack, the Windows-service host) are all resolved — the bot
+starts, binds TLS with a publicly-trusted cert, initializes the Real-Time Media
+platform, and answers its operator API from the public internet. What is **not** yet
+proven is the in-meeting behaviour (join/admission, hearing the room, answering aloud,
+latency) — that needs the Teams manifest uploaded + a live meeting (steps below).
 
 ## Host setup — `scripts/setup-host.ps1`
 
@@ -122,20 +144,26 @@ cert issuance + a real meeting):
 2. ✅ **Python side** — already live: `MEETING_BOT_ENABLED=true`,
    `ACS_AUDIO_SAMPLE_RATE=16000`, `ACS_REQUIRE_WAKE_PHRASE=true` on the container app
    (and persisted in the azd env, wired through bicep so a full `azd up` keeps them).
-3. ✅ **Prep stage** — firewall + .NET 8 SDK/ASP.NET runtime installed on the VM.
-4. **Install a publicly-trusted TLS cert** — `setup-host.ps1 -Stage Cert` (win-acme
-   issues a Let's Encrypt cert via HTTP-01 on port 80, already open). Record the
-   thumbprint.
-5. **Build & publish the bot on the VM** — `setup-host.ps1 -Stage Build` (clones the
-   repo, `dotnet publish -r win-x64`).
-6. **Run** — `setup-host.ps1 -Stage Run -Thumbprint <tp> -BridgeUrl <wss .../ws/acs/audio> -BotSecret <BOT_CLIENT_SECRET>`
-   installs/starts the `AvatarForgeMeetingBot` Windows service.
-7. **Teams manifest:** build with `python teams/build_package.py --enable-calling`
-   (sets `supportsCalling: true`), upload. Requires a tenant **custom-app** policy + a
-   **meeting policy allowing bots** (you are global admin in MngEnv, so self-serviceable).
-8. **Test:** start a Teams meeting in the MngEnv tenant, then
+3. ✅ **Prep stage** — firewall + .NET 8 SDK/ASP.NET runtime + VC++ x64 redist installed
+   on the VM; VM sized to 4 vCPU for the media platform.
+4. ✅ **TLS cert installed** — Let's Encrypt cert issued via `setup-host.ps1 -Stage Cert`
+   (win-acme, HTTP-01). Thumbprint `0C3A419EE79746A8FA0625D66721E26B68B6C9D6`, auto-renew
+   task scheduled.
+5. ✅ **Bot built & published on the VM** — `dotnet publish -r win-x64 --self-contained`;
+   native media DLLs auto-bundled by the csproj `CopySkypeNativeMedia` target.
+6. ✅ **Running** — `Bot__*` env + `BOT_CLIENT_SECRET` set (Machine scope); the
+   `AvatarForgeMeetingBot` Windows service is installed and **Running**, HTTPS on `:9441`.
+   `https://<fqdn>:9441/api/health` → `{"status":"ok"}` from the public internet.
+7. **(USER) Teams manifest:** build with `python teams/build_package.py --enable-calling`
+   (sets `supportsCalling: true`), then upload it in Teams ("Apps → Manage your apps →
+   Upload an app"). Requires a tenant **custom-app** policy + a **meeting policy allowing
+   bots** — you are global admin in MngEnv, so self-serviceable (Teams admin center or
+   `Set-CsTeamsMeetingPolicy`).
+8. **(USER) Live test:** start a Teams meeting in the MngEnv tenant, then
    `POST https://avatar-meetingbot-mngenv.swedencentral.cloudapp.azure.com:9441/api/join { "joinUrl": "<meeting link>" }`.
-   Nuru should appear in the roster, hear the room, and answer aloud on the wake phrase.
+   Nuru should appear in the roster, hear the room, and answer aloud on the wake phrase
+   ("nuru" / "hey nuru"). Watch latency (joiner + media hop on top of Voice Live
+   first-token).
 
 ## What is verified vs. pending
 
@@ -143,12 +171,16 @@ cert issuance + a real meeting):
   outbound `AudioData`, inbound `AudioData` dispatch, `StopAudio` barge-in all pass
   a round-trip against a mock server).
 - ✅ `infra/host.bicep` compiles clean (`az bicep build`).
-- ⏳ The media-SDK code (`MeetingBot.cs`, `CallHandler.cs`) can only be built/run on
-  a Windows host with the Graph media packages restored and a real meeting. Points
-  needing live confirmation are marked `TODO(prod...)` in the source: HTTPS/cert
-  binding in `Program.cs`, inbound notification validation in `AuthenticationProvider`,
-  and exact `AudioSocket`/`AudioSendBuffer` API shapes against the restored SDK
-  version.
+- ✅ **The media-SDK code builds, publishes and RUNS on the Windows host** — the bot
+  starts as a Windows service, initializes the Real-Time Media platform, binds HTTPS
+  with a publicly-trusted cert, and serves its API from the public internet. The
+  previously-`TODO(prod)` cert/TLS binding in `Program.cs` is implemented and verified.
+- ⏳ **In-meeting behaviour is the only thing left to confirm live:** join + lobby
+  admission, hearing the mixed room audio, answering aloud, barge-in, and end-to-end
+  latency. This needs the Teams manifest uploaded (`--enable-calling`), a tenant meeting
+  policy allowing bots, and a real meeting — see the runbook steps 7–8. Inbound
+  notification validation in `AuthenticationProvider` is still stubbed (`TODO(prod)`)
+  and should be hardened once the live calling webhook flow is exercised.
 
 ## Cost / honesty note
 
